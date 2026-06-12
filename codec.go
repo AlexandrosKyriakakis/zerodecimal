@@ -28,10 +28,12 @@ var (
 	_ driver.Valuer              = Decimal{}
 )
 
-// marshalCap is the capacity the single-allocation marshalers reserve up
-// front: the widest canonical rendering is 41 bytes (sign, 39 digits, point)
-// and MarshalJSON adds two quotes for 43, so a 48-byte buffer never regrows
-// and the one make is the only allocation.
+// marshalCap is the size of the stack buffer the single-allocation marshalers
+// render into before copying out: the widest canonical rendering is 41 bytes
+// (sign, 39 digits, point) and MarshalJSON adds two quotes for 43, so a
+// 48-byte buffer always suffices. Rendering on the stack first lets the one
+// real allocation be exactly the rendered length — a 3-byte result allocates
+// 3 bytes, not 48.
 const marshalCap = 48
 
 // jsonNull is the JSON null literal; the unmarshalers match it byte-for-byte
@@ -41,9 +43,14 @@ const jsonNull = "null"
 
 // MarshalText implements encoding.TextMarshaler, returning the canonical
 // decimal representation of d (the exact bytes String produces) in a freshly
-// allocated slice. It costs exactly one allocation — the result.
+// allocated slice. It costs exactly one allocation — the result, sized
+// exactly (the rendering happens in a stack buffer first).
 func (d Decimal) MarshalText() ([]byte, error) {
-	return appendCanonical(make([]byte, 0, marshalCap), d), nil
+	var buf [marshalCap]byte
+	b := appendCanonical(buf[:0], d)
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out, nil
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler, parsing the strict
@@ -62,14 +69,18 @@ func (d *Decimal) UnmarshalText(b []byte) error {
 // MarshalJSON implements json.Marshaler, rendering d as a double-quoted
 // canonical decimal string ("1.23") — ALWAYS quoted, because a bare JSON
 // number is read as float64 by most consumers and would silently lose digits
-// past 2^53. The result is built directly in one freshly allocated slice; it
-// deliberately never aliases the small-value string cache, since callers own
-// the returned bytes and may mutate them.
+// past 2^53. The rendering happens in a stack buffer, so the one allocation
+// is the exactly-sized result; it deliberately never aliases the small-value
+// string cache, since callers own the returned bytes and may mutate them.
 func (d Decimal) MarshalJSON() ([]byte, error) {
-	b := make([]byte, 0, marshalCap)
+	var buf [marshalCap]byte
+	b := buf[:0]
 	b = append(b, '"')
 	b = appendCanonical(b, d)
-	return append(b, '"'), nil
+	b = append(b, '"')
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out, nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler, accepting both the package's
@@ -118,9 +129,13 @@ const (
 // MarshalBinary implements encoding.BinaryMarshaler using the compact wire
 // format documented at the binFlag constants: 10 bytes when the coefficient
 // fits one limb, 18 otherwise, NOT udecimal-compatible. It costs exactly one
-// allocation — the result.
+// allocation — the result, sized exactly.
 func (d Decimal) MarshalBinary() ([]byte, error) {
-	return d.AppendBinary(make([]byte, 0, binSizeHi))
+	var buf [binSizeHi]byte
+	size := d.putBinary(&buf)
+	out := make([]byte, size)
+	copy(out, buf[:size])
+	return out, nil
 }
 
 // AppendBinary implements encoding.BinaryAppender, appending the
@@ -128,6 +143,12 @@ func (d Decimal) MarshalBinary() ([]byte, error) {
 // error is always nil. It allocates only if b lacks capacity.
 func (d Decimal) AppendBinary(b []byte) ([]byte, error) {
 	var buf [binSizeHi]byte
+	return append(b, buf[:d.putBinary(&buf)]...), nil
+}
+
+// putBinary renders the wire encoding of d into buf and returns its size,
+// binSizeLo or binSizeHi — the shared core of MarshalBinary and AppendBinary.
+func (d Decimal) putBinary(buf *[binSizeHi]byte) int {
 	flags := byte(0)
 	if d.neg {
 		flags = binFlagNeg
@@ -137,10 +158,10 @@ func (d Decimal) AppendBinary(b []byte) ([]byte, error) {
 	if d.coef.hi != 0 {
 		buf[0] = flags | binFlagHiPresent
 		binary.BigEndian.PutUint64(buf[10:18], d.coef.hi)
-		return append(b, buf[:binSizeHi]...), nil
+		return binSizeHi
 	}
 	buf[0] = flags
-	return append(b, buf[:binSizeLo]...), nil
+	return binSizeLo
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler for the MarshalBinary
@@ -159,28 +180,29 @@ func (d Decimal) AppendBinary(b []byte) ([]byte, error) {
 // encoded sign and precision, so a foreign encoder's "-0.000" still decodes
 // to the canonical Decimal{}. It never allocates.
 func (d *Decimal) UnmarshalBinary(data []byte) error {
-	if len(data) != binSizeLo && len(data) != binSizeHi {
-		return ErrInvalidBinaryData
-	}
-	flags := data[0]
-	if flags&^(binFlagNeg|binFlagHiPresent) != 0 {
-		return ErrInvalidBinaryData
-	}
-	hiPresent := flags&binFlagHiPresent != 0
-	if hiPresent != (len(data) == binSizeHi) {
-		return ErrInvalidBinaryData
-	}
-	prec := data[1]
-	if prec > MaxPrec {
-		return ErrInvalidBinaryData
-	}
-	coef := u128{lo: binary.BigEndian.Uint64(data[2:10])}
-	if hiPresent {
-		coef.hi = binary.BigEndian.Uint64(data[10:18])
-		if coef.hi == 0 {
+	// Dispatch on the length first: each arm then needs a single combined
+	// validity test, because the length fixes what the flag byte must be —
+	// 10 bytes demand every non-sign bit clear (no high limb, no reserved
+	// bits) and 18 bytes demand exactly the high-limb bit among them, which
+	// folds the reserved-bit and flag-length-consistency checks into one
+	// comparison each.
+	switch len(data) {
+	case binSizeLo:
+		flags, prec := data[0], data[1]
+		if flags&^binFlagNeg != 0 || prec > MaxPrec {
 			return ErrInvalidBinaryData
 		}
+		*d = newDecimal(u128{lo: binary.BigEndian.Uint64(data[2:10])}, flags != 0, prec)
+		return nil
+	case binSizeHi:
+		flags, prec := data[0], data[1]
+		//nolint:gosec // len(data) == binSizeHi == 18 in this arm, so data[10:18] is in range
+		hi := binary.BigEndian.Uint64(data[10:18])
+		if flags&^binFlagNeg != binFlagHiPresent || prec > MaxPrec || hi == 0 {
+			return ErrInvalidBinaryData
+		}
+		*d = newDecimal(u128{hi: hi, lo: binary.BigEndian.Uint64(data[2:10])}, flags&binFlagNeg != 0, prec)
+		return nil
 	}
-	*d = newDecimal(coef, flags&binFlagNeg != 0, prec)
-	return nil
+	return ErrInvalidBinaryData
 }

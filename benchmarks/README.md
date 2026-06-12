@@ -78,6 +78,24 @@ These are part of the story the numbers tell, not benchmark bugs:
 - **SQL caches**: zd (±1000.00, two decimal places) and alpaca have
   small-value caches, so `small_int` SQLValue/String rows measure cache hits.
 
+## Known trade-offs
+
+Allocation floors that are accepted by design rather than optimized away:
+
+- **String: 1 alloc/op** outside the small-value cache window. A
+  string-returning API must allocate the immutable result; the rendering
+  itself happens in a stack scratch buffer and the one allocation is exactly
+  the string. Inside the ±1000.00 cache window it is 0 allocs.
+- **MarshalText / MarshalJSON / MarshalBinary: 1 alloc/op** — the returned
+  byte slice the caller owns (callers may mutate marshal results, so sharing
+  cached bytes is off the table). The slice is sized exactly: MarshalJSON of
+  `5` allocates 3 bytes, not a fixed 48-byte buffer.
+- **SQLValue: 2 allocs/op** outside the cache window: the canonical string
+  plus boxing its header into the `driver.Value` interface
+  (`runtime.convTstring`); the bytes are shared, not copied. There is no
+  cheaper portable shape — a `driver.Value` must carry a concrete boxed
+  type. Inside the cache window the pre-boxed value makes it 0 allocs.
+
 ## Running
 
 ```sh

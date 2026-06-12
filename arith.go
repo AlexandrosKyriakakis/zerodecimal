@@ -286,13 +286,22 @@ func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 	if e.coef.isZero() {
 		return Decimal{}, Decimal{}, ErrDivideByZero
 	}
+	qNeg := d.neg != e.neg
+	if d.prec == e.prec && d.coef.hi|e.coef.hi == 0 {
+		// Already-aligned one-limb operands: the scale factors are both 1, so
+		// the whole T-division is a single hardware divide — no 256-bit
+		// numerator, no reciprocal setup, and no overflow is possible.
+		// e.coef.lo != 0 here because the zero check above ruled out hi|lo == 0.
+		q := d.coef.lo / e.coef.lo
+		r := d.coef.lo - q*e.coef.lo
+		return newDecimal(u128{lo: q}, qNeg, 0), newDecimal(u128{lo: r}, d.neg, d.prec), nil
+	}
 	f := max(d.prec, e.prec)
 	num := mulToU256(d.coef, pow10u128[(f-d.prec)&63])
 	den, overflow := mul128by64(e.coef, pow10u64[(f-e.prec)&31])
 	if overflow != 0 {
 		return Decimal{}, Decimal{}, ErrOverflow
 	}
-	qNeg := d.neg != e.neg
 	if den.hi == 0 {
 		q, r, err := div256by64(num, den.lo)
 		if err != nil {

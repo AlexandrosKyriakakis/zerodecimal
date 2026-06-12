@@ -42,7 +42,12 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 	pos := len(scratch)
 	end := len(scratch)
 
-	q, r := divmod128Pow10(d.coef, d.prec)
+	// Precision 0 needs no split at all; skipping the divmod call keeps the
+	// pure-integer rendering path call-free up to the digit writers.
+	q, r := d.coef, uint64(0)
+	if d.prec != 0 {
+		q, r = divmod128Pow10(d.coef, d.prec)
+	}
 
 	// Fractional part. r == 0 covers both prec == 0 and an all-zero
 	// fraction, which trims away entirely, point included.
@@ -83,19 +88,27 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 // are masked with scratchMask — in range by the precondition, and proven in
 // range to the compiler — so a violation would wrap within buf, not panic.
 func writeIntPart(buf *[scratchLen]byte, pos int, q u128) int {
-	if q.isZero() {
-		pos--
-		buf[pos&scratchMask] = '0'
-		return pos
+	// One-limb fast path: any uint64 is below 10^20, writeUnpadded's exact
+	// domain, so the dominant case needs no division at all.
+	if q.hi == 0 {
+		if q.lo == 0 {
+			pos--
+			buf[pos&scratchMask] = '0'
+			return pos
+		}
+		return writeUnpadded(buf, pos, q.lo)
 	}
-	for {
-		next, chunk := divmod128Pow10(q, 19)
-		if next.isZero() {
+	for q.hi != 0 {
+		var chunk uint64
+		q, chunk = divmod128Pow10Slow(q, 19)
+		if q.isZero() {
 			return writeUnpadded(buf, pos, chunk)
 		}
 		pos = writePadded(buf, pos, chunk, 19)
-		q = next
 	}
+	// The remaining most significant digits fit one limb (and are nonzero,
+	// or the loop would have returned above).
+	return writeUnpadded(buf, pos, q.lo)
 }
 
 // writePadded writes exactly n decimal digits of v right to left into buf,

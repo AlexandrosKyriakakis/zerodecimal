@@ -75,80 +75,218 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 		}
 	}
 
-	var (
-		lo       uint64 // coefficient accumulator while sig ≤ 19
-		coef     u128   // coefficient accumulator once sig > 19
-		sig      int    // significant digits accumulated (leading zeros skipped)
-		frac     int    // digit positions seen after the decimal point
-		dropped  int    // mantissa digits past the accumulator (trunc mode only)
-		dropNZ   int    // 1-based index of the first nonzero dropped digit; 0 = all zero
-		sawDot   bool
-		sawDigit bool
-	)
-
-scan:
-	for ; i < n; i++ {
-		c := s[i]
-		switch {
-		case c >= '0' && c <= '9':
-			sawDigit = true
-			if sawDot {
-				frac++
-			}
-			if c == '0' && sig == 0 {
-				continue // leading zero: the position counts, the value is nothing
-			}
-			sig++
-			if sig <= 19 {
-				// 19 digits max out at 10^19-1 < 2^64: no overflow possible.
-				lo = lo*10 + uint64(c-'0')
+	// Fast path: a plain literal — digits with at most one dot, no exponent —
+	// whose digits after the leading-zero skip fit one uint64 limb. The single
+	// tight loop carries one branch per digit; anything it cannot prove exact
+	// or valid (a second dot, an exponent marker, any other byte, too many
+	// digits, too much precision) falls through to the general parser, which
+	// re-scans from the sign with full validation. The digit count is
+	// conservative: zeros between the dot and the first significant digit
+	// ("0.0005") count toward the 19-digit budget even though they carry no
+	// value, which only ever sends exact-but-long input down the slow path,
+	// never the reverse.
+	start := i
+	for i < n && s[i] == '0' {
+		i++ // leading integer zeros: positions without value
+	}
+	zeros := i - start
+	if n-i > 20 {
+		// More than 19 digits plus a dot can remain: the mantissa cannot be
+		// proven one-limb (nor a 20-digit integer, the one two-limb shape the
+		// fast path folds itself), so skip the fast scan instead of paying
+		// for it twice.
+		goto general
+	}
+	{
+		var lo, prev uint64
+		dot := -1
+		for ; i < n; i++ {
+			c := s[i]
+			if d := c - '0'; d <= 9 {
+				prev = lo
+				lo = lo*10 + uint64(d)
 				continue
 			}
-			if sig == 20 {
-				coef = u128{lo: lo} // promote to two limbs for digits 20..39
-			}
-			if dropped > 0 {
-				// Already dropping the tail: only positions and the first
-				// nonzero digit matter (see the dropped-tail fold below).
-				dropped++
-				if dropNZ == 0 && c != '0' {
-					dropNZ = dropped
-				}
+			if c == '.' && dot < 0 {
+				dot = i
 				continue
 			}
-			grown, over := mul128by64(coef, 10)
-			grown, carry := add128(grown, u128{lo: uint64(c - '0')})
-			if over|carry != 0 {
-				// The 40th significant digit always lands here; a 39th that
-				// crosses 2^128-1 does too.
-				if !trunc {
-					return Decimal{}, ErrOverflow
-				}
-				dropped = 1
-				if c != '0' {
-					dropNZ = 1
-				}
-				continue
-			}
-			coef = grown
-		case c == '.':
-			// One dot, with a digit on each side: rejects ".1", "1.", "1..2".
-			if sawDot || !sawDigit || i+1 == n || s[i+1] < '0' || s[i+1] > '9' {
+			goto general // exponent, second dot, or invalid byte
+		}
+		digits := n - start - zeros
+		frac := 0
+		if dot >= 0 {
+			digits--
+			// One dot with a digit on each side: rejects ".1", "1.", and a
+			// bare "." (dot == start covers it: no digit, zero or otherwise,
+			// precedes the dot).
+			if dot == start || dot == n-1 {
 				return Decimal{}, ErrInvalidFormat
 			}
-			sawDot = true
-		case c == 'e' || c == 'E':
-			if !sawDigit {
-				return Decimal{}, ErrInvalidFormat // "e5" has no mantissa
+			frac = n - 1 - dot
+		}
+		if digits > 19 {
+			// Exactly 20 dot-less digits — the only way past 19 under the
+			// length bail, so the run ended at n. lo may have wrapped, but
+			// prev still holds the first 19 digits exactly: the value is
+			// prev·10 + the last digit, at most 10^20-1, always in range
+			// (float64 shortest forms of large magnitudes land here).
+			coef, _ := mul128by64(u128{lo: prev}, 10)
+			coef, _ = add128(coef, u128{lo: uint64(s[n-1] - '0')})
+			return newDecimal(coef, neg, 0), nil
+		}
+		if frac > int(MaxPrec) {
+			if !trunc {
+				return Decimal{}, ErrPrecOutOfRange
 			}
-			break scan
-		default:
+			goto general // truncation semantics live in the general parser
+		}
+		// Canonical form: strip trailing fractional zeros (also collapses
+		// "0.000" to the canonical zero).
+		for frac > 0 && lo%10 == 0 {
+			lo /= 10
+			frac--
+		}
+		//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact
+		return newDecimal(u128{lo: lo}, neg, uint8(frac)), nil
+	}
+
+general:
+	return parseGeneral(s, start, neg, trunc)
+}
+
+// accumRun folds the digit run starting at s[i] into coef and returns the
+// index of the first non-digit byte along with the updated accumulator state.
+// Digits accumulate through a one-limb chunk of up to 19 (10^19-1 < 2^64, so
+// the chunk cannot wrap) and each chunk folds into coef with one 128-bit
+// multiply-add — coef·10^len + chunk — instead of one per digit.
+//
+// A fold that would cross 2^128 replays its chunk digit by digit to find the
+// exact boundary: ErrOverflow when trunc is false, otherwise the remaining
+// digits are dropped — dropped counts them and dropNZ records the 1-based
+// position of the first nonzero one — exactly matching parseGeneral's
+// documented truncation semantics. dropped and dropNZ thread through calls so
+// a fraction run continues dropping where the integer run stopped.
+func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int, trunc bool) (int, u128, int, int, error) {
+	n := len(s)
+	for i < n {
+		if dropped > 0 {
+			// Saturated: only positions and the first nonzero digit matter.
+			for ; i < n; i++ {
+				c := s[i] - '0'
+				if c > 9 {
+					break
+				}
+				dropped++
+				if dropNZ == 0 && c != 0 {
+					dropNZ = dropped
+				}
+			}
+			return i, coef, dropped, dropNZ, nil
+		}
+
+		var lo uint64
+		cnt := 0
+		for i < n && cnt < 19 {
+			c := s[i] - '0'
+			if c > 9 {
+				break
+			}
+			lo = lo*10 + uint64(c)
+			cnt++
+			i++
+		}
+		if cnt == 0 {
+			break // the run ended exactly on a chunk boundary
+		}
+		grown, over := mul128by64(coef, pow10u64[cnt&31])
+		grown, carry := add128(grown, u128{lo: lo})
+		if over|carry != 0 {
+			// The chunk crosses 2^128: replay it per digit. Some prefix may
+			// still fit; the per-digit accumulate finds the exact last digit
+			// that does, then starts (or rejects) the dropped tail.
+			for j := i - cnt; j < i; j++ {
+				c := s[j] - '0'
+				if dropped > 0 {
+					dropped++
+					if dropNZ == 0 && c != 0 {
+						dropNZ = dropped
+					}
+					continue
+				}
+				g, ov := mul128by64(coef, 10)
+				g, cy := add128(g, u128{lo: uint64(c)})
+				if ov|cy != 0 {
+					if !trunc {
+						return i, coef, 0, 0, ErrOverflow
+					}
+					dropped = 1
+					if c != 0 {
+						dropNZ = 1
+					}
+					continue
+				}
+				coef = g
+			}
+			continue
+		}
+		coef = grown
+		if cnt < 19 {
+			break // a non-digit (or the end) stopped the chunk early
+		}
+	}
+	return i, coef, dropped, dropNZ, nil
+}
+
+// parseGeneral is the full-grammar parser behind parseCore's fast path:
+// scientific notation, over-long mantissas, and every malformed input land
+// here. i indexes the first byte after the optional sign; the scan restarts
+// there so the fast path never has to hand over partial state.
+//
+// The mantissa is two digit runs — integer and fraction — accumulated by
+// accumRun in 19-digit chunks, so the per-digit work is one range check and
+// one uint64 multiply-add regardless of length; 128-bit arithmetic happens
+// once per chunk, not once per digit. Leading zeros need no special casing:
+// they accumulate as value zero and cannot trigger a fold overflow.
+func parseGeneral[T string | []byte](s T, i int, neg, trunc bool) (Decimal, error) {
+	n := len(s)
+	var (
+		coef    u128
+		dropped int // mantissa digits past the accumulator (trunc mode only)
+		dropNZ  int // 1-based index of the first nonzero dropped digit; 0 = all zero
+		err     error
+	)
+
+	intStart := i
+	i, coef, dropped, dropNZ, err = accumRun(s, i, coef, 0, 0, trunc)
+	if err != nil {
+		return Decimal{}, err
+	}
+	if i == intStart {
+		return Decimal{}, ErrInvalidFormat // no digit starts the mantissa: ".5", "e5", "x"
+	}
+
+	frac := 0
+	if i < n && s[i] == '.' {
+		fracStart := i + 1
+		i, coef, dropped, dropNZ, err = accumRun(s, fracStart, coef, dropped, dropNZ, trunc)
+		if err != nil {
+			return Decimal{}, err
+		}
+		// frac counts every digit position after the dot — dropped digits
+		// included, mirroring the dropped-tail fold below — and must be
+		// non-empty: "1." and "1.e5" are ErrInvalidFormat.
+		frac = i - fracStart
+		if frac == 0 {
 			return Decimal{}, ErrInvalidFormat
 		}
 	}
 
 	exp := 0
-	if i < n { // the scan stopped at 'e' or 'E': parse the exponent
+	if i < n { // mantissa stopped before the end: only an exponent may follow
+		if c := s[i]; c != 'e' && c != 'E' {
+			return Decimal{}, ErrInvalidFormat // second dot, stray byte
+		}
 		i++
 		expNeg := false
 		if i < n && (s[i] == '+' || s[i] == '-') {
@@ -170,10 +308,6 @@ scan:
 		if expNeg {
 			exp = -exp
 		}
-	}
-
-	if sig <= 19 {
-		coef = u128{lo: lo}
 	}
 
 	// Fold the dropped mantissa tail (trunc mode only) into the precision
@@ -239,7 +373,7 @@ scan:
 			coef, _ = divmod128Pow10(coef, MaxPrec)
 			excess -= int(MaxPrec)
 		}
-		//nolint:gosec // 1 ≤ excess ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact
+		// 1 ≤ excess ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact.
 		coef, _ = divmod128Pow10(coef, uint8(excess))
 
 		prec = MaxPrec
