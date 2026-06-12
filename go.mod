@@ -1,4 +1,4 @@
-module github.com/AlexandrosKyriakakis/zero-decimal
+module github.com/AlexandrosKyriakakis/zerodecimal
 
 go 1.26
 

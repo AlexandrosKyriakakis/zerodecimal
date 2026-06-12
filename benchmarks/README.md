@@ -5,7 +5,7 @@ libraries on one shared operation × shape matrix:
 
 | key      | library                                                                  |
 | -------- | ------------------------------------------------------------------------ |
-| `zd`     | github.com/AlexandrosKyriakakis/zero-decimal                              |
+| `zd`     | github.com/AlexandrosKyriakakis/zerodecimal                              |
 | `udec`   | github.com/quagmt/udecimal                                                |
 | `alpaca` | github.com/alpacahq/alpacadecimal                                         |
 | `ss`     | github.com/shopspring/decimal                                             |

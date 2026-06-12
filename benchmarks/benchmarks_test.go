@@ -22,7 +22,7 @@ import (
 	udec "github.com/quagmt/udecimal"
 	ss "github.com/shopspring/decimal"
 
-	zd "github.com/AlexandrosKyriakakis/zero-decimal"
+	zd "github.com/AlexandrosKyriakakis/zerodecimal"
 )
 
 // roundPlaces is the fractional-digit count used by RoundBank and Truncate.

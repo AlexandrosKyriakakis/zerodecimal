@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	zerodecimal "github.com/AlexandrosKyriakakis/zero-decimal"
+	zerodecimal "github.com/AlexandrosKyriakakis/zerodecimal"
 )
 
 func Example() {

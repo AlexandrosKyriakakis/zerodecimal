@@ -25,11 +25,11 @@ Zero-allocation, panic-free, fixed-point decimals for latency-critical Go.
 ## Install
 
 ```sh
-go get github.com/AlexandrosKyriakakis/zero-decimal
+go get github.com/AlexandrosKyriakakis/zerodecimal
 ```
 
 ```go
-import "github.com/AlexandrosKyriakakis/zero-decimal" // package zerodecimal
+import "github.com/AlexandrosKyriakakis/zerodecimal" // package zerodecimal
 ```
 
 Requires Go 1.26+. The library has zero runtime dependencies.
