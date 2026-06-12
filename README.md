@@ -96,8 +96,8 @@ the hot path); formatting trims at output.
 
 All sentinels live in [errors.go](errors.go), are returned bare (never
 wrapped, except `Scan`'s unsupported-type message), and match with
-`errors.Is`. Every fallible operation has a panicking twin for call sites
-with proven bounds.
+`errors.Is`. The constructors and arithmetic operations have panicking twins
+for call sites with proven bounds; rows marked `—` below have none.
 
 | Operation | Possible sentinels | Panicking twin |
 | --- | --- | --- |
@@ -161,9 +161,10 @@ Rejected:
 
 The `Trunc` variants (`NewFromStringTrunc`, `ParseBytesTrunc`) replace
 `ErrPrecOutOfRange` with truncation toward zero at 19 fractional digits
-(possibly to exactly zero) and accept arbitrarily long mantissas whenever the
-truncated value is representable; grammar violations and genuinely
-unrepresentable values still error. Results are always canonical: trailing
+(possibly to exactly zero) and accept any mantissa within the 200-byte input
+cap (`ErrMaxStrLen` still applies) whenever the truncated value is
+representable; grammar violations and genuinely unrepresentable values still
+error. Results are always canonical: trailing
 fractional zeros are trimmed (`"1.500"` parses identically to `"1.5"`) and
 parsing never allocates — not even on failure.
 
@@ -267,8 +268,10 @@ promote straight into *your* hot loops past the default inlining budget.
 The committed [benchmarks/bench-pgo.txt](benchmarks/bench-pgo.txt) shows what
 the benchmark binary itself gains when rebuilt against its own profile
 (`make bench-pgo`): a −7.5% time geomean, with the arithmetic core improving
-the most because its outlined slow arms inline into the measured call sites —
-and one honest regression where PGO's layout choices cost a little:
+the most because its outlined slow arms inline into the measured call sites.
+Three op families honestly regress where PGO's layout choices cost a little:
+every `Cmp` shape (+7% to +10%), the short `Parse` inputs (+2% to +5%), and
+`NewFromFloat/typical_price` (+2.5%) — the excerpt shows the worst such row:
 
 ```
                           │   default   │                 pgo                 │
@@ -297,6 +300,10 @@ primitives (arm64 needs no flag).
 
 `DefaultPrec` is a compile-time constant by design — never a mutable global —
 so precision checks fold into immediate compares.
+
+The full test suites assume `DefaultPrec` = 19. Compile + `go vet` is the
+supported verification level for the `zerodecimal_prec9` and
+`zerodecimal_prec12` configurations in v1.
 
 ## How correctness is enforced
 

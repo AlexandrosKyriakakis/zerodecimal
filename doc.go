@@ -15,8 +15,10 @@
 // # Error model
 //
 // Operations that can fail return (Decimal, error) with package-level
-// sentinel errors and never panic. Each fallible operation has a Must twin
-// that panics, for constants, tests, and call sites with proven bounds.
+// sentinel errors and never panic. The constructors and the arithmetic
+// operations have panicking twins (MustNew, RequireFromString, MustAdd, ...)
+// for constants, tests, and call sites with proven bounds; the Trunc
+// parsers, NewFromHiLo, IntPart, the Unmarshal methods, and Scan have none.
 // Operations that cannot fail (Neg, Abs, rounding, comparisons, formatting)
 // return Decimal directly and chain freely.
 //
@@ -44,7 +46,9 @@
 //
 // DefaultPrec — the precision Div targets and strict parsing accepts — is a
 // compile-time constant: 19 by default, lowered to 9 or 12 with the
-// zerodecimal_prec9 or zerodecimal_prec12 build tags. The
+// zerodecimal_prec9 or zerodecimal_prec12 build tags. The full test suites
+// assume DefaultPrec = 19; the zerodecimal_prec9 and zerodecimal_prec12
+// configurations are verified at compile + vet level only in v1. The
 // zerodecimal_nostrcache tag compiles out the small-value string cache that
 // String and Value consult.
 package zerodecimal
