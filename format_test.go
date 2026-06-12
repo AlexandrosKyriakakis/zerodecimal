@@ -1,0 +1,237 @@
+package zerodecimal
+
+import (
+	"math"
+	"math/rand/v2"
+	"strconv"
+	"strings"
+	"testing"
+	"unsafe"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// canonicalOracle renders the value (neg ? -1 : +1) · coef / 10^prec
+// canonically using only string surgery over the u128 limbs, independent of
+// the library's formatter.
+func canonicalOracle(neg bool, coef u128, prec uint8) string {
+	digits := u128ToBig(coef).String()
+	if pad := int(prec) - len(digits) + 1; pad > 0 {
+		digits = strings.Repeat("0", pad) + digits
+	}
+	cut := len(digits) - int(prec)
+	intPart, frac := digits[:cut], strings.TrimRight(digits[cut:], "0")
+	s := intPart
+	if frac != "" {
+		s += "." + frac
+	}
+	if neg && !coef.isZero() {
+		s = "-" + s
+	}
+	return s
+}
+
+func TestStringCanonical(t *testing.T) {
+	maxCoef := u128{hi: maxUint64, lo: maxUint64}
+	tests := []struct {
+		name string
+		d    Decimal
+		want string
+	}{
+		{"zero", Zero, "0"},
+		{"half_keeps_leading_zero", Decimal{coef: u128{lo: 5}, prec: 1}, "0.5"},
+		{"negative_smallest_unit", Decimal{coef: u128{lo: 1}, neg: true, prec: 19}, "-0.0000000000000000001"},
+		{"smallest_unit", Decimal{coef: u128{lo: 1}, prec: 19}, "0.0000000000000000001"},
+		{"max_coef_prec_0", Decimal{coef: maxCoef}, "340282366920938463463374607431768211455"},
+		{"max_coef_prec_19", Decimal{coef: maxCoef, prec: 19}, "34028236692093846346.3374607431768211455"},
+		{"negative_max_coef_prec_19", Decimal{coef: maxCoef, neg: true, prec: 19}, "-34028236692093846346.3374607431768211455"},
+		{"trailing_zero_trimmed", Decimal{coef: u128{lo: 150}, prec: 2}, "1.5"},
+		{"all_fraction_zeros_no_trailing_dot", Decimal{coef: u128{lo: 100}, prec: 2}, "1"},
+		{"pow10_19_two_chunks", Decimal{coef: u128{lo: 10_000_000_000_000_000_000}}, "10000000000000000000"},
+		{"pow10_19_minus_1_single_chunk", Decimal{coef: u128{lo: 9_999_999_999_999_999_999}}, "9999999999999999999"},
+		{"pow2_64", Decimal{coef: u128{hi: 1}}, "18446744073709551616"},
+		{"pow2_64_prec_19", Decimal{coef: u128{hi: 1}, prec: 19}, "1.8446744073709551616"},
+		{"negative_typical_price", Decimal{coef: u128{lo: 12345678}, neg: true, prec: 4}, "-1234.5678"},
+		{"interior_zeros_preserved", Decimal{coef: u128{lo: 1002003}, prec: 3}, "1002.003"},
+		{"fraction_with_leading_zeros", Decimal{coef: u128{lo: 5}, prec: 3}, "0.005"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.d.String(), "String")
+			assert.Equal(t, tc.want, string(appendCanonical(nil, tc.d)), "appendCanonical")
+
+			b, err := tc.d.AppendText(nil)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, string(b), "AppendText")
+		})
+	}
+}
+
+func TestStringRandom(t *testing.T) {
+	rng := rand.New(rand.NewPCG(0x57F1, 0x0013))
+	for range 20_000 {
+		d := newDecimal(randShapedU128(rng), rng.Uint64()&1 == 1, uint8(rng.Uint64N(uint64(MaxPrec)+1)))
+		neg, hi, lo, prec := d.ToHiLo()
+		want := canonicalOracle(neg, u128{hi: hi, lo: lo}, prec)
+		require.Equal(t, want, d.String(), "String of %+v", d)
+		require.Equal(t, want, string(appendCanonical(nil, d)), "appendCanonical of %+v", d)
+	}
+}
+
+func TestAppendTextAppendsToExisting(t *testing.T) {
+	buf := []byte("price=")
+	buf, err := mustHiLo(t, true, 0, 1234567, 4).AppendText(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "price=-123.4567", string(buf))
+
+	// A second append must extend, never restart, the buffer.
+	buf, err = One.AppendText(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "price=-123.45671", string(buf))
+}
+
+func TestInexactFloat64(t *testing.T) {
+	maxCoef := u128{hi: maxUint64, lo: maxUint64}
+	tests := []struct {
+		name string
+		d    Decimal
+	}{
+		{"zero", Zero},
+		{"half", Decimal{coef: u128{lo: 5}, prec: 1}},
+		{"negative_smallest_unit", Decimal{coef: u128{lo: 1}, neg: true, prec: 19}},
+		{"typical_price", MustNew(12345678, -4)},
+		{"max_coef_prec_0", Decimal{coef: maxCoef}},
+		{"max_coef_prec_19", Decimal{coef: maxCoef, prec: 19}},
+		{"min_int64", NewFromInt(math.MinInt64)},
+		{"one_third_at_prec_19", Decimal{coef: u128{lo: 3333333333333333333}, prec: 19}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := strconv.ParseFloat(tc.d.String(), 64)
+			require.NoError(t, err)
+			// Exact bit equality is the contract, not approximate equality.
+			assert.Equal(t, want, tc.d.InexactFloat64())
+		})
+	}
+}
+
+func TestInexactFloat64Random(t *testing.T) {
+	rng := rand.New(rand.NewPCG(0xF10A7, 0x0014))
+	for range 20_000 {
+		d := newDecimal(randShapedU128(rng), rng.Uint64()&1 == 1, uint8(rng.Uint64N(uint64(MaxPrec)+1)))
+		want, err := strconv.ParseFloat(d.String(), 64)
+		require.NoError(t, err)
+		// Exact bit equality is the contract, not approximate equality.
+		require.Equal(t, want, d.InexactFloat64(), "InexactFloat64 of %+v", d)
+	}
+}
+
+// stringCacheEnabled reports whether the small-value cache is compiled in
+// (it is not under -tags zerodecimal_nostrcache, where every probe misses).
+func stringCacheEnabled() bool {
+	_, ok := cachedString(Zero)
+	return ok
+}
+
+func TestStringCacheMatchesComputed(t *testing.T) {
+	if !stringCacheEnabled() {
+		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+	}
+	rng := rand.New(rand.NewPCG(0xCAC4E, 0x0015))
+	for range 20_000 {
+		cents := rng.Int64N(2*cacheSpan+1) - cacheSpan
+		neg := cents < 0
+		mag := uint64(cents)
+		if neg {
+			mag = uint64(-cents)
+		}
+
+		d := newDecimal(u128{lo: mag}, neg, 2)
+		want := string(appendCanonical(nil, d))
+
+		got, ok := cachedString(d)
+		require.True(t, ok, "cents %d must hit the string cache", cents)
+		require.Equal(t, want, got, "cached string for cents %d", cents)
+		require.Equal(t, want, d.String(), "String for cents %d", cents)
+
+		v, ok := cachedValue(d)
+		require.True(t, ok, "cents %d must hit the value cache", cents)
+		require.Equal(t, want, v, "cached value for cents %d", cents)
+
+		// Lower-precision representations of the same value must land on
+		// the same cached entry.
+		if mag%10 == 0 {
+			tenths, ok := cachedString(newDecimal(u128{lo: mag / 10}, neg, 1))
+			require.True(t, ok)
+			require.Equal(t, want, tenths, "prec-1 alias for cents %d", cents)
+		}
+		if mag%100 == 0 {
+			units, ok := cachedString(newDecimal(u128{lo: mag / 100}, neg, 0))
+			require.True(t, ok)
+			require.Equal(t, want, units, "prec-0 alias for cents %d", cents)
+		}
+	}
+}
+
+func TestStringCacheHitMissBoundary(t *testing.T) {
+	if !stringCacheEnabled() {
+		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+	}
+	tests := []struct {
+		name    string
+		d       Decimal
+		wantHit bool
+	}{
+		{"zero_hits", Zero, true},
+		{"plus_1000_00_prec_2_hits", Decimal{coef: u128{lo: 100000}, prec: 2}, true},
+		{"minus_1000_00_prec_2_hits", Decimal{coef: u128{lo: 100000}, neg: true, prec: 2}, true},
+		{"plus_1000_01_misses", Decimal{coef: u128{lo: 100001}, prec: 2}, false},
+		{"minus_1000_01_misses", Decimal{coef: u128{lo: 100001}, neg: true, prec: 2}, false},
+		{"plus_1000_prec_0_hits", Decimal{coef: u128{lo: 1000}}, true},
+		{"plus_1001_prec_0_misses", Decimal{coef: u128{lo: 1001}}, false},
+		{"plus_1000_0_prec_1_hits", Decimal{coef: u128{lo: 10000}, prec: 1}, true},
+		{"plus_1000_1_prec_1_misses", Decimal{coef: u128{lo: 10001}, prec: 1}, false},
+		{"prec_3_misses_even_in_range", Decimal{coef: u128{lo: 1500}, prec: 3}, false},
+		{"hi_limb_misses", Decimal{coef: u128{hi: 1, lo: 5}, prec: 2}, false},
+		{"scaling_wrap_guard_misses", Decimal{coef: u128{lo: 1<<63 + 100}}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want := string(appendCanonical(nil, tc.d))
+
+			s, hit := cachedString(tc.d)
+			assert.Equal(t, tc.wantHit, hit, "string cache hit")
+			if hit {
+				assert.Equal(t, want, s, "cached string")
+			}
+
+			v, hit := cachedValue(tc.d)
+			assert.Equal(t, tc.wantHit, hit, "value cache hit")
+			if hit {
+				assert.Equal(t, want, v, "cached value")
+			}
+
+			// Hit or miss, String must produce the canonical form.
+			assert.Equal(t, want, tc.d.String(), "String")
+		})
+	}
+}
+
+func TestValueCacheSharesStringBacking(t *testing.T) {
+	if !stringCacheEnabled() {
+		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+	}
+	d := mustHiLo(t, false, 0, 12345, 2) // 123.45
+
+	s, ok := cachedString(d)
+	require.True(t, ok)
+	v, ok := cachedValue(d)
+	require.True(t, ok)
+
+	vs, ok := v.(string)
+	require.True(t, ok, "cached driver.Value must box a string")
+	assert.Equal(t, s, vs)
+	assert.Equal(t, unsafe.StringData(s), unsafe.StringData(vs),
+		"value cache must box the same string backing as the string cache")
+}

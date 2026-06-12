@@ -25,6 +25,8 @@
 // Arithmetic does not trim trailing fractional zeros, so == on Decimal
 // values is representation equality, not numeric equality: a result equal to
 // 1.50 differs from a parsed 1.5 under ==. Use Equal or Cmp for numeric
-// comparison. Parsing and constructors do produce trimmed canonical form,
-// and zero is always the zero value Decimal{}.
+// comparison. Parsing and string constructors trim trailing fractional
+// zeros; NewFromHiLo keeps the supplied precision verbatim for raw interop.
+// Zero is always the zero value Decimal{} — no operation produces a negative
+// zero.
 package zerodecimal
