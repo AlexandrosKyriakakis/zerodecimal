@@ -16,4 +16,5 @@ benchmarks/bench-zd.txt
 benchmarks/bench-udec.txt
 benchmarks/bench-alpaca.txt
 benchmarks/bench-ss.txt
+benchmarks/bench-eric.txt
 benchmarks/*.pgo
