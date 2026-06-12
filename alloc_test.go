@@ -26,7 +26,10 @@ package zerodecimal
 //     constant: the race runtime allocates shadow state on instrumented
 //     accesses, making the numbers meaningless (see race_enabled_test.go).
 
-import "testing"
+import (
+	"database/sql/driver"
+	"testing"
+)
 
 // allocRuns is the invocation count handed to testing.AllocsPerRun for every
 // gate; AllocsPerRun additionally performs one warm-up call, so lazily
@@ -45,6 +48,7 @@ var (
 	sinkFloat64  float64
 	sinkString   string
 	sinkBytes    []byte
+	sinkValue    driver.Value
 )
 
 // allocSinkBuf is the pre-allocated destination for the Append* gates: each
@@ -64,6 +68,13 @@ type allocShape struct {
 	aFloat float64
 	bFloat float64
 	a, b   Decimal
+	// Codec inputs: the JSON and binary encodings of a, and a/aBytes pre-boxed
+	// as any — boxing a string or slice into an interface allocates, and doing
+	// it here keeps that harness cost out of the measured Scan closures.
+	aJSON     []byte
+	aBin      []byte
+	aStrAny   any
+	aBytesAny any
 }
 
 // newAllocShape parses one matrix row up front. Precomputing every input form
@@ -72,16 +83,23 @@ type allocShape struct {
 func newAllocShape(name, aStr, bStr string) allocShape {
 	a := RequireFromString(aStr)
 	b := RequireFromString(bStr)
+	aJSON, _ := a.MarshalJSON()
+	aBin, _ := a.MarshalBinary()
+	aBytes := []byte(aStr)
 	return allocShape{
-		name:   name,
-		aStr:   aStr,
-		bStr:   bStr,
-		aBytes: []byte(aStr),
-		bBytes: []byte(bStr),
-		aFloat: a.InexactFloat64(),
-		bFloat: b.InexactFloat64(),
-		a:      a,
-		b:      b,
+		name:      name,
+		aStr:      aStr,
+		bStr:      bStr,
+		aBytes:    aBytes,
+		bBytes:    []byte(bStr),
+		aFloat:    a.InexactFloat64(),
+		bFloat:    b.InexactFloat64(),
+		a:         a,
+		b:         b,
+		aJSON:     aJSON,
+		aBin:      aBin,
+		aStrAny:   aStr,
+		aBytesAny: aBytes,
 	}
 }
 
@@ -266,6 +284,29 @@ var allocOps = []struct {
 		// No shape pair overflows Add, so the panic twin is safe to gate.
 		return func() { sinkDecimal = s.a.MustAdd(s.b) }
 	}},
+	{name: "append_binary", bind: func(s allocShape) func() {
+		return func() {
+			sinkBytes, errSink = s.a.AppendBinary(allocSinkBuf[:0])
+			sinkBytes, errSink = s.b.AppendBinary(allocSinkBuf[:0])
+		}
+	}},
+	{name: "unmarshal_text", bind: func(s allocShape) func() {
+		return func() { errSink = sinkDecimal.UnmarshalText(s.aBytes) }
+	}},
+	{name: "unmarshal_json", bind: func(s allocShape) func() {
+		return func() { errSink = sinkDecimal.UnmarshalJSON(s.aJSON) }
+	}},
+	{name: "unmarshal_binary", bind: func(s allocShape) func() {
+		return func() { errSink = sinkDecimal.UnmarshalBinary(s.aBin) }
+	}},
+	{name: "scan_string", bind: func(s allocShape) func() {
+		// s.aStrAny is the string pre-boxed as any (see allocShape): the
+		// closure measures Scan alone, not the caller-side boxing.
+		return func() { errSink = sinkDecimal.Scan(s.aStrAny) }
+	}},
+	{name: "scan_bytes", bind: func(s allocShape) func() {
+		return func() { errSink = sinkDecimal.Scan(s.aBytesAny) }
+	}},
 }
 
 // TestAllocsZero asserts that every operation in allocOps performs exactly
@@ -349,4 +390,73 @@ func TestAllocsStringCached(t *testing.T) {
 			requireAllocs(t, 0, func() { sinkString = tc.d.String() })
 		})
 	}
+}
+
+// allocMarshalOps are the marshalers that cost EXACTLY one allocation — the
+// returned byte slice — on every shape; byte slices, unlike 1-byte strings,
+// are never interned by the runtime, so no shape needs a skip.
+var allocMarshalOps = []struct {
+	name string
+	bind func(s allocShape) func()
+}{
+	{name: "marshal_text", bind: func(s allocShape) func() {
+		return func() { sinkBytes, errSink = s.a.MarshalText() }
+	}},
+	{name: "marshal_json", bind: func(s allocShape) func() {
+		return func() { sinkBytes, errSink = s.a.MarshalJSON() }
+	}},
+	{name: "marshal_binary", bind: func(s allocShape) func() {
+		return func() { sinkBytes, errSink = s.a.MarshalBinary() }
+	}},
+}
+
+// TestAllocsCodecMarshal asserts MarshalText, MarshalJSON, and MarshalBinary
+// each perform exactly one heap allocation per call on every shape.
+func TestAllocsCodecMarshal(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	for _, op := range allocMarshalOps {
+		t.Run(op.name, func(t *testing.T) {
+			for _, s := range allocShapes {
+				t.Run(s.name, func(t *testing.T) {
+					requireAllocs(t, 1, op.bind(s))
+				})
+			}
+		})
+	}
+}
+
+// TestAllocsSQLValueCached asserts Value on cache-window values returns the
+// pre-boxed driver.Value with zero allocations: the boxing was paid once in
+// the cache's init.
+func TestAllocsSQLValueCached(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	if !strCacheEnabled {
+		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+	}
+	for _, tc := range allocCachedValues {
+		t.Run(tc.name, func(t *testing.T) {
+			requireAllocs(t, 0, func() { sinkValue, errSink = tc.d.Value() })
+		})
+	}
+}
+
+// allocUncachedValue lies outside the small-value cache window in every
+// build mode (prec 4 > the window's prec ≤ 2), so its Value always takes the
+// uncached path.
+var allocUncachedValue = RequireFromString("1234.5678")
+
+// TestAllocsSQLValueUncached pins uncached Value at exactly two allocations:
+// String allocates the canonical string, and returning it as a driver.Value
+// boxes the string header into the interface (runtime.convTstring) — the
+// bytes themselves are shared, not copied. There is no cheaper portable
+// shape: a driver.Value must carry a concrete boxed type.
+func TestAllocsSQLValueUncached(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	requireAllocs(t, 2, func() { sinkValue, errSink = allocUncachedValue.Value() })
 }
