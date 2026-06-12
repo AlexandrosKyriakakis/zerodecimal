@@ -235,3 +235,76 @@ func TestValueCacheSharesStringBacking(t *testing.T) {
 	assert.Equal(t, unsafe.StringData(s), unsafe.StringData(vs),
 		"value cache must box the same string backing as the string cache")
 }
+
+// fixedOracle renders d at exactly places fractional digits via string
+// surgery over the already-rounded coefficient, independent of AppendFixed's
+// scratch-buffer formatter. Rounding itself is covered by the round_test
+// differential suite, so reusing Round here pins only the formatting.
+func fixedOracle(d Decimal, places uint8) string {
+	neg, hi, lo, prec := d.Round(places).ToHiLo()
+	digits := u128ToBig(u128{hi: hi, lo: lo}).String()
+	if pad := int(prec) - len(digits) + 1; pad > 0 {
+		digits = strings.Repeat("0", pad) + digits
+	}
+	cut := len(digits) - int(prec)
+	s := digits[:cut]
+	if places > 0 {
+		s += "." + digits[cut:] + strings.Repeat("0", int(places)-int(prec))
+	}
+	if neg {
+		s = "-" + s
+	}
+	return s
+}
+
+func TestStringFixed(t *testing.T) {
+	maxCoef := u128{hi: maxUint64, lo: maxUint64}
+	tests := []struct {
+		name   string
+		d      Decimal
+		places uint8
+		want   string
+	}{
+		{name: "pads_trailing_zeros", d: RequireFromString("1.5"), places: 3, want: "1.500"},
+		{name: "places_0_no_dot_rounds_half_away", d: RequireFromString("1.5"), places: 0, want: "2"},
+		{name: "negative_tie_rounds_away", d: RequireFromString("-2.5"), places: 0, want: "-3"},
+		{name: "negative_rounds_half_away", d: RequireFromString("-1.235"), places: 2, want: "-1.24"},
+		{name: "carry_into_integer_part", d: RequireFromString("1.999"), places: 2, want: "2.00"},
+		{name: "carry_widens_integer_part", d: RequireFromString("9.99"), places: 1, want: "10.0"},
+		{name: "zero_places_0", d: Zero, places: 0, want: "0"},
+		{name: "zero_pads", d: Zero, places: 3, want: "0.000"},
+		{name: "negative_rounded_to_zero_loses_sign", d: RequireFromString("-0.004"), places: 2, want: "0.00"},
+		{name: "truncating_to_integer", d: RequireFromString("123.456"), places: 0, want: "123"},
+		{name: "fraction_padded_not_trimmed", d: RequireFromString("0.25"), places: 4, want: "0.2500"},
+		{name: "max_coef_full_precision", d: Decimal{coef: maxCoef, prec: 19}, places: 19, want: "34028236692093846346.3374607431768211455"},
+		{name: "two_chunk_integer_part", d: Decimal{coef: u128{hi: 10, lo: 5}, prec: 1}, places: 2, want: "18446744073709551616.50"},
+		{name: "places_beyond_max_prec_pads", d: RequireFromString("1.5"), places: 25, want: "1.5000000000000000000000000"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.d.StringFixed(tc.places), "StringFixed")
+			assert.Equal(t, tc.want, string(tc.d.AppendFixed(nil, tc.places)), "AppendFixed")
+		})
+	}
+}
+
+func TestAppendFixedAppendsToExisting(t *testing.T) {
+	buf := []byte("price=")
+	buf = mustHiLo(t, true, 0, 1234567, 4).AppendFixed(buf, 2)
+	assert.Equal(t, "price=-123.46", string(buf))
+
+	// A second append must extend, never restart, the buffer.
+	buf = One.AppendFixed(buf, 1)
+	assert.Equal(t, "price=-123.461.0", string(buf))
+}
+
+func TestStringFixedRandom(t *testing.T) {
+	rng := rand.New(rand.NewPCG(0xF18ED, 0x0016))
+	for range 20_000 {
+		d := newDecimal(randShapedU128(rng), rng.Uint64()&1 == 1, uint8(rng.Uint64N(uint64(MaxPrec)+1)))
+		places := uint8(rng.Uint64N(23)) // beyond MaxPrec to cover pure padding
+		want := fixedOracle(d, places)
+		require.Equal(t, want, d.StringFixed(places), "StringFixed of %+v at %d", d, places)
+		require.Equal(t, want, string(d.AppendFixed(nil, places)), "AppendFixed of %+v at %d", d, places)
+	}
+}

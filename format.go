@@ -45,28 +45,36 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 		scratch[pos] = '.'
 	}
 
-	// Integer part, least-significant 19-digit chunk first, so only the
-	// final (most significant) chunk needs leading-zero suppression.
-	if q.isZero() {
-		pos--
-		scratch[pos] = '0'
-	} else {
-		for {
-			next, chunk := divmod128Pow10(q, 19)
-			if next.isZero() {
-				pos = writeUnpadded(scratch[:], pos, chunk)
-				break
-			}
-			pos = writePadded(scratch[:], pos, chunk, 19)
-			q = next
-		}
-	}
+	pos = writeIntPart(scratch[:], pos, q)
 
 	if d.neg {
 		pos--
 		scratch[pos] = '-'
 	}
 	return append(dst, scratch[pos:end]...)
+}
+
+// writeIntPart writes the decimal digits of q right to left into buf, ending
+// just before pos, without leading zeros (a single "0" when q is zero), and
+// returns the index of the first digit written. It walks least-significant
+// 19-digit chunks first, so only the final (most significant) chunk needs
+// leading-zero suppression.
+//
+// PRECONDITION (not checked): pos leaves room for up to 39 digits.
+func writeIntPart(buf []byte, pos int, q u128) int {
+	if q.isZero() {
+		pos--
+		buf[pos] = '0'
+		return pos
+	}
+	for {
+		next, chunk := divmod128Pow10(q, 19)
+		if next.isZero() {
+			return writeUnpadded(buf, pos, chunk)
+		}
+		pos = writePadded(buf, pos, chunk, 19)
+		q = next
+	}
 }
 
 // writePadded writes exactly n decimal digits of v right to left into buf,
@@ -132,6 +140,51 @@ func (d Decimal) String() string {
 // error is always nil. It allocates only if b lacks capacity.
 func (d Decimal) AppendText(b []byte) ([]byte, error) {
 	return appendCanonical(b, d), nil
+}
+
+// zeroRun is the padding source for AppendFixed's trailing zeros, long
+// enough that any padding within MaxPrec costs a single append.
+const zeroRun = "00000000000000000000"
+
+// StringFixed returns d rounded to places fractional digits (ties away from
+// zero, like Round) and formatted with EXACTLY places fractional digits —
+// zero-padded, never trimmed — so StringFixed(3) of 1.5 is "1.500". With
+// places 0 the result has no decimal point. It costs one string allocation.
+func (d Decimal) StringFixed(places uint8) string {
+	var buf [48]byte
+	return string(d.AppendFixed(buf[:0], places))
+}
+
+// AppendFixed appends the StringFixed rendering of d to b and returns the
+// extended slice. It allocates only if b lacks capacity.
+func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
+	d = d.Round(places)
+	// After rounding d.prec ≤ places, so the fraction is the full d.prec
+	// digits of the remainder followed by places - d.prec padding zeros.
+	var scratch [48]byte
+	pos := len(scratch)
+
+	q, r := divmod128Pow10(d.coef, d.prec)
+	if d.prec > 0 {
+		pos = writePadded(scratch[:], pos, r, int(d.prec))
+	}
+	if places > 0 {
+		pos--
+		scratch[pos] = '.'
+	}
+	pos = writeIntPart(scratch[:], pos, q)
+	if d.neg {
+		pos--
+		scratch[pos] = '-'
+	}
+	b = append(b, scratch[pos:]...)
+
+	pad := int(places) - int(d.prec)
+	for pad >= len(zeroRun) {
+		b = append(b, zeroRun...)
+		pad -= len(zeroRun)
+	}
+	return append(b, zeroRun[:pad]...)
 }
 
 // InexactFloat64 returns the float64 nearest to d. The conversion goes

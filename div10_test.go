@@ -149,13 +149,14 @@ func buildInlineReport(t *testing.T) map[string]inlineReportEntry {
 	require.NoError(t, err, "go build -gcflags=-m=2: %s", out)
 
 	report := make(map[string]inlineReportEntry)
-	canRE := regexp.MustCompile(`: can inline (\w+) with cost (\d+) `)
+	// Names may be plain functions ("div2by1") or methods ("Decimal.Add").
+	canRE := regexp.MustCompile(`: can inline ([\w.]+) with cost (\d+) `)
 	for _, m := range canRE.FindAllStringSubmatch(string(out), -1) {
 		cost, perr := strconv.Atoi(m[2])
 		require.NoError(t, perr, "parse cost in %q", m[0])
 		report[m[1]] = inlineReportEntry{canInline: true, cost: cost}
 	}
-	cannotRE := regexp.MustCompile(`: cannot inline (\w+): function too complex: cost (\d+) `)
+	cannotRE := regexp.MustCompile(`: cannot inline ([\w.]+): function too complex: cost (\d+) `)
 	for _, m := range cannotRE.FindAllStringSubmatch(string(out), -1) {
 		cost, perr := strconv.Atoi(m[2])
 		require.NoError(t, perr, "parse cost in %q", m[0])
@@ -188,6 +189,77 @@ func TestDiv10InlineBudgets(t *testing.T) {
 		{"divmod64Pow10_fits_inline_budget", "divmod64Pow10", true, 0},
 		{"divmod128Pow10_dispatcher_stays_thin", "divmod128Pow10", false, 200},
 		{"divmod128Pow10Slow_stays_outlined", "divmod128Pow10Slow", false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, ok := report[tc.fn]
+			require.True(t, ok, "%s missing from -m=2 inline report", tc.fn)
+			if tc.requireInline {
+				assert.True(t, entry.canInline,
+					"%s must fit the default inline budget, got cost %d",
+					tc.fn, entry.cost)
+			}
+			if tc.maxCost > 0 {
+				assert.LessOrEqual(t, entry.cost, tc.maxCost,
+					"%s inline cost regressed", tc.fn)
+			}
+		})
+	}
+}
+
+// TestArithRoundingInlineBudgets pins the inlining shape of the arithmetic
+// and rounding layer the same way TestDiv10InlineBudgets pins the division
+// core's.
+//
+// Decision record, measured against the go1.26 cost model:
+//
+//   - Decimal.Add (149), Decimal.Sub (163), Decimal.Mul (152) CANNOT fit the
+//     default inline budget of 80. Their mandatory call into the outlined
+//     slow arm costs 57 on its own and the inlined add128 fast path another
+//     33, so no restructuring brings them under budget — the same structural
+//     ceiling Decimal.Cmp (192) and divmod128Pow10 (134) already live with.
+//     The cost ceilings below therefore protect the thin-wrapper/outlined-
+//     slow-arm split instead: re-merging addSlow (289) or mulSlow (422) into
+//     the wrappers would roughly triple their cost and regress the fast
+//     path's instruction stream.
+//   - Decimal.roundTo (211) keeps all six modes in one core. Inlining it
+//     into the exported wrappers (which would dead-branch-eliminate the
+//     constant mode switch) is likewise impossible under the budget, so the
+//     wrappers inline as single calls passing a constant mode and the switch
+//     resolves as one predictable jump inside the outlined core.
+//   - Every exported rounding method is a one-call wrapper (62) and MUST
+//     keep fitting the budget.
+func TestArithRoundingInlineBudgets(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
+	}
+	report := buildInlineReport(t)
+
+	tests := []struct {
+		name string
+		fn   string
+		// requireInline asserts the function fits the default inline budget.
+		requireInline bool
+		// maxCost bounds the reported cost; 0 means presence-only.
+		maxCost int
+	}{
+		{"add_wrapper_stays_thin", "Decimal.Add", false, 200},
+		{"sub_wrapper_stays_thin", "Decimal.Sub", false, 220},
+		{"mul_wrapper_stays_thin", "Decimal.Mul", false, 200},
+		{"addSlow_stays_outlined", "addSlow", false, 0},
+		{"addUnaligned_stays_outlined", "addUnaligned", false, 0},
+		{"mulSlow_stays_outlined", "mulSlow", false, 0},
+		{"roundTo_single_core_stays_lean", "Decimal.roundTo", false, 280},
+		{"round_fits_inline_budget", "Decimal.Round", true, 0},
+		{"round_bank_fits_inline_budget", "Decimal.RoundBank", true, 0},
+		{"round_up_fits_inline_budget", "Decimal.RoundUp", true, 0},
+		{"round_down_fits_inline_budget", "Decimal.RoundDown", true, 0},
+		{"round_ceil_fits_inline_budget", "Decimal.RoundCeil", true, 0},
+		{"round_floor_fits_inline_budget", "Decimal.RoundFloor", true, 0},
+		{"truncate_fits_inline_budget", "Decimal.Truncate", true, 0},
+		{"floor_fits_inline_budget", "Decimal.Floor", true, 0},
+		{"ceil_fits_inline_budget", "Decimal.Ceil", true, 0},
+		{"string_fixed_fits_inline_budget", "Decimal.StringFixed", true, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
