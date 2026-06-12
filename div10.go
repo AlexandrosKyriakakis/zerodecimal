@@ -20,8 +20,10 @@ import "math/bits"
 //     div2by1 for multi-limb dividends.
 //   - s: the normalization shift, bits.LeadingZeros64(d).
 //
-// The trailing padding pins the entry at exactly 32 bytes so two entries
-// share a cache line and indexing compiles to a shift, not a multiply.
+// The trailing padding pins the entry at exactly 40 bytes (the four words
+// plus a padded shift pair) so every field offset is constant; the whole
+// 20-entry table is 800 bytes and stays L1-resident, which matters far more
+// here than the stride multiply an entry size of 40 implies.
 type pow10Entry struct {
 	d, m, dn, v uint64
 	p, s        uint8
