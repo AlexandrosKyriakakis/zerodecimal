@@ -1,0 +1,52 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [oldstable, stable]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Unit tests (race)
+        run: go test -race -failfast -coverpkg=. -coverprofile=coverage.out -covermode=atomic .
+      - name: Allocation assertions (no race)
+        run: go test -run TestAllocs -count=1 .
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+
+  test-nostrcache:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -tags=zerodecimal_nostrcache -race -failfast .

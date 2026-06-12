@@ -1,0 +1,19 @@
+# Binaries and profiles
+*.test
+*.out
+*.pprof
+
+# Workspace files
+go.work
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+
+# Per-library benchmark runs (the published bench-vs-*.txt comparisons stay tracked)
+benchmarks/bench-zd.txt
+benchmarks/bench-udec.txt
+benchmarks/bench-alpaca.txt
+benchmarks/bench-ss.txt
+benchmarks/*.pgo

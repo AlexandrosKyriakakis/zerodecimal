@@ -1,0 +1,50 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errname
+    - errorlint
+    - goconst
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - nolintlint
+    - predeclared
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # struct layout is hand-tuned for the hot path
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+          - goconst
+          - unparam
+        path: _test.go
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/AlexandrosKyriakakis)
