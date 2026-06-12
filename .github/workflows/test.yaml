@@ -16,9 +16,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Pinned to the version developers run locally: linter releases move
+      # which findings exist, and nolintlint turns a newly-unused directive
+      # into an error. Bump local and CI together.
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.11.3
 
   test:
     strategy:
