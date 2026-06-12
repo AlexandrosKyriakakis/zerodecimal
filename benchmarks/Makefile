@@ -28,5 +28,12 @@ compare:
 	benchstat shopspring=bench-ss.txt zerodecimal=bench-zd.txt > bench-vs-shopspring.txt
 	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd.txt > bench-vs-ericlagergren.txt
 
+# PGO delta: collect a CPU profile over the zd benchmarks, re-run them with
+# the benchmark binary rebuilt against that profile, and publish the
+# default-vs-PGO benchstat. Needs bench-zd.txt (run `make bench-zd` first).
+# zd.pprof and bench-zd-pgo.txt are scratch; bench-pgo.txt is the published
+# artifact.
 pgo:
-	@echo "see pgo phase"
+	go test -bench=/zd/ -benchtime=0.2s -count=3 -timeout=2h -cpuprofile=zd.pprof -run NONE .
+	go test -bench=/zd/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -pgo=zd.pprof -run NONE . | sed "s|/zd/|/|g" > bench-zd-pgo.txt
+	benchstat default=bench-zd.txt pgo=bench-zd-pgo.txt > bench-pgo.txt

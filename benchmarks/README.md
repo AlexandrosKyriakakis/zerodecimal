@@ -106,8 +106,16 @@ make bench-alpaca
 make bench-ss
 make bench-eric
 make compare        # benchstat per-pair reports into bench-vs-*.txt
+make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
 ```
 
-`compare` needs `benchstat` (`go install golang.org/x/perf/cmd/benchstat@latest`).
-The per-library `bench-*.txt` files are scratch output (gitignored); the
-`bench-vs-*.txt` comparisons are the published artifacts.
+`compare` and `pgo` need `benchstat`
+(`go install golang.org/x/perf/cmd/benchstat@latest`).
+The per-library `bench-*.txt` files, `bench-zd-pgo.txt`, and `zd.pprof` are
+scratch output (gitignored); the `bench-vs-*.txt` comparisons and
+`bench-pgo.txt` are the published artifacts.
+
+`pgo` rebuilds the benchmark binary with the profile it just collected, so the
+published delta is what a consumer gets by feeding a production profile to
+`go build -pgo`: profile-driven inlining promotes zerodecimal's outlined slow
+paths into their hot call sites past the default inlining budget.

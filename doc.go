@@ -1,7 +1,7 @@
 // Package zerodecimal provides a fixed-point decimal type for
-// latency-critical financial code: strictly zero heap allocations on every
-// operation, panic-free sentinel errors, and arithmetic that is bit-exact
-// against arbitrary-precision references.
+// latency-critical financial code: zero heap allocations on every hot path,
+// panic-free sentinel errors, and arithmetic that is bit-exact against
+// arbitrary-precision references.
 //
 // # Representation
 //
@@ -20,6 +20,16 @@
 // Operations that cannot fail (Neg, Abs, rounding, comparisons, formatting)
 // return Decimal directly and chain freely.
 //
+// # Allocations
+//
+// Parsing, arithmetic, comparison, rounding, conversions, the Append*
+// methods, and every Unmarshal and Scan path allocate nothing — on success
+// and error paths alike. String and StringFixed cost exactly one allocation
+// (the returned string; values within ±1000.00 at up to two decimal places
+// are served from a precomputed cache for zero), the Marshal* methods
+// exactly one (the returned slice), and SQL Value at most two. The default
+// test suite enforces these counts exactly with testing.AllocsPerRun.
+//
 // # Equality
 //
 // Arithmetic does not trim trailing fractional zeros, so == on Decimal
@@ -29,4 +39,12 @@
 // zeros; NewFromHiLo keeps the supplied precision verbatim for raw interop.
 // Zero is always the zero value Decimal{} — no operation produces a negative
 // zero.
+//
+// # Build tags
+//
+// DefaultPrec — the precision Div targets and strict parsing accepts — is a
+// compile-time constant: 19 by default, lowered to 9 or 12 with the
+// zerodecimal_prec9 or zerodecimal_prec12 build tags. The
+// zerodecimal_nostrcache tag compiles out the small-value string cache that
+// String and Value consult.
 package zerodecimal

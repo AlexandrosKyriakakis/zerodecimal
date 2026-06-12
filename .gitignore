@@ -18,3 +18,7 @@ benchmarks/bench-alpaca.txt
 benchmarks/bench-ss.txt
 benchmarks/bench-eric.txt
 benchmarks/*.pgo
+
+# PGO scratch output (the published bench-pgo.txt comparison stays tracked)
+benchmarks/bench-zd-pgo.txt
+benchmarks/zd.pprof
