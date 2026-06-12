@@ -2,7 +2,10 @@ module github.com/AlexandrosKyriakakis/zero-decimal
 
 go 1.26
 
-require github.com/stretchr/testify v1.10.0
+require (
+	github.com/shopspring/decimal v1.4.0
+	github.com/stretchr/testify v1.10.0
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
