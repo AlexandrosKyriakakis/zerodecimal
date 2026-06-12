@@ -10,6 +10,7 @@ libraries on one shared operation × shape matrix:
 | `alpaca` | github.com/alpacahq/alpacadecimal                                         |
 | `ss`     | github.com/shopspring/decimal                                             |
 | `eric`   | github.com/ericlagergren/decimal                                          |
+| `dec`    | github.com/jokruger/dec128                                                |
 
 It is a separate Go module (`replace`d onto the parent directory) so the
 competitor dependencies never touch the library's own `go.mod`.
@@ -61,7 +62,7 @@ These are part of the story the numbers tell, not benchmark bugs:
   the benchmark would be measuring the error path.
 - **QuoRem mapping**: each library's closest exact-truncated-quotient API is
   used — zd `QuoRem(e)`, udec `QuoRem(e)`, alpaca/ss `QuoRem(e, 0)`, eric
-  `QuoRem(x, y, r)`.
+  `QuoRem(x, y, r)`, dec `QuoRem(e)`.
 - **eric context and mutability**: every `*decimal.Big` uses the context from
   udecimal's benchmark harness (precision 19, half-even). Results go through
   explicit receiver Bigs; RoundBank and Truncate are `Copy` + `Quantize` on a
@@ -77,6 +78,23 @@ These are part of the story the numbers tell, not benchmark bugs:
   digits. The work compared is each library's own contract.
 - **SQL caches**: zd (±1000.00, two decimal places) and alpaca have
   small-value caches, so `small_int` SQLValue/String rows measure cache hits.
+- **dec NaN poisoning**: dec128's fallible ops (FromString, Add, Sub, Mul,
+  Div, QuoRem, FromFloat64) return a NaN-poisoned `Dec128` instead of a
+  `(Decimal, error)` pair (NaN + 1 = NaN). The benchmarks sink the result
+  Decimal — there is no error to sink — so its error-path cost is not
+  directly comparable to the libraries that construct and return errors.
+- **dec Mul exactness**: dec128's `Mul` returns the exact product or NaN
+  (overflow) — it never truncates or rounds to fit. On `max_prec`, `large`,
+  and `near_max` the exact product needs more than 19 fractional digits or
+  128 coefficient bits, so those rows measure the full 256-bit multiply plus
+  the failed scale-reduction loop ending in NaN, not a representable product
+  (the same way eric's RoundBank/Truncate rows measure its NaN path on
+  `large`/`near_max`).
+- **dec AppendText mapping**: dec128 has no `AppendText`, but `StringToBuf`
+  is a genuine render-into-caller-buffer text API; it resets the buffer
+  (`buf[:0]`) instead of appending. The harness's append buffer is empty, so
+  the measured work is identical; the row is a buffer-reuse comparison, not
+  an `encoding.TextAppender` contract match.
 
 ## Known trade-offs
 
@@ -105,6 +123,7 @@ make bench-udec
 make bench-alpaca
 make bench-ss
 make bench-eric
+make bench-dec      # anchored -bench=/^dec$/ so it does not also match udec
 make compare        # benchstat per-pair reports into bench-vs-*.txt
 make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
 ```

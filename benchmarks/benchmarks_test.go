@@ -1,8 +1,10 @@
 // Package benchmarks compares zerodecimal against udecimal, alpacadecimal,
-// shopspring/decimal, and ericlagergren/decimal on a shared op × shape
-// matrix. Sub-benchmarks are named Benchmark<Op>/<lib>/<shape> with lib in
-// {zd, udec, alpaca, ss, eric} so that per-library runs can be filtered with
-// -bench=/<lib>/ and compared with benchstat after stripping the lib segment.
+// shopspring/decimal, ericlagergren/decimal, and jokruger/dec128 on a shared
+// op × shape matrix. Sub-benchmarks are named Benchmark<Op>/<lib>/<shape>
+// with lib in {zd, udec, alpaca, ss, eric, dec} so that per-library runs can
+// be filtered with -bench=/<lib>/ (anchored as /^dec$/ for dec, which is a
+// substring of udec) and compared with benchstat after stripping the lib
+// segment.
 //
 // Inputs are parsed once at package level per library type; every leaf
 // benchmark reports allocations, uses b.Loop, and writes results (errors
@@ -19,6 +21,7 @@ import (
 	alpaca "github.com/alpacahq/alpacadecimal"
 	ed "github.com/ericlagergren/decimal"
 	ericpg "github.com/ericlagergren/decimal/sql/postgres"
+	dec "github.com/jokruger/dec128"
 	udec "github.com/quagmt/udecimal"
 	ss "github.com/shopspring/decimal"
 
@@ -51,6 +54,7 @@ var (
 	alpacaA, alpacaB [numShapes]alpaca.Decimal
 	ssA, ssB         [numShapes]ss.Decimal
 	ericA, ericB     [numShapes]*ed.Big
+	decA, decB       [numShapes]dec.Dec128
 )
 
 // Pre-encoded inputs for the decode-direction codec and conversion benchmarks.
@@ -58,8 +62,8 @@ var (
 	floats   [numShapes]float64
 	scanSrcs [numShapes]any
 
-	zdJSON, udecJSON, alpacaJSON, ssJSON, ericJSON [numShapes][]byte
-	zdBin, udecBin, ssBin                          [numShapes][]byte
+	zdJSON, udecJSON, alpacaJSON, ssJSON, ericJSON, decJSON [numShapes][]byte
+	zdBin, udecBin, ssBin, decBin                           [numShapes][]byte
 )
 
 // ericValuers wraps each eric operand for the driver.Valuer benchmarks.
@@ -71,6 +75,7 @@ var (
 	udecSink, udecSink2     udec.Decimal
 	alpacaSink, alpacaSink2 alpaca.Decimal
 	ssSink, ssSink2         ss.Decimal
+	decSink, decSink2       dec.Dec128
 	ericPtrSink             *ed.Big
 	ericPtrSink2            *ed.Big
 
@@ -88,6 +93,7 @@ var (
 	udecDst   udec.Decimal
 	alpacaDst alpaca.Decimal
 	ssDst     ss.Decimal
+	decDst    dec.Dec128
 	ericDst   = newEricSink(ed.ToNearestEven)
 	ericPGDst = ericpg.Decimal{V: newEricSink(ed.ToNearestEven)}
 )
@@ -123,6 +129,16 @@ func newEric(s string) *ed.Big {
 	return z
 }
 
+// mustDec parses s into a dec128 Dec128, panicking on bad fixtures: dec128
+// reports failure by returning a NaN-poisoned value instead of an error.
+func mustDec(s string) dec.Dec128 {
+	d := dec.FromString(s)
+	if d.IsNaN() {
+		panic("benchmarks: dec128 cannot parse " + s)
+	}
+	return d
+}
+
 // mustBytes unwraps a ([]byte, error) fixture constructor, panicking on error.
 func mustBytes(b []byte, err error) []byte {
 	if err != nil {
@@ -143,6 +159,8 @@ func init() {
 		ssB[i] = ss.RequireFromString(sh.b)
 		ericA[i] = newEric(sh.a)
 		ericB[i] = newEric(sh.b)
+		decA[i] = mustDec(sh.a)
+		decB[i] = mustDec(sh.b)
 
 		f, err := strconv.ParseFloat(sh.a, 64)
 		if err != nil {
@@ -156,10 +174,12 @@ func init() {
 		alpacaJSON[i] = mustBytes(alpacaA[i].MarshalJSON())
 		ssJSON[i] = mustBytes(ssA[i].MarshalJSON())
 		ericJSON[i] = mustBytes(ericA[i].MarshalText())
+		decJSON[i] = mustBytes(decA[i].MarshalJSON())
 
 		zdBin[i] = mustBytes(zdA[i].MarshalBinary())
 		udecBin[i] = mustBytes(udecA[i].MarshalBinary())
 		ssBin[i] = mustBytes(ssA[i].MarshalBinary())
+		decBin[i] = mustBytes(decA[i].MarshalBinary())
 
 		ericValuers[i] = &ericpg.Decimal{V: ericA[i]}
 	}
@@ -198,6 +218,12 @@ func BenchmarkParse(b *testing.B) {
 				ericPtrSink, boolSink = ericDst.SetString(s)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = dec.FromString(s)
+			}
+		})
 	}
 }
 
@@ -233,6 +259,13 @@ func BenchmarkString(b *testing.B) {
 		})
 		b.Run("eric/"+sh.name, func(b *testing.B) {
 			d := ericA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				strSink = d.String()
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
 			b.ReportAllocs()
 			for b.Loop() {
 				strSink = d.String()
@@ -278,6 +311,13 @@ func BenchmarkAdd(b *testing.B) {
 				ericPtrSink = ericSink.Add(d, e)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.Add(e)
+			}
+		})
 	}
 }
 
@@ -316,6 +356,13 @@ func BenchmarkSub(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				ericPtrSink = ericSink.Sub(d, e)
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.Sub(e)
 			}
 		})
 	}
@@ -358,6 +405,15 @@ func BenchmarkMul(b *testing.B) {
 				ericPtrSink = ericSink.Mul(d, e)
 			}
 		})
+		// dec on max_prec, large, near_max: measures the overflow-to-NaN
+		// path — dec128 only returns exact products (see README).
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.Mul(e)
+			}
+		})
 	}
 }
 
@@ -396,6 +452,13 @@ func BenchmarkDiv(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				ericPtrSink = ericSink.Quo(d, e)
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.Div(e)
 			}
 		})
 	}
@@ -438,6 +501,13 @@ func BenchmarkQuoRem(b *testing.B) {
 				ericPtrSink, ericPtrSink2 = ericSink.QuoRem(d, e, ericRemSink)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink, decSink2 = d.QuoRem(e)
+			}
+		})
 	}
 }
 
@@ -476,6 +546,13 @@ func BenchmarkCmp(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				intSink = d.Cmp(e)
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d, e := decA[i], decB[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				intSink = d.Compare(e)
 			}
 		})
 	}
@@ -518,6 +595,13 @@ func BenchmarkRoundBank(b *testing.B) {
 				ericPtrSink = ericSink.Copy(d).Quantize(roundPlaces)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.RoundBank(roundPlaces)
+			}
+		})
 	}
 }
 
@@ -558,6 +642,13 @@ func BenchmarkTruncate(b *testing.B) {
 				ericPtrSink = ericTruncSink.Copy(d).Quantize(roundPlaces)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = d.Trunc(roundPlaces)
+			}
+		})
 	}
 }
 
@@ -593,6 +684,13 @@ func BenchmarkMarshalJSON(b *testing.B) {
 		})
 		// eric: skipped, *decimal.Big has no MarshalJSON (MarshalText is a
 		// different operation).
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				bytesSink, errSink = d.MarshalJSON()
+			}
+		})
 	}
 }
 
@@ -633,6 +731,13 @@ func BenchmarkUnmarshalJSON(b *testing.B) {
 				errSink = ericDst.UnmarshalJSON(data)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			data := decJSON[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				errSink = decDst.UnmarshalJSON(data)
+			}
+		})
 	}
 }
 
@@ -662,6 +767,13 @@ func BenchmarkMarshalBinary(b *testing.B) {
 		// alpaca: skipped, its binary codec converts to shopspring and
 		// delegates, so the ss rows already measure that path.
 		// eric: skipped, *decimal.Big has no binary codec.
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				bytesSink, errSink = d.MarshalBinary()
+			}
+		})
 	}
 }
 
@@ -689,6 +801,13 @@ func BenchmarkUnmarshalBinary(b *testing.B) {
 			}
 		})
 		// alpaca, eric: skipped for the same reasons as MarshalBinary.
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			data := decBin[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				errSink = decDst.UnmarshalBinary(data)
+			}
+		})
 	}
 }
 
@@ -709,6 +828,16 @@ func BenchmarkAppendText(b *testing.B) {
 			}
 		})
 		// alpaca, ss, eric: skipped, no append-style text API.
+		// dec: StringToBuf is its buffer-reuse text renderer; it resets the
+		// buffer instead of appending, identical work on an empty buffer
+		// (see README).
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				bytesSink = d.StringToBuf(appendBuf)
+			}
+		})
 	}
 }
 
@@ -744,6 +873,13 @@ func BenchmarkSQLValue(b *testing.B) {
 		})
 		b.Run("eric/"+sh.name, func(b *testing.B) {
 			d := ericValuers[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				valueSink, errSink = d.Value()
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			d := decA[i]
 			b.ReportAllocs()
 			for b.Loop() {
 				valueSink, errSink = d.Value()
@@ -789,6 +925,13 @@ func BenchmarkSQLScan(b *testing.B) {
 				errSink = ericPGDst.Scan(src)
 			}
 		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			src := scanSrcs[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				errSink = decDst.Scan(src)
+			}
+		})
 	}
 }
 
@@ -827,6 +970,13 @@ func BenchmarkNewFromFloat(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				ericPtrSink = ericSink.SetFloat64(f)
+			}
+		})
+		b.Run("dec/"+sh.name, func(b *testing.B) {
+			f := floats[i]
+			b.ReportAllocs()
+			for b.Loop() {
+				decSink = dec.FromFloat64(f)
 			}
 		})
 	}
