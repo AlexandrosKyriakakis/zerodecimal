@@ -9,6 +9,11 @@ import "database/sql/driver"
 // cacheSpan + cents.
 const cacheSpan = 100000
 
+// strCacheEnabled records at compile time that the small-value string cache
+// is present in this build; the zerodecimal_nostrcache tag selects the
+// constant-false twin in cache_off.go.
+const strCacheEnabled = true
+
 // stringCache maps every hundredths offset in [-cacheSpan, +cacheSpan] to
 // its canonical string. It is built in init through appendCanonical, so a
 // cached result is byte-identical to a computed one by construction; the

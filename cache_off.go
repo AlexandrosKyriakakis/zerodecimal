@@ -8,6 +8,10 @@ import "database/sql/driver"
 // cache.go); kept here so both build modes expose the same constant.
 const cacheSpan = 100000
 
+// strCacheEnabled records at compile time that the small-value string cache
+// is compiled out of this build (see cache.go for the cache itself).
+const strCacheEnabled = false
+
 // cachedString always reports a miss: the small-value string cache is
 // compiled out under the zerodecimal_nostrcache build tag, and the constant
 // false folds every cache probe away.
