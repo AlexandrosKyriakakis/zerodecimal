@@ -187,11 +187,19 @@ func FuzzParseString(f *testing.F) {
 			require.NoErrorf(t, err2, "canonical output must reparse: %q from %q", s, raw)
 			require.Equalf(t, d, again, "canonical round trip is representation-exact: %q", raw)
 			ssV, ssErr := decimal.NewFromString(raw)
-			if ssErr != nil {
+			switch {
+			case ssErr != nil:
 				// shopspring's int32 exponent rejects the huge exponents our
 				// saturating parser folds into an exact zero.
 				require.Truef(t, d.IsZero(), "shopspring rejected %q yet we parsed nonzero %+v", raw, d)
-			} else {
+			case d.IsZero() || ssV.IsZero():
+				// Compare zeroness directly: shopspring's Equal rescales by
+				// 10^|expDiff| in big.Int, which explodes on zeros carrying a
+				// huge-but-int32 exponent like "0e900190000". Nonzero values
+				// with such exponents never reach here — our parser already
+				// rejected them as ErrOverflow or ErrPrecOutOfRange.
+				require.Equalf(t, d.IsZero(), ssV.IsZero(), "zeroness vs shopspring: %q -> %s vs %s", raw, d, ssV)
+			default:
 				require.Truef(t, ssV.Equal(ssOf(d)), "parse value vs shopspring: %q -> %s vs %s", raw, d, ssV)
 			}
 		}
