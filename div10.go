@@ -85,6 +85,14 @@ func divmod64Pow10(u uint64, k uint8) (q, r uint64) {
 // divmod128Pow10 returns q = u / 10^k and r = u % 10^k. The remainder
 // always fits uint64 because 10^k < 2^64 for every k ≤ MaxPrec.
 //
+// Only dispatch lives here; the two-limb division is outlined into
+// divmod128Pow10Slow so the cold normalization-and-div2by1 machinery stays
+// out of the one-limb path's instruction stream. The dispatcher still cannot
+// inline under the compiler's default budget — the inlined divmod64Pow10
+// fast path plus one outlined call exceed it before any branches are
+// counted — so callers on a measured hot path that already know u.hi == 0
+// should invoke divmod64Pow10 directly; it fits the budget on its own.
+//
 // PRECONDITION (not checked): k ≤ MaxPrec.
 func divmod128Pow10(u u128, k uint8) (u128, uint64) {
 	// k == 0 must short-circuit: string formatting divides by 10^prec and
@@ -97,7 +105,16 @@ func divmod128Pow10(u u128, k uint8) (u128, uint64) {
 		q, r := divmod64Pow10(u.lo, k)
 		return u128{lo: q}, r
 	}
+	return divmod128Pow10Slow(u, k)
+}
 
+// divmod128Pow10Slow returns q = u / 10^k and r = u % 10^k for dividends
+// that occupy both limbs, via two Möller-Granlund div2by1 passes over the
+// normalized dividend. divmod128Pow10 reaches it only when u.hi != 0, but
+// correctness needs nothing beyond the k precondition.
+//
+// PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec.
+func divmod128Pow10Slow(u u128, k uint8) (u128, uint64) {
 	e := pow10Tab[k&31]
 	s := uint(e.s)
 	// Normalize the dividend by s so dn = 10^k<<s has its top bit set.

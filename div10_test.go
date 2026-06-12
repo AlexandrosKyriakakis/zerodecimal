@@ -5,6 +5,9 @@ import (
 	"math/big"
 	"math/bits"
 	"math/rand/v2"
+	"os/exec"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -127,6 +130,79 @@ func TestDivmod64Pow10Random(t *testing.T) {
 					n, k, q, r, n/d, n%d)
 			}
 		}
+	}
+}
+
+// inlineReportEntry is one function's verdict from the compiler's -m=2
+// inlining diagnostics: whether it can inline and at what cost.
+type inlineReportEntry struct {
+	canInline bool
+	cost      int
+}
+
+// buildInlineReport compiles the package with -gcflags=-m=2 and parses the
+// per-function inlining verdicts. The build cache replays compiler
+// diagnostics, so repeated runs stay fast and deterministic.
+func buildInlineReport(t *testing.T) map[string]inlineReportEntry {
+	t.Helper()
+	out, err := exec.Command("go", "build", "-gcflags=-m=2", ".").CombinedOutput()
+	require.NoError(t, err, "go build -gcflags=-m=2: %s", out)
+
+	report := make(map[string]inlineReportEntry)
+	canRE := regexp.MustCompile(`: can inline (\w+) with cost (\d+) `)
+	for _, m := range canRE.FindAllStringSubmatch(string(out), -1) {
+		cost, perr := strconv.Atoi(m[2])
+		require.NoError(t, perr, "parse cost in %q", m[0])
+		report[m[1]] = inlineReportEntry{canInline: true, cost: cost}
+	}
+	cannotRE := regexp.MustCompile(`: cannot inline (\w+): function too complex: cost (\d+) `)
+	for _, m := range cannotRE.FindAllStringSubmatch(string(out), -1) {
+		cost, perr := strconv.Atoi(m[2])
+		require.NoError(t, perr, "parse cost in %q", m[0])
+		report[m[1]] = inlineReportEntry{canInline: false, cost: cost}
+	}
+	return report
+}
+
+func TestDiv10InlineBudgets(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
+	}
+	report := buildInlineReport(t)
+
+	// The dispatcher itself can never inline under the default budget of 80:
+	// the inlined divmod64Pow10 fast path (34) plus one outlined call (57)
+	// already cost 91. What the cost bound below protects is the split — a
+	// re-merged two-limb body measures 275, while the thin dispatcher
+	// measures 134; 200 separates the two with headroom for compiler
+	// cost-model drift across releases.
+	tests := []struct {
+		name string
+		fn   string
+		// requireInline asserts the function fits the default inline budget.
+		requireInline bool
+		// maxCost bounds the reported cost; 0 means presence-only.
+		maxCost int
+	}{
+		{"div2by1_fits_inline_budget", "div2by1", true, 0},
+		{"divmod64Pow10_fits_inline_budget", "divmod64Pow10", true, 0},
+		{"divmod128Pow10_dispatcher_stays_thin", "divmod128Pow10", false, 200},
+		{"divmod128Pow10Slow_stays_outlined", "divmod128Pow10Slow", false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, ok := report[tc.fn]
+			require.True(t, ok, "%s missing from -m=2 inline report", tc.fn)
+			if tc.requireInline {
+				assert.True(t, entry.canInline,
+					"%s must fit the default inline budget, got cost %d",
+					tc.fn, entry.cost)
+			}
+			if tc.maxCost > 0 {
+				assert.LessOrEqual(t, entry.cost, tc.maxCost,
+					"%s inline cost regressed", tc.fn)
+			}
+		})
 	}
 }
 
