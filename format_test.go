@@ -298,6 +298,54 @@ func TestAppendFixedAppendsToExisting(t *testing.T) {
 	assert.Equal(t, "price=-123.461.0", string(buf))
 }
 
+// TestStringFixedReparse pins the parse contract of fixed renderings flagged
+// by the differential fuzz suite: padding zeros can push the digits as
+// written past 39 significant figures, which strict parsing deliberately
+// rejects (the written coefficient must fit 128 bits before trailing-zero
+// trimming), while truncating parsing drops only the padding and recovers the
+// exact rounded value.
+func TestStringFixedReparse(t *testing.T) {
+	tests := []struct {
+		name      string
+		d         Decimal
+		places    uint8
+		strictErr error
+	}{
+		{
+			name:      "pow2_127_coef_padding_overflows_strict_parse",
+			d:         Decimal{coef: u128{hi: 1 << 63}, prec: 18},
+			places:    19,
+			strictErr: ErrOverflow,
+		},
+		{
+			name:      "negative_max_coef_padding_overflows_strict_parse",
+			d:         Decimal{coef: u128{hi: maxUint64, lo: maxUint64}, neg: true, prec: 1},
+			places:    11,
+			strictErr: ErrOverflow,
+		},
+		{
+			name:   "padding_within_coefficient_strict_reparses",
+			d:      RequireFromString("1.5"),
+			places: 3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.d.StringFixed(tc.places)
+			strict, err := NewFromString(s)
+			if tc.strictErr != nil {
+				require.ErrorIs(t, err, tc.strictErr, "strict parse of %q", s)
+			} else {
+				require.NoError(t, err, "strict parse of %q", s)
+				require.Zero(t, tc.d.Round(tc.places).Cmp(strict), "strict reparse of %q", s)
+			}
+			trunc, err := NewFromStringTrunc(s)
+			require.NoError(t, err, "trunc parse of %q", s)
+			require.Zero(t, tc.d.Round(tc.places).Cmp(trunc), "trunc reparse must recover the rounded value: %q", s)
+		})
+	}
+}
+
 func TestStringFixedRandom(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0xF18ED, 0x0016))
 	for range 20_000 {
