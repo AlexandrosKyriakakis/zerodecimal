@@ -122,6 +122,7 @@ func TestParseStrictErrors(t *testing.T) {
 		{"fraction_offset_still_overflows", "1.5e39", ErrOverflow},
 		{"saturated_positive_exponent", "1e+99999999999999999999", ErrOverflow},
 		{"saturated_negative_exponent", "1e-99999999999999999999", ErrPrecOutOfRange},
+		{"forty_fraction_digits", "0." + strings.Repeat("1", 40), ErrOverflow},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,6 +152,15 @@ func TestParseTrunc(t *testing.T) {
 		{"integer_part_survives_truncation", "12345.678901234567890123456789", "12345.6789012345678901234", nil},
 		{"overflow_still_errors", "1e39", "", ErrOverflow},
 		{"coefficient_overflow_still_errors", "340282366920938463463374607431768211456", "", ErrOverflow},
+		{"forty_fraction_digits_truncate", "0." + strings.Repeat("1", 40), "0.1111111111111111111", nil},
+		{"forty_four_sig_digits_truncate", "123.45678901234567890123456789012345678901234", "123.4567890123456789012", nil},
+		{"thirty_nine_fraction_nines_truncate", "0." + strings.Repeat("9", 39), "0.9999999999999999999", nil},
+		{"hundred_fraction_digits_truncate", "0." + strings.Repeat("7", 100), "0.7777777777777777777", nil},
+		{"exponent_rescues_dropped_tail", "0." + strings.Repeat("1", 40) + "e10", "1111111111.1111111111111111111", nil},
+		{"dropped_window_zeros_keep_integer", "1" + strings.Repeat("0", 38) + ".00000000000000000005", "1" + strings.Repeat("0", 38), nil},
+		{"max_coef_zero_fraction_trims", "340282366920938463463374607431768211455.000000", "340282366920938463463374607431768211455", nil},
+		{"nonzero_kept_digit_still_overflows", "340282366920938463463374607431768211455.5", "", ErrOverflow},
+		{"forty_integer_digits_still_overflow", strings.Repeat("9", 40), "", ErrOverflow},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

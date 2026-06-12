@@ -47,7 +47,10 @@ func init() {
 // or ok == false when d lies outside the cached window.
 func cachedString(d Decimal) (string, bool) {
 	idx, ok := cacheIndex(d)
-	if !ok {
+	// A returned index is always in range; the impossible second comparison
+	// restates that for the compiler, which then drops the bounds check on
+	// the String hot path.
+	if !ok || idx >= uint64(len(stringCache)) {
 		return "", false
 	}
 	return stringCache[idx], true
@@ -58,7 +61,8 @@ func cachedString(d Decimal) (string, bool) {
 // the cached window.
 func cachedValue(d Decimal) (driver.Value, bool) {
 	idx, ok := cacheIndex(d)
-	if !ok {
+	// See cachedString: the second comparison only discharges the bounds check.
+	if !ok || idx >= uint64(len(valueCache)) {
 		return nil, false
 	}
 	return valueCache[idx], true

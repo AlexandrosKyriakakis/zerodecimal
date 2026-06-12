@@ -18,9 +18,14 @@ const maxParseLen = 200
 // any exponent above expCap demands a scale-up beyond 10^38 — certain
 // ErrOverflow for a nonzero coefficient — and any exponent below -expCap
 // pushes the effective precision at least 39 digits past MaxPrec, where
-// truncation of a sub-2^128 coefficient is exactly zero. Beyond the cap only
-// the side matters, never the magnitude, and saturation keeps the int
-// accumulator overflow-free (it never exceeds 10·expCap + 9).
+// truncation of a sub-2^128 coefficient is exactly zero. Trunc-mode digit
+// dropping preserves both sides: a saturated exponent needs at least four
+// bytes of exponent text, so fewer than maxParseLen-42 mantissa digits can
+// be dropped, leaving the folded effective precision beyond 3·MaxPrec (where
+// truncation is still exactly zero) and the dropped-tail overflow guard even
+// further into certain ErrOverflow. Beyond the cap only the side matters,
+// never the magnitude, and saturation keeps the int accumulator
+// overflow-free (it never exceeds 10·expCap + 9).
 const expCap = maxParseLen + 2*int(MaxPrec) + 1
 
 // parseCore parses the decimal literal s without copying or allocating; it is
@@ -35,12 +40,17 @@ const expCap = maxParseLen + 2*int(MaxPrec) + 1
 // trailing dots is deliberately stricter than shopspring/decimal.
 //
 // The coefficient accumulates over significant digits only (leading zeros are
-// skipped) and must fit 128 bits, else ErrOverflow. The exponent then shifts
-// the fractional length: a value needing negative precision is scaled up into
-// the integer domain (ErrOverflow past 2^128-1), and one needing more than
-// MaxPrec fractional digit positions — even positions holding zeros — returns
-// ErrPrecOutOfRange when trunc is false, or is truncated toward zero (possibly
-// to exactly zero) at prec MaxPrec when trunc is true.
+// skipped) and must fit 128 bits. A digit that does not fit returns
+// ErrOverflow when trunc is false; when trunc is true the remaining mantissa
+// tail is dropped instead — only its positions and first nonzero digit are
+// tracked — and folded into the precision arithmetic after the exponent is
+// known, so over-long input parses whenever its MaxPrec-truncated value is
+// representable. The exponent then shifts the fractional length: a value
+// needing negative precision is scaled up into the integer domain
+// (ErrOverflow past 2^128-1), and one needing more than MaxPrec fractional
+// digit positions — even positions holding zeros — returns ErrPrecOutOfRange
+// when trunc is false, or is truncated toward zero (possibly to exactly
+// zero) at prec MaxPrec when trunc is true.
 //
 // The result is canonical: trailing fractional zeros are trimmed ("1.500"
 // parses identically to "1.5") and zero is always Decimal{}. All errors are
@@ -70,6 +80,8 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 		coef     u128   // coefficient accumulator once sig > 19
 		sig      int    // significant digits accumulated (leading zeros skipped)
 		frac     int    // digit positions seen after the decimal point
+		dropped  int    // mantissa digits past the accumulator (trunc mode only)
+		dropNZ   int    // 1-based index of the first nonzero dropped digit; 0 = all zero
 		sawDot   bool
 		sawDigit bool
 	)
@@ -95,12 +107,30 @@ scan:
 			if sig == 20 {
 				coef = u128{lo: lo} // promote to two limbs for digits 20..39
 			}
-			var over, carry uint64
-			coef, over = mul128by64(coef, 10)
-			coef, carry = add128(coef, u128{lo: uint64(c - '0')})
-			if over|carry != 0 {
-				return Decimal{}, ErrOverflow // 40th digit always lands here
+			if dropped > 0 {
+				// Already dropping the tail: only positions and the first
+				// nonzero digit matter (see the dropped-tail fold below).
+				dropped++
+				if dropNZ == 0 && c != '0' {
+					dropNZ = dropped
+				}
+				continue
 			}
+			grown, over := mul128by64(coef, 10)
+			grown, carry := add128(grown, u128{lo: uint64(c - '0')})
+			if over|carry != 0 {
+				// The 40th significant digit always lands here; a 39th that
+				// crosses 2^128-1 does too.
+				if !trunc {
+					return Decimal{}, ErrOverflow
+				}
+				dropped = 1
+				if c != '0' {
+					dropNZ = 1
+				}
+				continue
+			}
+			coef = grown
 		case c == '.':
 			// One dot, with a digit on each side: rejects ".1", "1.", "1..2".
 			if sawDot || !sawDigit || i+1 == n || s[i+1] < '0' || s[i+1] > '9' {
@@ -146,6 +176,28 @@ scan:
 		coef = u128{lo: lo}
 	}
 
+	// Fold the dropped mantissa tail (trunc mode only) into the precision
+	// arithmetic. The full coefficient is coef·10^dropped + tail with
+	// tail < 10^dropped, and shift counts the dropped positions that land at
+	// or above the 10^-MaxPrec place of the final value:
+	//
+	//   - shift ≤ 0: every dropped digit lies below the truncation point, so
+	//     ⌊full/10^excess⌋ == ⌊coef/10^(excess-dropped)⌋ exactly and reducing
+	//     frac by dropped loses nothing.
+	//   - 1 ≤ shift ≤ MaxPrec with dropped digits 1..shift all zero: the
+	//     truncated value is exactly coef·10^-(MaxPrec-shift), which the
+	//     reduced frac hands to the exact branch of the switch below.
+	//   - anything else: the truncated value retains a digit beyond the 39
+	//     accumulated ones, so its canonical coefficient is at least the
+	//     overflowing coef·10 + first dropped digit ≥ 2^128 — ErrOverflow.
+	if dropped > 0 {
+		shift := dropped - (frac - exp - int(MaxPrec))
+		if shift > 0 && (shift > int(MaxPrec) || (dropNZ != 0 && dropNZ <= shift)) {
+			return Decimal{}, ErrOverflow
+		}
+		frac -= dropped
+	}
+
 	// Combine the exponent with the fractional length into the precision.
 	var prec uint8
 	switch effPrec := frac - exp; {
@@ -187,7 +239,8 @@ scan:
 			coef, _ = divmod128Pow10(coef, MaxPrec)
 			excess -= int(MaxPrec)
 		}
-		coef, _ = divmod128Pow10(coef, uint8(excess)) // 1 ≤ excess ≤ 19: exact
+		//nolint:gosec // 1 ≤ excess ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact
+		coef, _ = divmod128Pow10(coef, uint8(excess))
 
 		prec = MaxPrec
 	}
@@ -219,8 +272,12 @@ func NewFromString(s string) (Decimal, error) {
 
 // NewFromStringTrunc is NewFromString except that a value needing more than
 // MaxPrec fractional digits is truncated toward zero at prec MaxPrec —
-// possibly to exactly zero — instead of returning ErrPrecOutOfRange. All
-// other errors are unchanged.
+// possibly to exactly zero — instead of returning ErrPrecOutOfRange. The
+// truncation also covers mantissas longer than the 128-bit coefficient can
+// hold: input with forty or more significant digits parses whenever the
+// truncated value itself is representable, and ErrOverflow remains only for
+// values whose truncated coefficient exceeds 2^128-1. All other errors are
+// unchanged.
 func NewFromStringTrunc(s string) (Decimal, error) {
 	return parseCore(s, true)
 }

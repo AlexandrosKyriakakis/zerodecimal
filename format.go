@@ -19,15 +19,26 @@ const digitPairs = "00010203040506070809" +
 	"80818283848586878889" +
 	"90919293949596979899"
 
+// scratchLen is the size of the right-to-left formatting scratch buffer and
+// scratchMask its index mask. The widest rendering — sign, 39 coefficient
+// digits, decimal point — is 41 bytes; sizing the buffer to the next power
+// of two lets every cursor index be masked with scratchMask, which proves it
+// in range to the compiler so the digit writers carry no bounds checks (the
+// pow10Tab[k&31] pattern). Under the documented cursor preconditions every
+// mask is the identity.
+const (
+	scratchLen  = 64
+	scratchMask = scratchLen - 1
+)
+
 // appendCanonical appends the canonical decimal rendering of d to dst and
 // returns the extended slice. Canonical form: optional leading minus, integer
 // digits without leading zeros (a single "0" when the integer part is empty —
 // "0.5", never ".5"), then the fractional digits with trailing zeros trimmed
 // and no trailing point; zero is "0". Digits are written right to left into a
-// stack scratch buffer — [48]byte covers the 41-byte worst case of sign plus
-// 39 digits plus point — and reach dst with a single append.
+// stack scratch buffer and reach dst with a single append.
 func appendCanonical(dst []byte, d Decimal) []byte {
-	var scratch [48]byte
+	var scratch [scratchLen]byte
 	pos := len(scratch)
 	end := len(scratch)
 
@@ -36,20 +47,28 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 	// Fractional part. r == 0 covers both prec == 0 and an all-zero
 	// fraction, which trims away entirely, point included.
 	if r != 0 {
-		pos = writePadded(scratch[:], pos, r, int(d.prec))
+		pos = writePadded(&scratch, pos, r, int(d.prec))
 		// r != 0 guarantees a nonzero digit, so the trim loop terminates.
-		for scratch[end-1] == '0' {
+		for scratch[(end-1)&scratchMask] == '0' {
 			end--
 		}
 		pos--
-		scratch[pos] = '.'
+		scratch[pos&scratchMask] = '.'
 	}
 
-	pos = writeIntPart(scratch[:], pos, q)
+	pos = writeIntPart(&scratch, pos, q)
 
 	if d.neg {
 		pos--
-		scratch[pos] = '-'
+		scratch[pos&scratchMask] = '-'
+	}
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (at most 41 of the
+	// 64 bytes are consumed); restating it in this checkable form lets the
+	// compiler drop the slice bounds check, and the impossible branch keeps
+	// dst untouched.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return dst
 	}
 	return append(dst, scratch[pos:end]...)
 }
@@ -60,11 +79,13 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 // 19-digit chunks first, so only the final (most significant) chunk needs
 // leading-zero suppression.
 //
-// PRECONDITION (not checked): pos leaves room for up to 39 digits.
-func writeIntPart(buf []byte, pos int, q u128) int {
+// PRECONDITION (not checked): pos leaves room for up to 39 digits. Stores
+// are masked with scratchMask — in range by the precondition, and proven in
+// range to the compiler — so a violation would wrap within buf, not panic.
+func writeIntPart(buf *[scratchLen]byte, pos int, q u128) int {
 	if q.isZero() {
 		pos--
-		buf[pos] = '0'
+		buf[pos&scratchMask] = '0'
 		return pos
 	}
 	for {
@@ -81,19 +102,20 @@ func writeIntPart(buf []byte, pos int, q u128) int {
 // ending just before pos and zero-padding on the left, and returns the index
 // of the first digit written.
 //
-// PRECONDITIONS (not checked): v < 10^n, 1 ≤ n ≤ 19, and pos ≥ n.
-func writePadded(buf []byte, pos int, v uint64, n int) int {
+// PRECONDITIONS (not checked): v < 10^n, 1 ≤ n ≤ 19, and pos ≥ n. Stores are
+// masked with scratchMask (see writeIntPart).
+func writePadded(buf *[scratchLen]byte, pos int, v uint64, n int) int {
 	for n >= 2 {
 		pair := v % 100 * 2
 		v /= 100
 		pos -= 2
-		buf[pos] = digitPairs[pair]
-		buf[pos+1] = digitPairs[pair+1]
+		buf[pos&scratchMask] = digitPairs[pair]
+		buf[(pos+1)&scratchMask] = digitPairs[pair+1]
 		n -= 2
 	}
 	if n == 1 {
 		pos--
-		buf[pos] = byte('0' + v%10)
+		buf[pos&scratchMask] = byte('0' + v%10)
 	}
 	return pos
 }
@@ -102,24 +124,25 @@ func writePadded(buf []byte, pos int, v uint64, n int) int {
 // into buf without leading zeros, ending just before pos, and returns the
 // index of the first digit written.
 //
-// PRECONDITIONS (not checked): 0 < v < 10^20 and pos ≥ 20.
-func writeUnpadded(buf []byte, pos int, v uint64) int {
+// PRECONDITIONS (not checked): 0 < v < 10^20 and pos ≥ 20. Stores are masked
+// with scratchMask (see writeIntPart).
+func writeUnpadded(buf *[scratchLen]byte, pos int, v uint64) int {
 	for v >= 100 {
 		pair := v % 100 * 2
 		v /= 100
 		pos -= 2
-		buf[pos] = digitPairs[pair]
-		buf[pos+1] = digitPairs[pair+1]
+		buf[pos&scratchMask] = digitPairs[pair]
+		buf[(pos+1)&scratchMask] = digitPairs[pair+1]
 	}
 	if v >= 10 {
 		pair := v * 2
 		pos -= 2
-		buf[pos] = digitPairs[pair]
-		buf[pos+1] = digitPairs[pair+1]
+		buf[pos&scratchMask] = digitPairs[pair]
+		buf[(pos+1)&scratchMask] = digitPairs[pair+1]
 		return pos
 	}
 	pos--
-	buf[pos] = byte('0' + v)
+	buf[pos&scratchMask] = byte('0' + v)
 	return pos
 }
 
@@ -142,9 +165,10 @@ func (d Decimal) AppendText(b []byte) ([]byte, error) {
 	return appendCanonical(b, d), nil
 }
 
-// zeroRun is the padding source for AppendFixed's trailing zeros, long
-// enough that any padding within MaxPrec costs a single append.
-const zeroRun = "00000000000000000000"
+// zeroRun is the padding source for AppendFixed's trailing zeros: 32 zeros,
+// a power of two, so the final partial pad masks its length into provably
+// valid slice range, and any padding within MaxPrec costs a single append.
+const zeroRun = "00000000000000000000000000000000"
 
 // StringFixed returns d rounded to places fractional digits (ties away from
 // zero, like Round) and formatted with EXACTLY places fractional digits —
@@ -161,30 +185,39 @@ func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
 	d = d.Round(places)
 	// After rounding d.prec ≤ places, so the fraction is the full d.prec
 	// digits of the remainder followed by places - d.prec padding zeros.
-	var scratch [48]byte
+	var scratch [scratchLen]byte
 	pos := len(scratch)
 
 	q, r := divmod128Pow10(d.coef, d.prec)
 	if d.prec > 0 {
-		pos = writePadded(scratch[:], pos, r, int(d.prec))
+		pos = writePadded(&scratch, pos, r, int(d.prec))
 	}
 	if places > 0 {
 		pos--
-		scratch[pos] = '.'
+		scratch[pos&scratchMask] = '.'
 	}
-	pos = writeIntPart(scratch[:], pos, q)
+	pos = writeIntPart(&scratch, pos, q)
 	if d.neg {
 		pos--
-		scratch[pos] = '-'
+		scratch[pos&scratchMask] = '-'
 	}
-	b = append(b, scratch[pos:]...)
+	// 0 ≤ pos ≤ len(scratch) holds on every path (see appendCanonical); the
+	// restatement drops the slice bounds check, and the impossible branch
+	// skips straight to the padding.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(pos) <= uint(len(scratch)) {
+		b = append(b, scratch[pos:]...)
+	}
 
+	// Rounding capped d.prec at places, so pad ≥ 0; after the run loop it is
+	// below len(zeroRun), making the closing mask the identity — its only
+	// job is proving the slice in range.
 	pad := int(places) - int(d.prec)
 	for pad >= len(zeroRun) {
 		b = append(b, zeroRun...)
 		pad -= len(zeroRun)
 	}
-	return append(b, zeroRun[:pad]...)
+	return append(b, zeroRun[:pad&(len(zeroRun)-1)]...)
 }
 
 // InexactFloat64 returns the float64 nearest to d. The conversion goes
@@ -198,7 +231,9 @@ func (d Decimal) InexactFloat64() float64 {
 	// argument only into a potential error value, which canonical input
 	// never produces (and is discarded regardless), so nothing retains the
 	// buffer past this call — a plain string(b) conversion would
-	// heap-allocate solely to feed that dead error path.
-	f, _ := strconv.ParseFloat(unsafe.String(&b[0], len(b)), 64)
+	// heap-allocate solely to feed that dead error path. SliceData rather
+	// than &b[0] spares the formatter's one remaining bounds check (b is
+	// never empty: zero renders as "0").
+	f, _ := strconv.ParseFloat(unsafe.String(unsafe.SliceData(b), len(b)), 64)
 	return f
 }
