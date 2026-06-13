@@ -21,31 +21,48 @@ func (d Decimal) Add(e Decimal) (Decimal, error) {
 }
 
 // Sub returns d - e computed exactly at precision max(d.prec, e.prec), with
-// the same overflow contract as Add. Same-precision operands of opposite
-// signs subtract as a magnitude add; everything else delegates to the shared
-// signed-add core with the sign of e flipped (a zero e keeps its canonical
-// unsigned form, so its sign is never flipped).
+// the same overflow contract as Add. Both same-precision cases run inline:
+// opposite signs subtract as a magnitude add, same signs as a single 128-bit
+// magnitude subtract with a conditional two's-complement fix keyed on the
+// borrow. Only differing precisions outline, straight into addUnaligned with
+// the sign of e flipped (a zero e keeps its canonical unsigned form, so its
+// sign is never flipped).
 func (d Decimal) Sub(e Decimal) (Decimal, error) {
-	if d.prec == e.prec && d.neg != e.neg {
-		coef, carry := add128(d.coef, e.coef)
-		if carry != 0 {
-			return Decimal{}, ErrOverflow
+	if d.prec == e.prec {
+		if d.neg != e.neg {
+			coef, carry := add128(d.coef, e.coef)
+			if carry != 0 {
+				return Decimal{}, ErrOverflow
+			}
+			// d.neg != e.neg means at least one operand is nonzero, and a
+			// magnitude add of canonical operands with distinct signs cannot
+			// produce zero, so the result needs no zero normalization.
+			return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
 		}
-		// d.neg != e.neg means at least one operand is nonzero, and a
-		// magnitude add of canonical operands with distinct signs cannot
-		// produce zero, so the result needs no zero normalization.
-		return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
+		// Same sign: |d| - |e| as one magnitude subtract. A borrow means |e|
+		// won, so the wrapped difference recovers via two's complement and the
+		// result takes the opposite sign. A magnitude subtract never overflows;
+		// e == 0 can never borrow, so the sign flip is safe, and newDecimal
+		// normalizes the d == e cancel-to-zero result to the canonical Decimal{}.
+		diff, borrow := sub128(d.coef, e.coef)
+		neg := d.neg
+		if borrow != 0 {
+			diff = neg128(diff)
+			neg = !d.neg
+		}
+		return newDecimal(diff, neg, d.prec), nil
 	}
-	return addSlow(d, e, !e.neg && !e.coef.isZero())
+	return addUnaligned(d, e, !e.neg && !e.coef.isZero())
 }
 
-// addSlow is the shared signed-add core behind Add and Sub: it returns
-// d + (eNeg ? -1 : +1)·|e| at precision max(d.prec, e.prec). eNeg stands in
-// for e.neg so Sub can flip the sign of e without materializing a negated
-// Decimal. Same-precision opposite signs cost ONE sub128 with a conditional
-// two's-complement fix keyed on the borrow — no compare-then-subtract double
-// pass — and can never overflow. Results that cancel to zero normalize to
-// the canonical Decimal{}.
+// addSlow is the outlined signed-add core behind Add (Sub handles both of its
+// same-precision arms inline and outlines straight into addUnaligned): it
+// returns d + (eNeg ? -1 : +1)·|e| at precision max(d.prec, e.prec). eNeg
+// stands in for e.neg so a caller can flip the sign of e without materializing
+// a negated Decimal. Same-precision opposite signs cost ONE sub128 with a
+// conditional two's-complement fix keyed on the borrow — no compare-then-
+// subtract double pass — and can never overflow. Results that cancel to zero
+// normalize to the canonical Decimal{}.
 func addSlow(d, e Decimal, eNeg bool) (Decimal, error) {
 	if d.prec == e.prec {
 		if d.neg == eNeg {
