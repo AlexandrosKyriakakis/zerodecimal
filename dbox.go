@@ -4,9 +4,11 @@ package zerodecimal
 // Junekey Jeon, ported from Go 1.26's internal/strconv (ftoadbox.go and
 // math.go), which carries the following notice:
 //
-//	Copyright 2025 The Go Authors. All rights reserved.
-//	Use of this source code is governed by a BSD-style license that can be
-//	found in the Go source tree's LICENSE file.
+//	Copyright 2009 The Go Authors.
+//	Use of this source code is governed by a BSD 3-Clause license.
+//
+// The full BSD 3-Clause text (conditions and disclaimer) is reproduced in
+// THIRD_PARTY_NOTICES.md at the repository root.
 //
 // The byte-emitting tail (dboxDigits/formatBase10) is removed: dboxShortest64
 // and dboxShortest32 return the shortest decimal significand and its power of
