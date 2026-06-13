@@ -11,3 +11,5 @@ require (
 	github.com/quagmt/udecimal v1.9.0
 	github.com/shopspring/decimal v1.4.0
 )
+
+require github.com/jokruger/dec128 v1.0.20

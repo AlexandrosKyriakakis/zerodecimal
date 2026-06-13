@@ -1,4 +1,4 @@
-.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric compare pgo
+.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec compare pgo
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
@@ -22,11 +22,16 @@ bench-ss:
 bench-eric:
 	go test -bench=/eric/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/eric/|/|g" > bench-eric.txt
 
+# dec is anchored because the unanchored regex would also match udec.
+bench-dec:
+	go test -bench=/^dec$$/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/dec/|/|g" > bench-dec.txt
+
 compare:
 	benchstat udecimal=bench-udec.txt zerodecimal=bench-zd.txt > bench-vs-udecimal.txt
 	benchstat alpacadecimal=bench-alpaca.txt zerodecimal=bench-zd.txt > bench-vs-alpacadecimal.txt
 	benchstat shopspring=bench-ss.txt zerodecimal=bench-zd.txt > bench-vs-shopspring.txt
 	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd.txt > bench-vs-ericlagergren.txt
+	benchstat dec128=bench-dec.txt zerodecimal=bench-zd.txt > bench-vs-dec128.txt
 
 # PGO delta: collect a CPU profile over the zd benchmarks, re-run them with
 # the benchmark binary rebuilt against that profile, and publish the
