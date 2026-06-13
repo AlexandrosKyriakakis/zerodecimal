@@ -9,6 +9,15 @@ import "math/bits"
 // is a single 128-bit add; every other combination outlines into addSlow.
 func (d Decimal) Add(e Decimal) (Decimal, error) {
 	if d.prec == e.prec && d.neg == e.neg {
+		if d.coef.hi|e.coef.hi == 0 {
+			// One-limb operands: a single Add64 whose carry becomes the hi
+			// limb can never overflow 128 bits, so the ErrOverflow branch and
+			// the serial add128 carry chain drop off this dominant path. coef
+			// can be zero here only when both operands are canonical zeros, so
+			// the fields below are canonical without a newDecimal pass.
+			lo, c := bits.Add64(d.coef.lo, e.coef.lo, 0)
+			return Decimal{coef: u128{hi: c, lo: lo}, neg: d.neg, prec: d.prec}, nil
+		}
 		coef, carry := add128(d.coef, e.coef)
 		if carry != 0 {
 			return Decimal{}, ErrOverflow
