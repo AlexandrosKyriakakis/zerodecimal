@@ -46,11 +46,12 @@ func init() {
 // cachedString returns the canonical string of d from the small-value cache,
 // or ok == false when d lies outside the cached window.
 func cachedString(d Decimal) (string, bool) {
-	idx, ok := cacheIndex(d)
-	// A returned index is always in range; the impossible second comparison
-	// restates that for the compiler, which then drops the bounds check on
-	// the String hot path.
-	if !ok || idx >= uint64(len(stringCache)) {
+	idx := cacheIndex(d)
+	// A miss returns the cacheMiss sentinel (^uint64(0)); the single >= len
+	// test is therefore both the miss check and the bounds proof, so the
+	// compiler drops the bounds check on the String hot path and the helper
+	// stays under the inline budget.
+	if idx >= uint64(len(stringCache)) {
 		return "", false
 	}
 	return stringCache[idx], true
@@ -60,29 +61,38 @@ func cachedString(d Decimal) (string, bool) {
 // sharing the cached string's backing, or ok == false when d lies outside
 // the cached window.
 func cachedValue(d Decimal) (driver.Value, bool) {
-	idx, ok := cacheIndex(d)
-	// See cachedString: the second comparison only discharges the bounds check.
-	if !ok || idx >= uint64(len(valueCache)) {
+	idx := cacheIndex(d)
+	// See cachedString: the single >= len test is both the miss check and the
+	// bounds proof.
+	if idx >= uint64(len(valueCache)) {
 		return nil, false
 	}
 	return valueCache[idx], true
 }
 
-// cacheIndex maps d to its cache index. A hit requires the coefficient to
-// fit one limb, prec ≤ 2, and the value scaled to hundredths to lie within
-// ±cacheSpan. The lo > cacheSpan pre-check also keeps the 10^(2-prec)
-// scaling multiply from wrapping, since any larger coefficient can only
-// scale further out of range.
-func cacheIndex(d Decimal) (uint64, bool) {
+// cacheMiss is the out-of-range index cacheIndex returns for a miss. It is
+// >= len(stringCache)/len(valueCache), so a single bounds comparison in the
+// callers serves as both the miss test and the proof that discharges the
+// bounds check.
+const cacheMiss = ^uint64(0)
+
+// cacheIndex maps d to its cache index, or cacheMiss when d lies outside the
+// cached window. A hit requires the coefficient to fit one limb, prec ≤ 2,
+// and the value scaled to hundredths to lie within ±cacheSpan. The lo >
+// cacheSpan pre-check also keeps the 10^(2-prec) scaling multiply from
+// wrapping, since any larger coefficient can only scale further out of range.
+// Returning a single uint64 with a sentinel miss (instead of (uint64, bool))
+// lets the callers fold the miss test into the bounds check and inline.
+func cacheIndex(d Decimal) uint64 {
 	if d.coef.hi != 0 || d.prec > 2 || d.coef.lo > cacheSpan {
-		return 0, false
+		return cacheMiss
 	}
 	scaled := d.coef.lo * pow10u64[(2-d.prec)&31]
 	if scaled > cacheSpan {
-		return 0, false
+		return cacheMiss
 	}
 	if d.neg {
-		return cacheSpan - scaled, true
+		return cacheSpan - scaled
 	}
-	return cacheSpan + scaled, true
+	return cacheSpan + scaled
 }
