@@ -10,9 +10,9 @@ Zero-allocation, panic-free, fixed-point decimals for latency-critical Go.
   `testing.AllocsPerRun` gates in the default test suite
   ([alloc_test.go](alloc_test.go)).
 - **Faster than every Go decimal library we could find.** The committed
-  benchstat comparisons show a −35% time geomean against quagmt/udecimal
-  (the previous fastest) and −90% against shopspring/decimal
-  ([benchmarks/bench-vs-\*.txt](benchmarks/)).
+  benchstat comparisons show a −41% time geomean against jokruger/dec128 and
+  −50% against quagmt/udecimal — the two nearest rivals — and −92% against
+  shopspring/decimal ([benchmarks/bench-vs-\*.txt](benchmarks/)).
 - **Bit-exact.** Every operation is differentially checked against
   shopspring/decimal's unbounded arithmetic — including an *iff* proof for
   every returned overflow — deterministically in the default suite
@@ -192,31 +192,50 @@ pinned tie-by-tie against its shopspring equivalent in
 
 The comparative suite lives in [benchmarks/](benchmarks/) — a **separate Go
 module**, so the competitor dependencies never touch the library's `go.mod`.
-Full committed results: [bench-vs-udecimal.txt](benchmarks/bench-vs-udecimal.txt),
+Full committed results: [bench-vs-dec128.txt](benchmarks/bench-vs-dec128.txt),
+[bench-vs-udecimal.txt](benchmarks/bench-vs-udecimal.txt),
 [bench-vs-shopspring.txt](benchmarks/bench-vs-shopspring.txt),
 [bench-vs-alpacadecimal.txt](benchmarks/bench-vs-alpacadecimal.txt),
 [bench-vs-ericlagergren.txt](benchmarks/bench-vs-ericlagergren.txt);
 methodology and the deliberate semantic asymmetries are documented in
 [benchmarks/README.md](benchmarks/README.md).
 
-Against quagmt/udecimal — the fastest existing Go decimal — zerodecimal is
-faster on 89 of the 90 op × shape rows and statistically tied on the
-remaining one (`MarshalJSON/small_int`):
+Against jokruger/dec128 — the closest competitor (also a 128-bit,
+zero-allocation fixed-point design) — zerodecimal wins the geomean by −41% and
+leads on every op × shape row except four sub-0.1 ns small-shape rows at
+documented floors (`Parse`, `RoundBank`, `Truncate` at `small_int`, and
+`MarshalBinary` at `near_max`):
 
 ```
 goos: darwin
 goarch: arm64
 cpu: Apple M1 Pro
+                          │    dec128    │             zerodecimal             │
+                          │    sec/op    │   sec/op     vs base                │
+Add/typical_price-10         5.685n ± 0%   2.290n ± 0%  -59.72% (p=0.000 n=10)
+Mul/typical_price-10         3.768n ± 0%   2.429n ± 0%  -35.54% (p=0.000 n=10)
+Div/typical_price-10         9.123n ± 0%   7.128n ± 1%  -21.86% (p=0.000 n=10)
+QuoRem/typical_price-10      7.524n ± 0%   3.260n ± 1%  -56.68% (p=0.000 n=10)
+Cmp/typical_price-10         4.194n ± 0%   2.162n ± 0%  -48.45% (p=0.000 n=10)
+Parse/typical_price-10      10.045n ± 1%   8.993n ± 6%  -10.47% (p=0.000 n=10)
+String/typical_price-10      26.24n ± 3%   22.89n ± 2%  -12.75% (p=0.000 n=10)
+geomean                      13.15n        7.759n       -40.98%
+```
+
+Against quagmt/udecimal, zerodecimal is faster on 89 of the 90 op × shape rows
+and statistically tied on the remaining one (`MarshalJSON/small_int`):
+
+```
                           │   udecimal   │             zerodecimal             │
                           │    sec/op    │   sec/op     vs base                │
-Add/typical_price-10         4.673n ± 0%   2.375n ± 0%  -49.18% (p=0.000 n=10)
-Mul/typical_price-10         6.234n ± 0%   2.350n ± 0%  -62.29% (p=0.000 n=10)
-Div/typical_price-10         12.93n ± 1%   11.70n ± 1%   -9.51% (p=0.000 n=10)
-QuoRem/typical_price-10     13.455n ± 2%   3.155n ± 0%  -76.56% (p=0.000 n=10)
-Cmp/typical_price-10         5.291n ± 0%   3.108n ± 2%  -41.26% (p=0.000 n=10)
-Parse/typical_price-10       14.32n ± 0%   12.75n ± 0%  -10.96% (p=0.000 n=10)
-String/typical_price-10      32.46n ± 1%   25.89n ± 1%  -20.24% (p=0.000 n=10)
-geomean                      15.50n        10.07n       -35.03%
+Add/typical_price-10         4.723n ± 1%   2.290n ± 0%  -51.51% (p=0.000 n=10)
+Mul/typical_price-10         6.494n ± 0%   2.429n ± 0%  -62.60% (p=0.000 n=10)
+Div/typical_price-10        12.990n ± 0%   7.128n ± 1%  -45.12% (p=0.000 n=10)
+QuoRem/typical_price-10     13.515n ± 0%   3.260n ± 1%  -75.88% (p=0.000 n=10)
+Cmp/typical_price-10         5.334n ± 0%   2.162n ± 0%  -59.47% (p=0.000 n=10)
+Parse/typical_price-10      14.470n ± 1%   8.993n ± 6%  -37.85% (p=0.000 n=10)
+String/typical_price-10      33.04n ± 2%   22.89n ± 2%  -30.71% (p=0.000 n=10)
+geomean                      15.67n        7.759n       -50.48%
 ```
 
 Against shopspring/decimal, the de-facto standard:
@@ -224,13 +243,14 @@ Against shopspring/decimal, the de-facto standard:
 ```
                           │  shopspring   │             zerodecimal             │
                           │    sec/op     │   sec/op     vs base                │
-Add/typical_price-10        39.975n ± 2%   2.375n ± 0%  -94.06% (p=0.000 n=10)
-Mul/typical_price-10        40.375n ± 1%   2.350n ± 0%  -94.18% (p=0.000 n=10)
-Div/typical_price-10        210.35n ± 1%   11.70n ± 1%  -94.44% (p=0.000 n=10)
-RoundBank/typical_price-10 353.250n ± 2%   4.677n ± 1%  -98.68% (p=0.000 n=10)
-Parse/typical_price-10       75.92n ± 2%   12.75n ± 0%  -83.21% (p=0.000 n=10)
-String/typical_price-10     106.50n ± 2%   25.89n ± 1%  -75.69% (p=0.000 n=10)
-geomean                      93.42n        10.07n       -89.59%
+Add/typical_price-10        41.660n ± 2%   2.290n ± 0%  -94.50% (p=0.000 n=10)
+Mul/typical_price-10        41.785n ± 1%   2.429n ± 0%  -94.19% (p=0.000 n=10)
+Div/typical_price-10       216.250n ± 1%   7.128n ± 1%  -96.70% (p=0.000 n=10)
+QuoRem/typical_price-10    114.050n ± 2%   3.260n ± 1%  -97.14% (p=0.000 n=10)
+Cmp/typical_price-10         4.476n ± 2%   2.162n ± 0%  -51.69% (p=0.000 n=10)
+Parse/typical_price-10      76.995n ± 2%   8.993n ± 6%  -88.32% (p=0.000 n=10)
+String/typical_price-10     108.80n ± 1%   22.89n ± 2%  -78.96% (p=0.000 n=10)
+geomean                      95.51n        7.759n       -92.23%
 ```
 
 Allocations are 0 on every row where any competitor manages 0, and 0 on many
@@ -267,23 +287,23 @@ promote straight into *your* hot loops past the default inlining budget.
 
 The committed [benchmarks/bench-pgo.txt](benchmarks/bench-pgo.txt) shows what
 the benchmark binary itself gains when rebuilt against its own profile
-(`make bench-pgo`): a −7.5% time geomean, with the arithmetic core improving
-the most because its outlined slow arms inline into the measured call sites.
-Three op families honestly regress where PGO's layout choices cost a little:
-every `Cmp` shape (+7% to +10%), the short `Parse` inputs (+2% to +5%), and
-`NewFromFloat/typical_price` (+2.5%) — the excerpt shows the worst such row:
+(`make bench-pgo`): a −8.7% time geomean, with the arithmetic and division
+cores gaining the most as their outlined slow arms inline into the measured
+call sites. No op × shape row regresses — the `Cmp` family, which used to lose
+a little to PGO's layout choices, now improves slightly after the branchless
+rewrite:
 
 ```
                           │   default   │                 pgo                 │
                           │   sec/op    │   sec/op     vs base                │
-Add/typical_price-10        2.375n ± 0%   2.022n ± 0%  -14.88% (p=0.000 n=10)
-Sub/typical_price-10        3.743n ± 0%   3.119n ± 1%  -16.68% (p=0.000 n=10)
-Mul/large-10                4.429n ± 1%   3.520n ± 0%  -20.52% (p=0.000 n=10)
-Div/typical_price-10        11.70n ± 1%   10.24n ± 0%  -12.48% (p=0.000 n=10)
-QuoRem/typical_price-10     3.155n ± 0%   2.651n ± 1%  -15.95% (p=0.000 n=10)
-RoundBank/typical_price-10  4.677n ± 1%   3.730n ± 1%  -20.26% (p=0.000 n=10)
-Cmp/typical_price-10        3.108n ± 2%   3.417n ± 0%   +9.96% (p=0.000 n=10)
-geomean                     10.07n        9.313n        -7.50%
+Add/typical_price-10        2.287n ± 1%   2.084n ± 0%   -8.86% (p=0.000 n=10)
+Sub/typical_price-10        2.754n ± 0%   2.247n ± 0%  -18.43% (p=0.000 n=10)
+Mul/large-10                4.886n ± 1%   3.634n ± 1%  -25.62% (p=0.000 n=10)
+Div/typical_price-10        7.151n ± 1%   5.444n ± 0%  -23.87% (p=0.000 n=10)
+QuoRem/typical_price-10     3.251n ± 0%   2.730n ± 1%  -16.01% (p=0.000 n=10)
+RoundBank/typical_price-10  3.214n ± 0%   2.883n ± 0%  -10.30% (p=0.000 n=10)
+Cmp/typical_price-10        2.161n ± 0%   2.133n ± 1%   -1.32% (p=0.000 n=10)
+geomean                     7.775n        7.101n        -8.67%
 ```
 
 On amd64 deployments also consider `GOAMD64=v3`: the BMI2/ADX instructions
@@ -352,6 +372,25 @@ supported verification level for the `zerodecimal_prec9` and
   decimal representation (like shopspring) — floats outside the domain
   error instead of rounding silently.
 
+## Acknowledgements
+
+Almost all of zerodecimal is original — the zero-allocation `u128`/`u256`
+primitives, reciprocal-multiply division by powers of ten, the SWAR parse
+path, and the width-dispatched 128/64 division are its own work. The one
+ported component is float formatting:
+
+- `dbox.go` (shortest binary-to-decimal digit generation) is ported from the
+  Go standard library's Dragonbox implementation in `internal/strconv`,
+  BSD-3-Clause. The Dragonbox algorithm is by Junekey Jeon
+  (<https://github.com/jk-jeon/dragonbox>). Full notice:
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+shopspring/decimal and quagmt/udecimal serve as the correctness oracles; the
+comparative benchmark harness additionally measures against jokruger/dec128,
+alpacadecimal, and ericlagergren/decimal.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). zerodecimal incorporates BSD-3-Clause code from the Go
+standard library; the required notice is reproduced in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
