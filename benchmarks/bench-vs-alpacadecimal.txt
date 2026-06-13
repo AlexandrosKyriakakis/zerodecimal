@@ -2,99 +2,99 @@ goos: darwin
 goarch: arm64
 pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
 cpu: Apple M1 Pro
-                                 │ alpacadecimal  │             zerodecimal             │
-                                 │     sec/op     │   sec/op     vs base                │
-Parse/small_int-10                   4.708n ±  0%   4.123n ± 1%  -12.43% (p=0.000 n=10)
-Parse/typical_price-10              11.290n ±  1%   8.796n ± 0%  -22.09% (p=0.000 n=10)
-Parse/max_prec-10                   266.85n ±  1%   11.43n ± 0%  -95.72% (p=0.000 n=10)
-Parse/large-10                      316.15n ±  1%   26.29n ± 0%  -91.68% (p=0.000 n=10)
-Parse/near_max-10                   378.50n ±  2%   31.55n ± 0%  -91.67% (p=0.000 n=10)
-String/small_int-10                  2.686n ±  2%   2.538n ± 0%   -5.51% (p=0.000 n=10)
-String/typical_price-10              23.63n ±  2%   22.59n ± 1%   -4.44% (p=0.000 n=10)
-String/max_prec-10                  138.90n ±  2%   28.89n ± 1%  -79.20% (p=0.000 n=10)
-String/large-10                     173.50n ±  8%   39.22n ± 1%  -77.40% (p=0.000 n=10)
-String/near_max-10                  196.05n ±  2%   47.15n ± 1%  -75.95% (p=0.000 n=10)
-Add/small_int-10                     2.132n ±  0%   2.256n ± 0%   +5.84% (p=0.000 n=10)
-Add/typical_price-10                 2.129n ±  0%   2.265n ± 3%   +6.39% (p=0.000 n=10)
-Add/max_prec-10                     60.420n ±  2%   2.259n ± 0%  -96.26% (p=0.000 n=10)
-Add/large-10                        65.725n ±  1%   2.557n ± 1%  -96.11% (p=0.000 n=10)
-Add/near_max-10                    196.000n ±  1%   3.486n ± 0%  -98.22% (p=0.000 n=10)
-Sub/small_int-10                     3.161n ±  0%   2.704n ± 0%  -14.46% (p=0.000 n=10)
-Sub/typical_price-10                 3.164n ±  0%   2.705n ± 0%  -14.54% (p=0.000 n=10)
-Sub/max_prec-10                     80.390n ±  3%   2.711n ± 0%  -96.63% (p=0.000 n=10)
-Sub/large-10                        96.830n ±  1%   2.547n ± 0%  -97.37% (p=0.000 n=10)
-Sub/near_max-10                    195.400n ±  2%   4.397n ± 0%  -97.75% (p=0.000 n=10)
-Mul/small_int-10                     4.715n ±  0%   2.379n ± 0%  -49.55% (p=0.000 n=10)
-Mul/typical_price-10                63.080n ±  3%   2.382n ± 4%  -96.22% (p=0.000 n=10)
-Mul/max_prec-10                     60.650n ±  3%   7.426n ± 2%  -87.76% (p=0.000 n=10)
-Mul/large-10                        64.395n ±  2%   4.850n ± 2%  -92.47% (p=0.000 n=10)
-Mul/near_max-10                     64.215n ±  1%   8.695n ± 1%  -86.46% (p=0.000 n=10)
-Div/small_int-10                   301.150n ±  1%   7.190n ± 0%  -97.61% (p=0.000 n=10)
-Div/typical_price-10               255.950n ±  2%   7.183n ± 0%  -97.19% (p=0.000 n=10)
-Div/max_prec-10                    233.150n ±  2%   8.492n ± 2%  -96.36% (p=0.000 n=10)
-Div/large-10                        242.20n ±  3%   13.17n ± 0%  -94.56% (p=0.000 n=10)
-Div/near_max-10                     260.50n ±  1%   12.31n ± 0%  -95.27% (p=0.000 n=10)
-QuoRem/small_int-10                166.450n ±  1%   3.200n ± 0%  -98.08% (p=0.000 n=10)
-QuoRem/typical_price-10            165.800n ±  1%   3.192n ± 1%  -98.08% (p=0.000 n=10)
-QuoRem/max_prec-10                 154.750n ±  1%   3.194n ± 0%  -97.94% (p=0.000 n=10)
-QuoRem/large-10                    164.400n ±  2%   6.373n ± 1%  -96.12% (p=0.000 n=10)
-QuoRem/near_max-10                 224.150n ±  2%   8.773n ± 1%  -96.09% (p=0.000 n=10)
-Cmp/small_int-10                     2.043n ±  0%   2.118n ± 0%   +3.65% (p=0.000 n=10)
-Cmp/typical_price-10                 2.058n ±  1%   2.116n ± 0%   +2.79% (p=0.000 n=10)
-Cmp/max_prec-10                      6.010n ±  0%   2.125n ± 0%  -64.64% (p=0.000 n=10)
-Cmp/large-10                         5.985n ±  0%   2.123n ± 0%  -64.54% (p=0.000 n=10)
-Cmp/near_max-10                    138.450n ±  2%   3.463n ± 1%  -97.50% (p=0.000 n=10)
-RoundBank/small_int-10             543.250n ±  1%   2.041n ± 1%  -99.62% (p=0.000 n=10)
-RoundBank/typical_price-10         577.050n ±  1%   3.148n ± 0%  -99.45% (p=0.000 n=10)
-RoundBank/max_prec-10              521.600n ±  1%   3.149n ± 0%  -99.40% (p=0.000 n=10)
-RoundBank/large-10                 516.650n ±  2%   5.910n ± 1%  -98.86% (p=0.000 n=10)
-RoundBank/near_max-10              565.650n ±  1%   6.041n ± 0%  -98.93% (p=0.000 n=10)
-Truncate/small_int-10                2.079n ±  0%   2.039n ± 0%   -1.92% (p=0.000 n=10)
-Truncate/typical_price-10            2.133n ±  2%   2.573n ± 0%  +20.63% (p=0.000 n=10)
-Truncate/max_prec-10               157.450n ±  1%   2.575n ± 0%  -98.36% (p=0.000 n=10)
-Truncate/large-10                  163.500n ±  1%   5.296n ± 0%  -96.76% (p=0.000 n=10)
-Truncate/near_max-10               166.150n ±  2%   5.300n ± 1%  -96.81% (p=0.000 n=10)
-MarshalJSON/small_int-10             31.71n ±  1%   19.19n ± 1%  -39.48% (p=0.000 n=10)
-MarshalJSON/typical_price-10         56.03n ±  1%   22.93n ± 2%  -59.08% (p=0.000 n=10)
-MarshalJSON/max_prec-10             171.85n ± 10%   29.21n ± 3%  -83.00% (p=0.000 n=10)
-MarshalJSON/large-10                208.35n ±  1%   39.48n ± 1%  -81.05% (p=0.000 n=10)
-MarshalJSON/near_max-10             235.55n ±  1%   48.21n ± 1%  -79.53% (p=0.000 n=10)
-UnmarshalJSON/small_int-10           4.712n ±  0%   5.348n ± 0%  +13.50% (p=0.000 n=10)
-UnmarshalJSON/typical_price-10       9.873n ±  1%   9.789n ± 1%   -0.85% (p=0.009 n=10)
-UnmarshalJSON/max_prec-10           304.70n ±  1%   13.20n ± 1%  -95.67% (p=0.000 n=10)
-UnmarshalJSON/large-10              355.50n ±  1%   28.56n ± 0%  -91.97% (p=0.000 n=10)
-UnmarshalJSON/near_max-10           429.25n ±  2%   33.53n ± 0%  -92.19% (p=0.000 n=10)
-SQLValue/small_int-10                2.862n ±  1%   2.835n ± 0%   -0.98% (p=0.000 n=10)
-SQLValue/typical_price-10            41.01n ±  2%   37.85n ± 6%   -7.72% (p=0.000 n=10)
-SQLValue/max_prec-10                154.20n ±  2%   46.64n ± 1%  -69.76% (p=0.000 n=10)
-SQLValue/large-10                   191.35n ±  1%   57.62n ± 1%  -69.89% (p=0.000 n=10)
-SQLValue/near_max-10                208.10n ±  2%   65.80n ± 1%  -68.38% (p=0.000 n=10)
-SQLScan/small_int-10                 5.015n ±  1%   5.176n ± 1%   +3.19% (p=0.000 n=10)
-SQLScan/typical_price-10            11.595n ±  0%   9.906n ± 0%  -14.56% (p=0.000 n=10)
-SQLScan/max_prec-10                 280.60n ±  3%   12.77n ± 1%  -95.45% (p=0.000 n=10)
-SQLScan/large-10                    329.85n ±  1%   27.57n ± 0%  -91.64% (p=0.000 n=10)
-SQLScan/near_max-10                 399.75n ±  2%   32.60n ± 0%  -91.84% (p=0.000 n=10)
-NewFromFloat/small_int-10           28.610n ±  0%   3.766n ± 0%  -86.84% (p=0.000 n=10)
-NewFromFloat/typical_price-10        58.70n ±  1%   11.19n ± 0%  -80.93% (p=0.000 n=10)
-NewFromFloat/max_prec-10           186.950n ±  1%   8.330n ± 0%  -95.54% (p=0.000 n=10)
-NewFromFloat/large-10              301.700n ±  1%   8.930n ± 1%  -97.04% (p=0.000 n=10)
-NewFromFloat/near_max-10           301.400n ±  1%   8.929n ± 0%  -97.04% (p=0.000 n=10)
-MarshalBinary/small_int-10                          13.97n ± 2%
-MarshalBinary/typical_price-10                      13.95n ± 1%
-MarshalBinary/max_prec-10                           13.94n ± 1%
-MarshalBinary/large-10                              16.07n ± 1%
-MarshalBinary/near_max-10                           16.20n ± 1%
-UnmarshalBinary/small_int-10                        2.056n ± 0%
-UnmarshalBinary/typical_price-10                    2.059n ± 0%
-UnmarshalBinary/max_prec-10                         2.058n ± 0%
-UnmarshalBinary/large-10                            2.216n ± 0%
-UnmarshalBinary/near_max-10                         2.215n ± 0%
-AppendText/small_int-10                             12.09n ± 0%
-AppendText/typical_price-10                         11.01n ± 0%
-AppendText/max_prec-10                              18.46n ± 1%
-AppendText/large-10                                 28.96n ± 1%
-AppendText/near_max-10                              35.98n ± 0%
-geomean                              65.06n         7.667n       -88.44%
+                                 │ alpacadecimal  │             zerodecimal              │
+                                 │     sec/op     │    sec/op     vs base                │
+Parse/small_int-10                   4.708n ±  0%    4.165n ± 0%  -11.53% (p=0.000 n=10)
+Parse/typical_price-10              11.290n ±  1%    8.993n ± 6%  -20.35% (p=0.000 n=10)
+Parse/max_prec-10                   266.85n ±  1%    11.62n ± 1%  -95.64% (p=0.000 n=10)
+Parse/large-10                      316.15n ±  1%    26.88n ± 0%  -91.50% (p=0.000 n=10)
+Parse/near_max-10                   378.50n ±  2%    32.19n ± 0%  -91.50% (p=0.000 n=10)
+String/small_int-10                  2.686n ±  2%    2.579n ± 0%   -3.98% (p=0.000 n=10)
+String/typical_price-10              23.63n ±  2%    22.89n ± 2%   -3.15% (p=0.000 n=10)
+String/max_prec-10                  138.90n ±  2%    29.63n ± 2%  -78.66% (p=0.000 n=10)
+String/large-10                     173.50n ±  8%    40.64n ± 1%  -76.58% (p=0.000 n=10)
+String/near_max-10                  196.05n ±  2%    48.32n ± 1%  -75.35% (p=0.000 n=10)
+Add/small_int-10                     2.132n ±  0%    2.288n ± 0%   +7.34% (p=0.000 n=10)
+Add/typical_price-10                 2.129n ±  0%    2.290n ± 0%   +7.56% (p=0.000 n=10)
+Add/max_prec-10                     60.420n ±  2%    2.306n ± 1%  -96.18% (p=0.000 n=10)
+Add/large-10                        65.725n ±  1%    2.636n ± 0%  -95.99% (p=0.000 n=10)
+Add/near_max-10                    196.000n ±  1%    3.592n ± 1%  -98.17% (p=0.000 n=10)
+Sub/small_int-10                     3.161n ±  0%    2.778n ± 1%  -12.10% (p=0.000 n=10)
+Sub/typical_price-10                 3.164n ±  0%    2.753n ± 1%  -13.00% (p=0.000 n=10)
+Sub/max_prec-10                     80.390n ±  3%    2.750n ± 1%  -96.58% (p=0.000 n=10)
+Sub/large-10                        96.830n ±  1%    2.590n ± 0%  -97.33% (p=0.000 n=10)
+Sub/near_max-10                    195.400n ±  2%    4.499n ± 1%  -97.70% (p=0.000 n=10)
+Mul/small_int-10                     4.715n ±  0%    2.416n ± 0%  -48.78% (p=0.000 n=10)
+Mul/typical_price-10                63.080n ±  3%    2.429n ± 0%  -96.15% (p=0.000 n=10)
+Mul/max_prec-10                     60.650n ±  3%    7.514n ± 0%  -87.61% (p=0.000 n=10)
+Mul/large-10                        64.395n ±  2%    4.835n ± 0%  -92.49% (p=0.000 n=10)
+Mul/near_max-10                     64.215n ±  1%    8.602n ± 0%  -86.60% (p=0.000 n=10)
+Div/small_int-10                   301.150n ±  1%    7.141n ± 0%  -97.63% (p=0.000 n=10)
+Div/typical_price-10               255.950n ±  2%    7.128n ± 1%  -97.21% (p=0.000 n=10)
+Div/max_prec-10                    233.150n ±  2%    8.579n ± 1%  -96.32% (p=0.000 n=10)
+Div/large-10                        242.20n ±  3%    13.57n ± 1%  -94.40% (p=0.000 n=10)
+Div/near_max-10                     260.50n ±  1%    12.67n ± 0%  -95.13% (p=0.000 n=10)
+QuoRem/small_int-10                166.450n ±  1%    3.276n ± 1%  -98.03% (p=0.000 n=10)
+QuoRem/typical_price-10            165.800n ±  1%    3.260n ± 1%  -98.03% (p=0.000 n=10)
+QuoRem/max_prec-10                 154.750n ±  1%    3.257n ± 1%  -97.89% (p=0.000 n=10)
+QuoRem/large-10                    164.400n ±  2%    6.514n ± 1%  -96.04% (p=0.000 n=10)
+QuoRem/near_max-10                 224.150n ±  2%    9.023n ± 1%  -95.97% (p=0.000 n=10)
+Cmp/small_int-10                     2.043n ±  0%    2.168n ± 1%   +6.09% (p=0.000 n=10)
+Cmp/typical_price-10                 2.058n ±  1%    2.162n ± 0%   +5.03% (p=0.000 n=10)
+Cmp/max_prec-10                      6.010n ±  0%    2.166n ± 0%  -63.97% (p=0.000 n=10)
+Cmp/large-10                         5.985n ±  0%    2.164n ± 0%  -63.84% (p=0.000 n=10)
+Cmp/near_max-10                    138.450n ±  2%    3.534n ± 0%  -97.45% (p=0.000 n=10)
+RoundBank/small_int-10             543.250n ±  1%    2.093n ± 0%  -99.61% (p=0.000 n=10)
+RoundBank/typical_price-10         577.050n ±  1%    3.218n ± 0%  -99.44% (p=0.000 n=10)
+RoundBank/max_prec-10              521.600n ±  1%    3.226n ± 0%  -99.38% (p=0.000 n=10)
+RoundBank/large-10                 516.650n ±  2%    6.072n ± 1%  -98.82% (p=0.000 n=10)
+RoundBank/near_max-10              565.650n ±  1%    6.177n ± 1%  -98.91% (p=0.000 n=10)
+Truncate/small_int-10                2.079n ±  0%    2.089n ± 0%   +0.48% (p=0.000 n=10)
+Truncate/typical_price-10            2.133n ±  2%    2.627n ± 0%  +23.21% (p=0.000 n=10)
+Truncate/max_prec-10               157.450n ±  1%    2.636n ± 1%  -98.33% (p=0.000 n=10)
+Truncate/large-10                  163.500n ±  1%    5.413n ± 1%  -96.69% (p=0.000 n=10)
+Truncate/near_max-10               166.150n ±  2%    5.415n ± 0%  -96.74% (p=0.000 n=10)
+MarshalJSON/small_int-10             31.71n ±  1%    19.38n ± 1%  -38.90% (p=0.000 n=10)
+MarshalJSON/typical_price-10         56.03n ±  1%    23.55n ± 1%  -57.98% (p=0.000 n=10)
+MarshalJSON/max_prec-10             171.85n ± 10%    30.50n ± 2%  -82.25% (p=0.000 n=10)
+MarshalJSON/large-10                208.35n ±  1%    41.51n ± 1%  -80.07% (p=0.000 n=10)
+MarshalJSON/near_max-10             235.55n ±  1%    50.60n ± 1%  -78.52% (p=0.000 n=10)
+UnmarshalJSON/small_int-10           4.712n ±  0%    5.462n ± 0%  +15.89% (p=0.000 n=10)
+UnmarshalJSON/typical_price-10       9.873n ±  1%   10.010n ± 0%   +1.38% (p=0.000 n=10)
+UnmarshalJSON/max_prec-10           304.70n ±  1%    13.50n ± 1%  -95.57% (p=0.000 n=10)
+UnmarshalJSON/large-10              355.50n ±  1%    29.21n ± 0%  -91.78% (p=0.000 n=10)
+UnmarshalJSON/near_max-10           429.25n ±  2%    34.41n ± 0%  -91.98% (p=0.000 n=10)
+SQLValue/small_int-10                2.862n ±  1%    2.895n ± 0%   +1.14% (p=0.000 n=10)
+SQLValue/typical_price-10            41.01n ±  2%    39.24n ± 2%   -4.33% (p=0.000 n=10)
+SQLValue/max_prec-10                154.20n ±  2%    45.90n ± 2%  -70.23% (p=0.000 n=10)
+SQLValue/large-10                   191.35n ±  1%    57.25n ± 2%  -70.08% (p=0.000 n=10)
+SQLValue/near_max-10                208.10n ±  2%    66.28n ± 1%  -68.15% (p=0.000 n=10)
+SQLScan/small_int-10                 5.015n ±  1%    5.163n ± 0%   +2.93% (p=0.000 n=10)
+SQLScan/typical_price-10             11.59n ±  0%    10.15n ± 0%  -12.51% (p=0.000 n=10)
+SQLScan/max_prec-10                 280.60n ±  3%    13.02n ± 0%  -95.36% (p=0.000 n=10)
+SQLScan/large-10                    329.85n ±  1%    28.19n ± 1%  -91.45% (p=0.000 n=10)
+SQLScan/near_max-10                 399.75n ±  2%    33.46n ± 1%  -91.63% (p=0.000 n=10)
+NewFromFloat/small_int-10           28.610n ±  0%    3.860n ± 1%  -86.51% (p=0.000 n=10)
+NewFromFloat/typical_price-10        58.70n ±  1%    11.42n ± 0%  -80.55% (p=0.000 n=10)
+NewFromFloat/max_prec-10           186.950n ±  1%    8.525n ± 0%  -95.44% (p=0.000 n=10)
+NewFromFloat/large-10              301.700n ±  1%    9.142n ± 1%  -96.97% (p=0.000 n=10)
+NewFromFloat/near_max-10           301.400n ±  1%    9.104n ± 0%  -96.98% (p=0.000 n=10)
+MarshalBinary/small_int-10                           14.46n ± 1%
+MarshalBinary/typical_price-10                       14.40n ± 1%
+MarshalBinary/max_prec-10                            14.42n ± 1%
+MarshalBinary/large-10                               16.57n ± 1%
+MarshalBinary/near_max-10                            16.48n ± 1%
+UnmarshalBinary/small_int-10                         2.091n ± 1%
+UnmarshalBinary/typical_price-10                     2.122n ± 1%
+UnmarshalBinary/max_prec-10                          2.127n ± 1%
+UnmarshalBinary/large-10                             2.285n ± 1%
+UnmarshalBinary/near_max-10                          2.288n ± 1%
+AppendText/small_int-10                              5.456n ± 0%
+AppendText/typical_price-10                          11.25n ± 0%
+AppendText/max_prec-10                               18.96n ± 0%
+AppendText/large-10                                  29.59n ± 1%
+AppendText/near_max-10                               36.82n ± 0%
+geomean                              65.06n          7.759n       -88.20%
 
                                  │ alpacadecimal │               zerodecimal               │
                                  │     B/op      │    B/op     vs base                     │
