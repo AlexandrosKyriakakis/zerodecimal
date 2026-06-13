@@ -100,3 +100,108 @@ var pow10u128 = [64]u128{
 	{hi: 0x0785ee10d5da46d9, lo: 0x00f436a000000000}, // 10^37
 	{hi: 0x4b3b4ca85a86c47a, lo: 0x098a224000000000}, // 10^38
 }
+
+// dboxPow10Min/dboxPow10Max bound dboxPow10: the Dragonbox shortest-digit
+// core (dbox.go) requests decimal exponents k in [-31, 37] over the
+// NewFromFloat guarded domain, and the table covers a safe superset so no
+// lookup dboxPow10[k-dboxPow10Min] can index out of range.
+const (
+	dboxPow10Min = -40
+	dboxPow10Max = 48
+)
+
+// dboxPow10 holds the 128-bit Dragonbox φ̃k mantissas of 10^k for
+// k = -40..48, normalized so the high bit is always set (no implicit leading
+// 1 bit). float32 conversion uses the high 64 bits only. Bit-identical to
+// Go 1.26's strconv pow10Tab over this range.
+var dboxPow10 = [89]u128{
+	{hi: 0x8b61313bbabce2c6, lo: 0x2323ac4b3b3da015}, // 10^-40
+	{hi: 0xae397d8aa96c1b77, lo: 0xabec975e0a0d081a}, // 10^-39
+	{hi: 0xd9c7dced53c72255, lo: 0x96e7bd358c904a21}, // 10^-38
+	{hi: 0x881cea14545c7575, lo: 0x7e50d64177da2e54}, // 10^-37
+	{hi: 0xaa242499697392d2, lo: 0xdde50bd1d5d0b9e9}, // 10^-36
+	{hi: 0xd4ad2dbfc3d07787, lo: 0x955e4ec64b44e864}, // 10^-35
+	{hi: 0x84ec3c97da624ab4, lo: 0xbd5af13bef0b113e}, // 10^-34
+	{hi: 0xa6274bbdd0fadd61, lo: 0xecb1ad8aeacdd58e}, // 10^-33
+	{hi: 0xcfb11ead453994ba, lo: 0x67de18eda5814af2}, // 10^-32
+	{hi: 0x81ceb32c4b43fcf4, lo: 0x80eacf948770ced7}, // 10^-31
+	{hi: 0xa2425ff75e14fc31, lo: 0xa1258379a94d028d}, // 10^-30
+	{hi: 0xcad2f7f5359a3b3e, lo: 0x096ee45813a04330}, // 10^-29
+	{hi: 0xfd87b5f28300ca0d, lo: 0x8bca9d6e188853fc}, // 10^-28
+	{hi: 0x9e74d1b791e07e48, lo: 0x775ea264cf55347d}, // 10^-27
+	{hi: 0xc612062576589dda, lo: 0x95364afe032a819d}, // 10^-26
+	{hi: 0xf79687aed3eec551, lo: 0x3a83ddbd83f52204}, // 10^-25
+	{hi: 0x9abe14cd44753b52, lo: 0xc4926a9672793542}, // 10^-24
+	{hi: 0xc16d9a0095928a27, lo: 0x75b7053c0f178293}, // 10^-23
+	{hi: 0xf1c90080baf72cb1, lo: 0x5324c68b12dd6338}, // 10^-22
+	{hi: 0x971da05074da7bee, lo: 0xd3f6fc16ebca5e03}, // 10^-21
+	{hi: 0xbce5086492111aea, lo: 0x88f4bb1ca6bcf584}, // 10^-20
+	{hi: 0xec1e4a7db69561a5, lo: 0x2b31e9e3d06c32e5}, // 10^-19
+	{hi: 0x9392ee8e921d5d07, lo: 0x3aff322e62439fcf}, // 10^-18
+	{hi: 0xb877aa3236a4b449, lo: 0x09befeb9fad487c2}, // 10^-17
+	{hi: 0xe69594bec44de15b, lo: 0x4c2ebe687989a9b3}, // 10^-16
+	{hi: 0x901d7cf73ab0acd9, lo: 0x0f9d37014bf60a10}, // 10^-15
+	{hi: 0xb424dc35095cd80f, lo: 0x538484c19ef38c94}, // 10^-14
+	{hi: 0xe12e13424bb40e13, lo: 0x2865a5f206b06fb9}, // 10^-13
+	{hi: 0x8cbccc096f5088cb, lo: 0xf93f87b7442e45d3}, // 10^-12
+	{hi: 0xafebff0bcb24aafe, lo: 0xf78f69a51539d748}, // 10^-11
+	{hi: 0xdbe6fecebdedd5be, lo: 0xb573440e5a884d1b}, // 10^-10
+	{hi: 0x89705f4136b4a597, lo: 0x31680a88f8953030}, // 10^-9
+	{hi: 0xabcc77118461cefc, lo: 0xfdc20d2b36ba7c3d}, // 10^-8
+	{hi: 0xd6bf94d5e57a42bc, lo: 0x3d32907604691b4c}, // 10^-7
+	{hi: 0x8637bd05af6c69b5, lo: 0xa63f9a49c2c1b10f}, // 10^-6
+	{hi: 0xa7c5ac471b478423, lo: 0x0fcf80dc33721d53}, // 10^-5
+	{hi: 0xd1b71758e219652b, lo: 0xd3c36113404ea4a8}, // 10^-4
+	{hi: 0x83126e978d4fdf3b, lo: 0x645a1cac083126e9}, // 10^-3
+	{hi: 0xa3d70a3d70a3d70a, lo: 0x3d70a3d70a3d70a3}, // 10^-2
+	{hi: 0xcccccccccccccccc, lo: 0xcccccccccccccccc}, // 10^-1
+	{hi: 0x8000000000000000, lo: 0x0000000000000000}, // 10^0
+	{hi: 0xa000000000000000, lo: 0x0000000000000000}, // 10^1
+	{hi: 0xc800000000000000, lo: 0x0000000000000000}, // 10^2
+	{hi: 0xfa00000000000000, lo: 0x0000000000000000}, // 10^3
+	{hi: 0x9c40000000000000, lo: 0x0000000000000000}, // 10^4
+	{hi: 0xc350000000000000, lo: 0x0000000000000000}, // 10^5
+	{hi: 0xf424000000000000, lo: 0x0000000000000000}, // 10^6
+	{hi: 0x9896800000000000, lo: 0x0000000000000000}, // 10^7
+	{hi: 0xbebc200000000000, lo: 0x0000000000000000}, // 10^8
+	{hi: 0xee6b280000000000, lo: 0x0000000000000000}, // 10^9
+	{hi: 0x9502f90000000000, lo: 0x0000000000000000}, // 10^10
+	{hi: 0xba43b74000000000, lo: 0x0000000000000000}, // 10^11
+	{hi: 0xe8d4a51000000000, lo: 0x0000000000000000}, // 10^12
+	{hi: 0x9184e72a00000000, lo: 0x0000000000000000}, // 10^13
+	{hi: 0xb5e620f480000000, lo: 0x0000000000000000}, // 10^14
+	{hi: 0xe35fa931a0000000, lo: 0x0000000000000000}, // 10^15
+	{hi: 0x8e1bc9bf04000000, lo: 0x0000000000000000}, // 10^16
+	{hi: 0xb1a2bc2ec5000000, lo: 0x0000000000000000}, // 10^17
+	{hi: 0xde0b6b3a76400000, lo: 0x0000000000000000}, // 10^18
+	{hi: 0x8ac7230489e80000, lo: 0x0000000000000000}, // 10^19
+	{hi: 0xad78ebc5ac620000, lo: 0x0000000000000000}, // 10^20
+	{hi: 0xd8d726b7177a8000, lo: 0x0000000000000000}, // 10^21
+	{hi: 0x878678326eac9000, lo: 0x0000000000000000}, // 10^22
+	{hi: 0xa968163f0a57b400, lo: 0x0000000000000000}, // 10^23
+	{hi: 0xd3c21bcecceda100, lo: 0x0000000000000000}, // 10^24
+	{hi: 0x84595161401484a0, lo: 0x0000000000000000}, // 10^25
+	{hi: 0xa56fa5b99019a5c8, lo: 0x0000000000000000}, // 10^26
+	{hi: 0xcecb8f27f4200f3a, lo: 0x0000000000000000}, // 10^27
+	{hi: 0x813f3978f8940984, lo: 0x4000000000000000}, // 10^28
+	{hi: 0xa18f07d736b90be5, lo: 0x5000000000000000}, // 10^29
+	{hi: 0xc9f2c9cd04674ede, lo: 0xa400000000000000}, // 10^30
+	{hi: 0xfc6f7c4045812296, lo: 0x4d00000000000000}, // 10^31
+	{hi: 0x9dc5ada82b70b59d, lo: 0xf020000000000000}, // 10^32
+	{hi: 0xc5371912364ce305, lo: 0x6c28000000000000}, // 10^33
+	{hi: 0xf684df56c3e01bc6, lo: 0xc732000000000000}, // 10^34
+	{hi: 0x9a130b963a6c115c, lo: 0x3c7f400000000000}, // 10^35
+	{hi: 0xc097ce7bc90715b3, lo: 0x4b9f100000000000}, // 10^36
+	{hi: 0xf0bdc21abb48db20, lo: 0x1e86d40000000000}, // 10^37
+	{hi: 0x96769950b50d88f4, lo: 0x1314448000000000}, // 10^38
+	{hi: 0xbc143fa4e250eb31, lo: 0x17d955a000000000}, // 10^39
+	{hi: 0xeb194f8e1ae525fd, lo: 0x5dcfab0800000000}, // 10^40
+	{hi: 0x92efd1b8d0cf37be, lo: 0x5aa1cae500000000}, // 10^41
+	{hi: 0xb7abc627050305ad, lo: 0xf14a3d9e40000000}, // 10^42
+	{hi: 0xe596b7b0c643c719, lo: 0x6d9ccd05d0000000}, // 10^43
+	{hi: 0x8f7e32ce7bea5c6f, lo: 0xe4820023a2000000}, // 10^44
+	{hi: 0xb35dbf821ae4f38b, lo: 0xdda2802c8a800000}, // 10^45
+	{hi: 0xe0352f62a19e306e, lo: 0xd50b2037ad200000}, // 10^46
+	{hi: 0x8c213d9da502de45, lo: 0x4526f422cc340000}, // 10^47
+	{hi: 0xaf298d050e4395d6, lo: 0x9670b12b7f410000}, // 10^48
+}

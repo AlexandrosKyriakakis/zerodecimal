@@ -3,7 +3,6 @@ package zerodecimal
 import (
 	"math"
 	"math/bits"
-	"strconv"
 )
 
 // maxParseLen is the maximum input length the parser accepts, in bytes.
@@ -762,13 +761,12 @@ func RequireFromFloat(f float64) Decimal {
 	return d
 }
 
-// newFromFloat implements the float constructors: guard the domain, print the
-// shortest 'f'-form decimal for the given bit size into a stack buffer, and
-// reuse the byte parser. The guards also bound the text — |f| < 2^128 caps
-// the integer part at 39 digits and |f| ≥ 10^-19 caps the leading fractional
-// zeros at 18, so with at most 17 significant digits the 64-byte buffer never
-// grows — keeping the whole conversion allocation-free. This is the one place
-// the library calls into strconv formatting.
+// newFromFloat implements the float constructors: guard the domain, generate
+// the shortest round-trip decimal digits straight from the float bits with the
+// Dragonbox core in dbox.go, and assemble the coefficient with no text round
+// trip. The guards bound the result — |f| < 2^128 keeps the scale-up under
+// 2^128 and a nonzero |f| ≥ 10^-19 keeps the integer part in range — so the
+// whole conversion is allocation-free and never touches strconv.
 func newFromFloat(f float64, bitSize int) (Decimal, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return Decimal{}, ErrInvalidFloat
@@ -779,25 +777,94 @@ func newFromFloat(f float64, bitSize int) (Decimal, error) {
 	if f != 0 && math.Abs(f) < 1e-19 {
 		return Decimal{}, ErrPrecOutOfRange
 	}
-	// Exact-integer fast path (64-bit only): every |f| < 2^53 is uniquely and
-	// exactly representable, so its shortest 'f'-form decimal is the integer
-	// itself — coef=N, prec=0 — which we assemble directly without strconv.
-	// |f| ≥ 2^53 (e2 > 0) must NOT fire: there the binary-exact integer differs
-	// from the shortest decimal strconv prints, and firing would change the
-	// documented contract. The guards above already rejected NaN/Inf/range, and
-	// those inputs fail the e2 range filter anyway (exp field 0x7FF gives
-	// e2=972, subnormals e2=-1075).
-	bits := math.Float64bits(f)
-	if bitSize == 64 {
-		if bits<<1 == 0 { // ±0.0 → canonical zero, sign dropped
-			return Decimal{}, nil
-		}
-		mant := bits&(1<<52-1) | 1<<52
-		e2 := int(bits>>52&0x7FF) - 1075
-		if e2 >= -52 && e2 <= 0 && mant<<uint(64+e2) == 0 {
-			return newDecimal(u128{lo: mant >> uint(-e2)}, bits>>63 == 1, 0), nil
-		}
+	if bitSize == 32 {
+		return newFromFloat32(float32(f))
 	}
-	var buf [64]byte
-	return ParseBytes(strconv.AppendFloat(buf[:0], f, 'f', -1, bitSize))
+	// Exact-integer fast path (64-bit), kept inline so the common integral
+	// case never pays an extra call frame. ±0.0 is handled before bit
+	// extraction so the no-negative-zero invariant holds. Every |f| < 2^53 is
+	// uniquely and exactly representable, so its shortest decimal is the
+	// integer itself (coef=N, prec=0). |f| ≥ 2^53 (e2 > 0) must NOT fire —
+	// there the binary-exact integer differs from the shortest decimal — but
+	// those inputs fail the e2 ≤ 0 filter, so the gate is sound.
+	b := math.Float64bits(f)
+	if b<<1 == 0 { // ±0.0 → canonical zero, sign dropped
+		return Decimal{}, nil
+	}
+	mant := b&(1<<52-1) | 1<<52
+	e2 := int(b>>52&0x7FF) - 1075
+	if e2 >= -52 && e2 <= 0 && mant<<uint(64+e2) == 0 {
+		return newDecimal(u128{lo: mant >> uint(-e2)}, b>>63 == 1, 0), nil
+	}
+	return newFromFloat64(b, mant, e2)
+}
+
+// newFromFloat64 generates the shortest round-trip decimal of a non-integral,
+// in-range float64 via Dragonbox and assembles the Decimal. It takes the
+// already-extracted bits, significand and unbiased exponent so the inlinable
+// integer fast path in newFromFloat is reached without recomputing them.
+func newFromFloat64(b, mant uint64, e2 int) (Decimal, error) {
+	neg := b>>63 == 1
+	exp := e2
+	denorm := false
+	if b>>52&0x7FF == 0 { // subnormal: no implicit leading bit, exp is biased+1
+		mant = b & (1<<52 - 1)
+		exp = -1074
+		denorm = true
+	}
+	digits, e10 := dboxShortest64(mant, exp, denorm)
+	return assembleFloat(digits, e10, neg)
+}
+
+// newFromFloat32 converts a guarded float32 to a Decimal via the 32-bit
+// shortest round-trip decimal digits, so NewFromFloat32(0.1) is exactly 0.1.
+func newFromFloat32(f float32) (Decimal, error) {
+	b := math.Float32bits(f)
+	if b<<1 == 0 { // ±0.0 → canonical zero, sign dropped
+		return Decimal{}, nil
+	}
+	neg := b>>31 == 1
+	mant := b&(1<<23-1) | 1<<23
+	exp := int(b>>23&0xFF) - 150
+	denorm := false
+	if b>>23&0xFF == 0 { // subnormal
+		mant = b & (1<<23 - 1)
+		exp = -149
+		denorm = true
+	}
+	digits, e10 := dboxShortest32(mant, exp, denorm)
+	return assembleFloat(digits, e10, neg)
+}
+
+// assembleFloat builds a Decimal from the shortest decimal (digits·10^e10).
+// For e10 < 0 the precision is −e10, rejected when it exceeds MaxPrec (the
+// 10^-19 guard is necessary but not sufficient — e.g. 1.5e-19's shortest form
+// needs prec 35). For e10 ≥ 0 the digits are scaled up: 10^e10 may exceed a
+// single uint64 for e10 in 20..38, so the scale-up takes two multiply steps
+// there. A nonzero overflow word cannot occur under the |f| < 2^128 guard
+// (the shortest decimal is within ulp/2 of f); ErrOverflow guards it anyway so
+// the result is never silently wrong.
+func assembleFloat(digits uint64, e10 int, neg bool) (Decimal, error) {
+	if e10 < 0 {
+		p := -e10
+		if p > int(MaxPrec) {
+			return Decimal{}, ErrPrecOutOfRange
+		}
+		return newDecimal(u128{lo: digits}, neg, uint8(p)), nil
+	}
+	var coef u128
+	var carry uint64
+	if e10 <= int(MaxPrec) {
+		coef, carry = mul128by64(u128{lo: digits}, pow10u64[e10])
+	} else {
+		var lo u128
+		lo, carry = mul128by64(u128{lo: digits}, pow10u64[MaxPrec])
+		var c2 uint64
+		coef, c2 = mul128by64(lo, pow10u64[e10-int(MaxPrec)])
+		carry |= c2
+	}
+	if carry != 0 {
+		return Decimal{}, ErrOverflow
+	}
+	return newDecimal(coef, neg, 0), nil
 }
