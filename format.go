@@ -46,7 +46,16 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 	// pure-integer rendering path call-free up to the digit writers.
 	q, r := d.coef, uint64(0)
 	if d.prec != 0 {
-		q, r = divmod128Pow10(d.coef, d.prec)
+		// Open-code the one-limb dispatch the non-inlinable divmod128Pow10
+		// wrapper performs (div10.go:106-107): the dominant coef.hi == 0 case
+		// inlines divmod64Pow10 directly, and the two-limb shape jumps straight
+		// to the outlined Slow path — both saving the dispatcher call. q == coef
+		// here, so q.hi == 0 already reconstructs the fast-path quotient.
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
 	}
 
 	// Fractional part. r == 0 covers both prec == 0 and an all-zero
@@ -201,8 +210,16 @@ func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
 	var scratch [scratchLen]byte
 	pos := len(scratch)
 
-	q, r := divmod128Pow10(d.coef, d.prec)
+	// Open-code the divmod128Pow10 dispatch (see appendCanonical). Unlike that
+	// path, d.prec can legitimately be 0 here, so the k == 0 short-circuit is
+	// preserved up front (the table magic is meaningless for k == 0).
+	q, r := d.coef, uint64(0)
 	if d.prec > 0 {
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
 		pos = writePadded(&scratch, pos, r, int(d.prec))
 	}
 	if places > 0 {
