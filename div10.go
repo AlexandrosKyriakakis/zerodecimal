@@ -76,6 +76,14 @@ func div2by1(u1, u0, dn, v uint64) (q, r uint64) {
 //
 // PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec. Callers guarantee it; k == 0
 // is short-circuited by divmod128Pow10 before reaching here.
+//
+// REJECTED (scale-drop/p3): specializing this into a 19-case switch over
+// constant divisors (one branch per k, each a compile-time DIV the compiler
+// strength-reduces) does not pay off. The switch cannot inline (cost ~176),
+// and on mixed-k workloads the branch mispredicts +30-64% — the cost of the
+// jump dwarfs the saved table load. The reciprocal table's k-insensitivity
+// (the same magic-multiply shape for every k, one predictable load) is the
+// moat here; do not re-explore the constant-divisor switch.
 func divmod64Pow10(u uint64, k uint8) (q, r uint64) {
 	e := pow10Tab[k&31] // &31 proves the index in range: no bounds check
 	q, _ = bits.Mul64(u>>k, e.m)

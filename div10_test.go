@@ -222,13 +222,19 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //     slow-arm split instead: re-merging addSlow (289) or mulSlow (422) into
 //     the wrappers would roughly triple their cost and regress the fast
 //     path's instruction stream.
-//   - Decimal.roundTo (211) keeps all six modes in one core. Inlining it
-//     into the exported wrappers (which would dead-branch-eliminate the
-//     constant mode switch) is likewise impossible under the budget, so the
-//     wrappers inline as single calls passing a constant mode and the switch
-//     resolves as one predictable jump inside the outlined core.
-//   - Every exported rounding method is a one-call wrapper (62) and MUST
-//     keep fitting the budget.
+//   - The rounding family is split into per-mode outlined cores (truncCore,
+//     roundHalfAwayCore, roundBankCore, dirCore) behind thin exported
+//     wrappers. The wrappers inline an early-out plus exactly ONE call into
+//     their mode's core, so the mode is a compile-time fact: each core carries
+//     only its own work (truncCore dead-code-eliminates the remainder
+//     reconstruction, the half load lives only in the cores that use it). The
+//     cores stay outlined (well over the budget once both limb paths are
+//     counted); they MUST NOT inline, or the per-mode DCE would collapse back
+//     into the wrappers.
+//   - Every exported rounding method is a one-call wrapper and MUST keep
+//     fitting the budget. The wrappers sit at cost ~68 against the budget of
+//     80 — only ~12 points of headroom — so a maxCost guard surfaces any edit
+//     (or inliner cost-model change) that would silently de-inline them.
 func TestArithRoundingInlineBudgets(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
@@ -249,16 +255,19 @@ func TestArithRoundingInlineBudgets(t *testing.T) {
 		{"addSlow_stays_outlined", "addSlow", false, 0},
 		{"addUnaligned_stays_outlined", "addUnaligned", false, 0},
 		{"mulSlow_stays_outlined", "mulSlow", false, 0},
-		{"roundTo_single_core_stays_lean", "Decimal.roundTo", false, 280},
-		{"round_fits_inline_budget", "Decimal.Round", true, 0},
-		{"round_bank_fits_inline_budget", "Decimal.RoundBank", true, 0},
-		{"round_up_fits_inline_budget", "Decimal.RoundUp", true, 0},
-		{"round_down_fits_inline_budget", "Decimal.RoundDown", true, 0},
-		{"round_ceil_fits_inline_budget", "Decimal.RoundCeil", true, 0},
-		{"round_floor_fits_inline_budget", "Decimal.RoundFloor", true, 0},
-		{"truncate_fits_inline_budget", "Decimal.Truncate", true, 0},
-		{"floor_fits_inline_budget", "Decimal.Floor", true, 0},
-		{"ceil_fits_inline_budget", "Decimal.Ceil", true, 0},
+		{"trunc_core_stays_outlined", "Decimal.truncCore", false, 0},
+		{"round_half_away_core_stays_outlined", "Decimal.roundHalfAwayCore", false, 0},
+		{"round_bank_core_stays_outlined", "Decimal.roundBankCore", false, 0},
+		{"dir_core_stays_outlined", "Decimal.dirCore", false, 0},
+		{"round_fits_inline_budget", "Decimal.Round", true, 75},
+		{"round_bank_fits_inline_budget", "Decimal.RoundBank", true, 75},
+		{"round_up_fits_inline_budget", "Decimal.RoundUp", true, 75},
+		{"round_down_fits_inline_budget", "Decimal.RoundDown", true, 75},
+		{"round_ceil_fits_inline_budget", "Decimal.RoundCeil", true, 75},
+		{"round_floor_fits_inline_budget", "Decimal.RoundFloor", true, 75},
+		{"truncate_fits_inline_budget", "Decimal.Truncate", true, 75},
+		{"floor_fits_inline_budget", "Decimal.Floor", true, 75},
+		{"ceil_fits_inline_budget", "Decimal.Ceil", true, 75},
 		{"string_fixed_fits_inline_budget", "Decimal.StringFixed", true, 0},
 	}
 	for _, tc := range tests {
