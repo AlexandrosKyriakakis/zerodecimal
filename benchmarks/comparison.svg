@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="346" viewBox="0 0 760 346" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="760" height="346" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+<text x="16" y="28" font-size="16" font-weight="700" fill="#1f2328">zerodecimal vs other Go decimal libraries</text>
+<text x="16" y="48" font-size="12" fill="#57606a">geomean latency, ns/op (shorter is faster) — Apple M1 Pro, Go 1.26, count=10</text>
+<text x="140" y="86" font-size="12.5" font-weight="700" fill="#2da44e" text-anchor="end">zerodecimal</text>
+<rect x="150" y="72" width="43.1" height="20" rx="3" fill="#2da44e"/>
+<text x="199.1" y="86" font-size="12" font-weight="700" fill="#2da44e">7.8 ns</text>
+<text x="140" y="122" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">dec128</text>
+<rect x="150" y="108" width="73.0" height="20" rx="3" fill="#afb8c1"/>
+<text x="229.0" y="122" font-size="12" font-weight="400" fill="#1f2328">13.2 ns</text>
+<text x="140" y="158" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">udecimal</text>
+<rect x="150" y="144" width="87.0" height="20" rx="3" fill="#afb8c1"/>
+<text x="243.0" y="158" font-size="12" font-weight="400" fill="#1f2328">15.7 ns</text>
+<text x="140" y="194" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">govalues</text>
+<rect x="150" y="180" width="102.7" height="20" rx="3" fill="#afb8c1"/>
+<text x="258.7" y="194" font-size="12" font-weight="400" fill="#1f2328">18.5 ns</text>
+<text x="140" y="230" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">ericlagergren</text>
+<rect x="150" y="216" width="268.4" height="20" rx="3" fill="#afb8c1"/>
+<text x="424.4" y="230" font-size="12" font-weight="400" fill="#1f2328">48.4 ns</text>
+<text x="140" y="266" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">alpacadecimal</text>
+<rect x="150" y="252" width="361.0" height="20" rx="3" fill="#afb8c1"/>
+<text x="517.0" y="266" font-size="12" font-weight="400" fill="#1f2328">65.1 ns</text>
+<text x="140" y="302" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">shopspring</text>
+<rect x="150" y="288" width="530.0" height="20" rx="3" fill="#afb8c1"/>
+<text x="686.0" y="302" font-size="12" font-weight="400" fill="#1f2328">95.5 ns</text>
+<text x="16" y="336" font-size="10.5" fill="#57606a">govalues geomean is over the three shapes it can represent (≤19 significant digits); all others over five.</text>
+</svg>

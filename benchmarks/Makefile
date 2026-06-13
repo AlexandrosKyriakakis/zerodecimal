@@ -1,4 +1,4 @@
-.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo
+.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
@@ -38,6 +38,10 @@ compare:
 	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd.txt > bench-vs-ericlagergren.txt
 	benchstat dec128=bench-dec.txt zerodecimal=bench-zd.txt > bench-vs-dec128.txt
 	benchstat govalues=bench-gv.txt zerodecimal=bench-zd.txt > bench-vs-govalues.txt
+
+# Render comparison.svg from the committed bench-vs-*.txt geomeans.
+chart:
+	go run ./internal/chartgen
 
 # PGO delta: collect a CPU profile over the zd benchmarks, re-run them with
 # the benchmark binary rebuilt against that profile, and publish the
