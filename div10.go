@@ -85,7 +85,10 @@ func div2by1(u1, u0, dn, v uint64) (q, r uint64) {
 // (the same magic-multiply shape for every k, one predictable load) is the
 // moat here; do not re-explore the constant-divisor switch.
 func divmod64Pow10(u uint64, k uint8) (q, r uint64) {
-	e := pow10Tab[k&31] // &31 proves the index in range: no bounds check
+	// &31 proves the index in range (no bounds check); the &-address loads
+	// only the referenced fields instead of copying the whole 40-byte entry
+	// through the stack (pow10Tab is a global, so no escape).
+	e := &pow10Tab[k&31]
 	q, _ = bits.Mul64(u>>k, e.m)
 	q >>= e.p
 	r = u - q*e.d
@@ -125,7 +128,7 @@ func divmod128Pow10(u u128, k uint8) (u128, uint64) {
 //
 // PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec.
 func divmod128Pow10Slow(u u128, k uint8) (u128, uint64) {
-	e := pow10Tab[k&31]
+	e := &pow10Tab[k&31] // &-address: load referenced fields, no 40-byte copy
 	s := uint(e.s)
 	// Normalize the dividend by s so dn = 10^k<<s has its top bit set.
 	// a2 < 2^s ≤ dn keeps the first div2by1 digit within 64 bits, and the
@@ -174,7 +177,7 @@ func divU256Pow10(u u256, k uint8) (u128, error) {
 		return u128{}, ErrOverflow
 	}
 
-	e := pow10Tab[k&31]
+	e := &pow10Tab[k&31] // &-address: load referenced fields, no 40-byte copy
 	s := uint(e.s)
 	// Normalize the three live limbs. The top normalized limb d2>>(64-s) is
 	// provably zero (d2 < 10^k < 2^(64-s)), so the leading div2by1 step
@@ -194,7 +197,7 @@ func divU256Pow10(u u256, k uint8) (u128, error) {
 //
 // PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec.
 func divU256Pow10Wide(u u256, k uint8) u256 {
-	e := pow10Tab[k&31]
+	e := &pow10Tab[k&31] // &-address: load referenced fields, no 40-byte copy
 	s := uint(e.s)
 	// u<<s spans five limbs; the top one n4 < 2^s ≤ dn keeps every div2by1
 	// digit within 64 bits, exactly as in divmod128Pow10.
