@@ -206,6 +206,12 @@ func bitLen128(u u128) int {
 // huge magnitudes degrade precision gracefully instead of failing.
 // ErrOverflow only when even the integer quotient (p = 0) does not fit;
 // ErrDivideByZero when e is zero. Dividing zero by anything nonzero is Zero.
+//
+// The common case is fast-pathed: p = DefaultPrec is the maximum precision, so
+// when its quotient already fits 128 bits (the overwhelmingly common shape) it
+// trivially realizes the largest-p contract and Div returns immediately,
+// skipping the bound estimate, descent loop and p+1 probe entirely. Those run
+// only on the degradation path, when even p = DefaultPrec overflows.
 func (d Decimal) Div(e Decimal) (Decimal, error) {
 	if e.coef.isZero() {
 		return Decimal{}, ErrDivideByZero
@@ -215,13 +221,22 @@ func (d Decimal) Div(e Decimal) (Decimal, error) {
 	}
 	neg := d.neg != e.neg
 
-	// Estimate the largest p that provably fits: with f = p + e.prec - d.prec,
-	// the quotient is < 2^(bitLen(d.coef) + bitlen10[f] - bitLen(e.coef) + 1),
-	// so it fits whenever that exponent is ≤ 128; f ≤ 0 fits trivially
-	// (the quotient is at most d.coef). Both disjuncts are monotone in p, so
-	// the first hit walking down from DefaultPrec is the largest such p.
+	// Fast path: p = DefaultPrec is the largest p the contract allows, so a fit
+	// there is immediately the answer — no estimate needed.
+	if coef, ok := divCoefAt(d, e, int(DefaultPrec)); ok {
+		return newDecimal(coef, neg, DefaultPrec), nil
+	}
+
+	// Degradation path: p = DefaultPrec overflowed, so find the largest fitting
+	// p < DefaultPrec. Estimate it: with f = p + e.prec - d.prec, the quotient
+	// is < 2^(bitLen(d.coef) + bitlen10[f] - bitLen(e.coef) + 1), so it fits
+	// whenever that exponent is ≤ 128; f ≤ 0 fits trivially (the quotient is at
+	// most d.coef). Both disjuncts are monotone in p, so the first hit walking
+	// down is the largest such p. Start the descent at DefaultPrec-1: both break
+	// disjuncts at p = DefaultPrec imply a fit there, contradicting the failed
+	// fast-path attempt, so p = DefaultPrec can never be the chosen estimate.
 	bound := 127 + bitLen128(e.coef) - bitLen128(d.coef)
-	p := int(DefaultPrec)
+	p := int(DefaultPrec) - 1
 	for p > 0 {
 		f := p + int(e.prec) - int(d.prec)
 		if f <= 0 || int(bitlen10[f]) <= bound {
@@ -242,13 +257,16 @@ func (d Decimal) Div(e Decimal) (Decimal, error) {
 		return Decimal{}, ErrOverflow
 	}
 	// The pre-check is conservative by at most one digit: probe p+1 once and
-	// keep it when it fits, which realizes the largest-p contract with at
-	// most one extra division.
-	if p < int(DefaultPrec) {
+	// keep it when it fits, which realizes the largest-p contract with at most
+	// one extra division. Guard with p+1 < DefaultPrec: p+1 == DefaultPrec is
+	// already known to overflow from the failed fast-path attempt.
+	if p+1 < int(DefaultPrec) {
 		if c2, ok2 := divCoefAt(d, e, p+1); ok2 {
+			//nolint:gosec // p ≤ DefaultPrec-2 in this arm, so p+1 fits uint8
 			return newDecimal(c2, neg, uint8(p)+1), nil
 		}
 	}
+	//nolint:gosec // 0 ≤ p ≤ DefaultPrec-1 on the degrade path, so it fits uint8
 	return newDecimal(coef, neg, uint8(p)), nil
 }
 
