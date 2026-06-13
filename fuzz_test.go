@@ -219,6 +219,30 @@ func FuzzParseString(f *testing.F) {
 	})
 }
 
+// FuzzParseGeneralAgree pins the parser's specialized paths — the one-limb
+// fast path and the plain-literal long path — to parseGeneral, the
+// full-grammar reference: every input must yield the identical
+// (Decimal, error) pair through parseCore and through forcedGeneral, in both
+// strict and truncating modes and for both element types. This is the
+// differential gate for path duplication: any divergence in an
+// accept/reject/value decision fails before the oracle suites ever see it.
+func FuzzParseGeneralAgree(f *testing.F) {
+	for _, s := range parseAgreeSeeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		for _, trunc := range []bool{false, true} {
+			want, wantErr := forcedGeneral(raw, trunc)
+			got, gotErr := parseCore(raw, trunc)
+			require.Equalf(t, wantErr, gotErr, "error vs parseGeneral: %q trunc=%v", raw, trunc)
+			require.Equalf(t, want, got, "value vs parseGeneral: %q trunc=%v", raw, trunc)
+			gotB, gotBErr := parseCore([]byte(raw), trunc)
+			require.Equalf(t, wantErr, gotBErr, "[]byte error vs parseGeneral: %q trunc=%v", raw, trunc)
+			require.Equalf(t, want, gotB, "[]byte value vs parseGeneral: %q trunc=%v", raw, trunc)
+		}
+	})
+}
+
 // FuzzAdd cross-checks Add with the exact iff overflow oracle — ErrOverflow
 // precisely when the exact signed coefficient at max(aPrec, bPrec) is
 // ≥ 2^128 — and on success requires the shopspring value, the contracted

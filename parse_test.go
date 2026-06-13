@@ -182,6 +182,81 @@ func TestParseTrunc(t *testing.T) {
 	}
 }
 
+// forcedGeneral is parseCore with every specialized path disabled — the same
+// prologue (length and sign handling), then straight to parseGeneral. It is
+// the reference for the differential tests pinning the one-limb fast path
+// and the plain-literal long path to the full-grammar parser; the fuzz
+// targets reuse it.
+func forcedGeneral(s string, trunc bool) (Decimal, error) {
+	n := len(s)
+	if n == 0 {
+		return Decimal{}, ErrEmptyString
+	}
+	if n > maxParseLen {
+		return Decimal{}, ErrMaxStrLen
+	}
+	i := 0
+	neg := false
+	if c := s[0]; c == '+' || c == '-' {
+		neg = c == '-'
+		i = 1
+		if i == n {
+			return Decimal{}, ErrInvalidFormat
+		}
+	}
+	return parseGeneral(s, i, neg, trunc)
+}
+
+// parseAgreeSeeds are inputs aimed at the accept/reject/value boundaries of
+// the specialized parser paths, the long plain path above all: trailing
+// dots past the length bail, the 20/21-digit limb boundaries, fold
+// overflows that must still defer their verdict to parseGeneral, all-zero
+// long fractions, and dots straight after a leading-zero run.
+var parseAgreeSeeds = []string{
+	"12345678901234567890.",                       // trailing dot past the length bail
+	"12345678901234567890",                        // 20 digits: the fast path's two-limb fold
+	"123456789012345678901",                       // 21 digits: shortest long-path integer
+	"12345678901234567890123456789012345678",      // 38 digits
+	"123456789012345678901234567890123456789",     // 39 digits, in range
+	"340282366920938463463374607431768211455",     // 2^128-1 exactly
+	"340282366920938463463374607431768211455.0",   // fold overflow that must still trim and parse
+	"340282366920938463463374607431768211455.5",   // fold overflow: ErrOverflow strict, overflow trunc
+	"340282366920938463463374607431768211456",     // 2^128 exactly
+	"3402823669209384634633746074317682114551",    // 40 digits
+	"-12345678901234567890.1234500",               // long with a two-step trim
+	"+12345678901234567890.123456789",             // the benchmark "large" shape
+	"17014118346046923173.1687303715884105727",    // the benchmark "near_max" shape
+	"1.0000000000000000000000",                    // all-zero over-long fraction
+	"12345678901234567890.0000000000000000000",    // all-zero MaxPrec fraction trims to integer
+	"0000000000000000000000.5",                    // dot straight after the leading-zero run
+	"00000000000000000000001.5",                   // one significant digit after the zero run
+	".000000000000000000000",                      // empty integer run, long zero fraction
+	"12345678901234567890e5",                      // exponent past the length bail
+	"12345678901234567890.12345e1",                // exponent behind a short fraction
+	"123456789012345678901.123456789012345678901", // fraction past MaxPrec
+	"12345678901234567890..5",                     // second dot stops the fraction run
+	"12345678901234567890.12345678901234567890",   // 20-digit fraction
+	"99999999999999999999.9999999999999999999",    // all-nines at both limb edges
+}
+
+// TestParsePathsAgreeWithGeneral pins every specialized parser path to
+// parseGeneral byte for byte: identical Decimal and identical sentinel for
+// both modes, both element types. The fuzz target of the same name explores
+// beyond the seeds.
+func TestParsePathsAgreeWithGeneral(t *testing.T) {
+	for _, in := range parseAgreeSeeds {
+		for _, trunc := range []bool{false, true} {
+			want, wantErr := forcedGeneral(in, trunc)
+			got, gotErr := parseCore(in, trunc)
+			require.Equal(t, wantErr, gotErr, "error vs parseGeneral: %q trunc=%v", in, trunc)
+			require.Equal(t, want, got, "value vs parseGeneral: %q trunc=%v", in, trunc)
+			gotB, gotBErr := parseCore([]byte(in), trunc)
+			require.Equal(t, wantErr, gotBErr, "[]byte error vs parseGeneral: %q trunc=%v", in, trunc)
+			require.Equal(t, want, gotB, "[]byte value vs parseGeneral: %q trunc=%v", in, trunc)
+		}
+	}
+}
+
 func TestParseRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string

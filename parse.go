@@ -2,6 +2,7 @@ package zerodecimal
 
 import (
 	"math"
+	"math/bits"
 	"strconv"
 )
 
@@ -98,8 +99,9 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 		// More than 19 digits plus a dot can remain: the mantissa cannot be
 		// proven one-limb (nor a 20-digit integer, the one two-limb shape the
 		// fast path folds itself), so skip the fast scan instead of paying
-		// for it twice.
-		goto general
+		// for it twice. Plain long literals get their own two-limb path;
+		// anything else falls through to the general parser from there.
+		return parseLongPlain(s, start, i, neg, trunc)
 	}
 	{
 		var lo uint64
@@ -168,6 +170,199 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 
 general:
 	return parseGeneral(s, start, neg, trunc)
+}
+
+// parseLongPlain parses the plain literals the fast path bails on for length
+// alone: digits with at most one dot and no exponent, more than 20 bytes
+// remaining after the leading-zero skip. start is the post-sign index and i
+// the post-skip index, exactly as parseCore left them. Anything beyond that
+// shape — an exponent marker, a second dot or other invalid byte, a trailing
+// dot ("NNN." is ErrInvalidFormat), a fraction past MaxPrec, more than 39
+// integer digits, or a coefficient fold crossing 2^128 — falls through to
+// parseGeneral with the pre-skip start index, so every error and truncation
+// decision stays in exactly one place: a fold overflow here may still parse
+// there under trunc mode, and routing ErrOverflow through parseGeneral keeps
+// the proof that every such error is genuine.
+//
+// Digit runs are located by the eight-byte mask scan (digitRunLen) and
+// converted eight digits per step (digitRunVal); the fraction folds into the
+// integer limbs with a single mul128by64 + add128, and only a '0' final byte
+// pays the trailing-zero trim probe.
+func parseLongPlain[T string | []byte](s T, start, i int, neg, trunc bool) (Decimal, error) {
+	n := len(s)
+
+	// Integer run first; the only byte allowed to stop it short of the end
+	// is a single dot with a non-empty in-range all-digit fraction after it.
+	intLen := digitRunLen(s, i)
+	frac := 0
+	dot := i + intLen
+	switch {
+	case dot == n:
+		// Pure integer: no fraction, nothing left to validate.
+	case s[dot] != '.' || dot == n-1:
+		goto general // exponent or invalid byte, or a trailing dot
+	default:
+		frac = n - 1 - dot
+		if frac > int(MaxPrec) || digitRunLen(s, dot+1) != frac {
+			// Excess precision keeps its ErrPrecOutOfRange-or-truncate
+			// semantics in parseGeneral; a short fraction run hides a second
+			// dot, an exponent, or an invalid byte. Either way only the two
+			// scans were paid. An empty integer run always lands here too:
+			// dot == i forces frac = n-1-i ≥ 20 under the length bail, so
+			// "000.00…" (and the invalid ".00…") cannot reach the success
+			// path below — do not "optimize" the intLen == 0 case separately.
+			goto general
+		}
+	}
+	if intLen > 39 {
+		goto general // 40+ significant digits exceed 2^128-1 exactly; trunc mode may still parse
+	}
+	{
+		// First (up to) 19 integer digits fill one limb exactly (10^19-1 <
+		// 2^64); the remainder folds in ≤19-digit chunks as coef·10^c + chunk.
+		// The leading digit is significant (the zero skip stopped on it), so
+		// a successful fold is never zero — newDecimal guards regardless.
+		cnt := min(intLen, 19)
+		coef := u128{lo: digitRunVal(s, i, cnt)}
+		for j := i + cnt; j < dot; {
+			c := min(dot-j, 19)
+			grown, over := mul128by64(coef, pow10u64[c&31])
+			grown, carry := add128(grown, u128{lo: digitRunVal(s, j, c)})
+			if over|carry != 0 {
+				goto general
+			}
+			coef = grown
+			j += c
+		}
+		if frac > 0 {
+			grown, over := mul128by64(coef, pow10u64[frac&31])
+			grown, carry := add128(grown, u128{lo: digitRunVal(s, dot+1, frac)})
+			if over|carry != 0 {
+				goto general
+			}
+			coef = grown
+			// Canonical form: strip trailing fractional zeros, exactly the
+			// general parser's loop. The final text byte is the last
+			// fractional digit, so a nonzero one skips the divmod probe.
+			if s[n-1] == '0' {
+				for frac > 0 {
+					q, r := divmod128Pow10(coef, 1)
+					if r != 0 {
+						break
+					}
+					coef = q
+					frac--
+				}
+			}
+		}
+		//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 on this path, so the uint8 conversion is exact
+		return newDecimal(coef, neg, uint8(frac)), nil
+	}
+
+general:
+	return parseGeneral(s, start, neg, trunc)
+}
+
+// digitRunLen returns the length of the ASCII-digit run starting at s[i],
+// scanning eight bytes per step through the nonDigitMask probe and finishing
+// the sub-word tail byte by byte.
+func digitRunLen[T string | []byte](s T, i int) int {
+	j := i
+	for len(s)-j >= 8 {
+		if m := nonDigitMask(le64(s[j:])); m != 0 {
+			return j + bits.TrailingZeros64(m)>>3 - i
+		}
+		j += 8
+	}
+	for j < len(s) && s[j]-'0' <= 9 {
+		j++
+	}
+	return j - i
+}
+
+// digitRunVal converts the digit run s[i:i+cnt] to its numeric value, eight
+// digits per multiply-add step, then four, then one.
+//
+// PRECONDITION: every byte of the run is an ASCII digit (a digitRunLen scan
+// already proved it) and 1 ≤ cnt ≤ 19, so the accumulator cannot wrap
+// (10^19-1 < 2^64).
+func digitRunVal[T string | []byte](s T, i, cnt int) uint64 {
+	var v uint64
+	for cnt >= 8 {
+		v = v*100_000_000 + swarVal8(le64(s[i:]))
+		i += 8
+		cnt -= 8
+	}
+	if cnt >= 4 {
+		v = v*10_000 + swarVal4(le32(s[i:]))
+		i += 4
+		cnt -= 4
+	}
+	for ; cnt > 0; cnt-- {
+		v = v*10 + uint64(s[i]-'0')
+		i++
+	}
+	return v
+}
+
+// le64 assembles the first eight bytes of b into a little-endian word. The
+// shift-or chain compiles to a single 8-byte load on little-endian targets,
+// and the explicit shifts keep the packing — byte 0 in the low lane, the one
+// nonDigitMask, swarVal8, and TrailingZeros64>>3 all assume — portable to
+// big-endian hosts.
+func le64[T string | []byte](b T) uint64 {
+	_ = b[7] // one bounds check for all eight loads
+	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
+		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
+}
+
+// le32 assembles the first four bytes of b into a little-endian word
+// (see le64).
+func le32[T string | []byte](b T) uint64 {
+	_ = b[3] // one bounds check for all four loads
+	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24
+}
+
+// nonDigitMask returns a word whose bit 7 is set in the first byte of w that
+// is not an ASCII digit — zero iff all eight bytes are digits. After the
+// '0'-xor, digits map to 0x00..0x09: the add flags 0x0A..0x89 through their
+// high bit and the or-in of x itself flags 0x80 and above. A byte past 0x89
+// carries into its higher neighbor and can falsely flag a digit there, but
+// digit bytes never carry, so bytes below the first offender stay clean and
+// the lowest set bit — all the scan consumes — is always the true first
+// non-digit.
+func nonDigitMask(w uint64) uint64 {
+	x := w ^ 0x3030303030303030
+	return ((x + 0x7676767676767676) | x) & 0x8080808080808080
+}
+
+// swarVal8 converts eight ASCII digits packed little-endian (text order from
+// the low byte up) to their numeric value, 0..99999999. The multiply-shift
+// folds adjacent digits into byte pairs (no byte exceeds 99, so nothing
+// carries), then two mask-multiplies sum the four pairs with their decimal
+// weights in bits 32..63 of a single product each.
+//
+// PRECONDITION: every byte of w is an ASCII digit.
+func swarVal8(w uint64) uint64 {
+	const (
+		pairs = 0x000000FF000000FF // byte lanes 0 and 4 after the pair fold
+		even  = 100 + 1_000_000<<32
+		odd   = 1 + 10_000<<32
+	)
+	w -= 0x3030303030303030
+	w = w*10 + w>>8
+	return ((w&pairs)*even + (w>>16&pairs)*odd) >> 32
+}
+
+// swarVal4 is swarVal8 for exactly four digits in the low bytes of w,
+// yielding 0..9999.
+//
+// PRECONDITION: the low four bytes of w are ASCII digits and the rest of w
+// is zero (le32 guarantees both).
+func swarVal4(w uint64) uint64 {
+	w -= 0x30303030
+	w = w*10 + w>>8
+	return (w&0xFF)*100 + w>>16&0xFF
 }
 
 // accumRun folds the digit run starting at s[i] into coef and returns the
