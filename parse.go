@@ -779,6 +779,25 @@ func newFromFloat(f float64, bitSize int) (Decimal, error) {
 	if f != 0 && math.Abs(f) < 1e-19 {
 		return Decimal{}, ErrPrecOutOfRange
 	}
+	// Exact-integer fast path (64-bit only): every |f| < 2^53 is uniquely and
+	// exactly representable, so its shortest 'f'-form decimal is the integer
+	// itself — coef=N, prec=0 — which we assemble directly without strconv.
+	// |f| ≥ 2^53 (e2 > 0) must NOT fire: there the binary-exact integer differs
+	// from the shortest decimal strconv prints, and firing would change the
+	// documented contract. The guards above already rejected NaN/Inf/range, and
+	// those inputs fail the e2 range filter anyway (exp field 0x7FF gives
+	// e2=972, subnormals e2=-1075).
+	bits := math.Float64bits(f)
+	if bitSize == 64 {
+		if bits<<1 == 0 { // ±0.0 → canonical zero, sign dropped
+			return Decimal{}, nil
+		}
+		mant := bits&(1<<52-1) | 1<<52
+		e2 := int(bits>>52&0x7FF) - 1075
+		if e2 >= -52 && e2 <= 0 && mant<<uint(64+e2) == 0 {
+			return newDecimal(u128{lo: mant >> uint(-e2)}, bits>>63 == 1, 0), nil
+		}
+	}
 	var buf [64]byte
 	return ParseBytes(strconv.AppendFloat(buf[:0], f, 'f', -1, bitSize))
 }
