@@ -2,7 +2,7 @@ package zerodecimal
 
 import (
 	"math"
-	"strconv"
+	"math/bits"
 )
 
 // maxParseLen is the maximum input length the parser accepts, in bytes.
@@ -75,84 +75,380 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 		}
 	}
 
-	// Fast path: a plain literal — digits with at most one dot, no exponent —
-	// whose digits after the leading-zero skip fit one uint64 limb. The single
-	// tight loop carries one branch per digit; anything it cannot prove exact
-	// or valid (a second dot, an exponent marker, any other byte, too many
-	// digits, too much precision) falls through to the general parser, which
-	// re-scans from the sign with full validation. The digit count is
-	// conservative: zeros between the dot and the first significant digit
-	// ("0.0005") count toward the 19-digit budget even though they carry no
-	// value, which only ever sends exact-but-long input down the slow path,
-	// never the reverse.
+	// Fast path: a short plain literal — digits with at most one dot, no
+	// exponent. The digit arm of the tight loop mutates only lo and i,
+	// keeping every other local out of the backedge's register set (the dot
+	// validates itself in place, so no dot index or second accumulator stays
+	// live across iterations); a second dot, an exponent marker, or any
+	// other byte falls through to the general parser, which re-scans from
+	// the sign with full validation.
 	start := i
-	for i < n && s[i] == '0' {
-		i++ // leading integer zeros: positions without value
+	if s[i] == '0' { // typical input opens with a significant digit: one compare, no loop
+		for i < n && s[i] == '0' {
+			i++ // leading integer zeros: positions without value
+		}
 	}
-	zeros := i - start
-	if n-i > 20 {
-		// More than 19 digits plus a dot can remain: the mantissa cannot be
-		// proven one-limb (nor a 20-digit integer, the one two-limb shape the
-		// fast path folds itself), so skip the fast scan instead of paying
-		// for it twice.
-		goto general
+	if n-i >= 16 {
+		// Sixteen or more bytes remain after the zero skip: digit runs long
+		// enough that the masked word-at-a-time scan beats this per-digit
+		// loop, so hand them over before paying for the scan twice — the
+		// 16-20-byte window to the one-limb window parser, anything longer
+		// to the two-limb long path. Plain literals parse there; everything
+		// else falls through to the general parser from those. Below the
+		// cut this loop owns every shape outright: at most 15 digits (lo
+		// cannot wrap) and at most 14 fractional positions (always within
+		// MaxPrec).
+		if n-i > 20 {
+			return parseLongPlain(s, start, i, neg, trunc)
+		}
+		return parseWindow(s, start, i, neg, trunc)
 	}
 	{
-		var lo, prev uint64
-		dot := -1
+		var lo uint64
+		frac := -1 // seen-dot sentinel: stays negative until a dot fixes it
 		for ; i < n; i++ {
 			c := s[i]
 			if d := c - '0'; d <= 9 {
-				prev = lo
 				lo = lo*10 + uint64(d)
 				continue
 			}
-			if c == '.' && dot < 0 {
-				dot = i
+			if c == '.' && frac < 0 {
+				// One dot with a digit on each side: rejects ".1", "1.", and
+				// a bare "." (i == start covers it: no digit, zero or
+				// otherwise, precedes the dot). Validating here keeps the
+				// dot's position out of the loop-carried state — only the
+				// fraction length survives, and the digit arm never touches
+				// it.
+				if i == start || i == n-1 {
+					return Decimal{}, ErrInvalidFormat
+				}
+				frac = n - 1 - i
 				continue
 			}
 			goto general // exponent, second dot, or invalid byte
 		}
-		digits := n - start - zeros
-		frac := 0
-		if dot >= 0 {
-			digits--
-			// One dot with a digit on each side: rejects ".1", "1.", and a
-			// bare "." (dot == start covers it: no digit, zero or otherwise,
-			// precedes the dot).
-			if dot == start || dot == n-1 {
-				return Decimal{}, ErrInvalidFormat
-			}
-			frac = n - 1 - dot
-		}
-		if digits > 19 {
-			// Exactly 20 dot-less digits — the only way past 19 under the
-			// length bail, so the run ended at n. lo may have wrapped, but
-			// prev still holds the first 19 digits exactly: the value is
-			// prev·10 + the last digit, at most 10^20-1, always in range
-			// (float64 shortest forms of large magnitudes land here).
-			coef, _ := mul128by64(u128{lo: prev}, 10)
-			coef, _ = add128(coef, u128{lo: uint64(s[n-1] - '0')})
-			return newDecimal(coef, neg, 0), nil
-		}
-		if frac > int(MaxPrec) {
-			if !trunc {
-				return Decimal{}, ErrPrecOutOfRange
-			}
-			goto general // truncation semantics live in the general parser
+		if frac < 0 {
+			frac = 0 // no dot: an integer with zero fractional digits
 		}
 		// Canonical form: strip trailing fractional zeros (also collapses
-		// "0.000" to the canonical zero).
-		for frac > 0 && lo%10 == 0 {
-			lo /= 10
-			frac--
+		// "0.000" to the canonical zero). The final text byte is the last
+		// fractional digit and lo holds it exactly (at most 15 digits, no
+		// wrap), so lo%10 == 0 iff s[n-1] == '0' — a nonzero final byte
+		// skips the magic-mod chain outright.
+		if frac > 0 && s[n-1] == '0' {
+			for frac > 0 && lo%10 == 0 {
+				lo /= 10
+				frac--
+			}
 		}
-		//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact
+		//nolint:gosec // the sentinel reset above pinned frac ≥ 0 and the length gate capped it at 14, so the uint8 conversion is exact
 		return newDecimal(u128{lo: lo}, neg, uint8(frac)), nil
 	}
 
 general:
 	return parseGeneral(s, start, neg, trunc)
+}
+
+// parseLongPlain parses the plain literals the fast path bails on for length
+// alone: digits with at most one dot and no exponent, more than 20 bytes
+// remaining after the leading-zero skip. start is the post-sign index and i
+// the post-skip index, exactly as parseCore left them. Anything beyond that
+// shape — an exponent marker, a second dot or other invalid byte, a trailing
+// dot ("NNN." is ErrInvalidFormat), a fraction past MaxPrec, more than 39
+// integer digits, or a coefficient fold crossing 2^128 — falls through to
+// parseGeneral with the pre-skip start index, so every error and truncation
+// decision stays in exactly one place: a fold overflow here may still parse
+// there under trunc mode, and routing ErrOverflow through parseGeneral keeps
+// the proof that every such error is genuine.
+//
+// Digit runs are located by the eight-byte mask scan (digitRunLen) and
+// converted eight digits per step (digitRunVal); the fraction folds into the
+// integer limbs with a single mul128by64 + add128, and only a '0' final byte
+// pays the trailing-zero trim probe.
+func parseLongPlain[T string | []byte](s T, start, i int, neg, trunc bool) (Decimal, error) {
+	n := len(s)
+
+	// Integer run first; the only byte allowed to stop it short of the end
+	// is a single dot with a non-empty in-range all-digit fraction after it.
+	intLen := digitRunLen(s, i)
+	frac := 0
+	dot := i + intLen
+	switch {
+	case dot == n:
+		// Pure integer: no fraction, nothing left to validate.
+	case s[dot] != '.' || dot == n-1:
+		goto general // exponent or invalid byte, or a trailing dot
+	default:
+		frac = n - 1 - dot
+		if frac > int(MaxPrec) || digitRunLen(s, dot+1) != frac {
+			// Excess precision keeps its ErrPrecOutOfRange-or-truncate
+			// semantics in parseGeneral; a short fraction run hides a second
+			// dot, an exponent, or an invalid byte. Either way only the two
+			// scans were paid. An empty integer run always lands here too:
+			// dot == i forces frac = n-1-i ≥ 20 under the length bail, so
+			// "000.00…" (and the invalid ".00…") cannot reach the success
+			// path below — do not "optimize" the intLen == 0 case separately.
+			goto general
+		}
+	}
+	if intLen > 39 {
+		goto general // 40+ significant digits exceed 2^128-1 exactly; trunc mode may still parse
+	}
+	{
+		// First (up to) 19 integer digits fill one limb exactly (10^19-1 <
+		// 2^64); the remainder folds in ≤19-digit chunks as coef·10^c + chunk.
+		// The leading digit is significant (the zero skip stopped on it), so
+		// a successful fold is never zero — newDecimal guards regardless.
+		cnt := min(intLen, 19)
+		coef := u128{lo: digitRunVal(s, i, cnt)}
+		for j := i + cnt; j < dot; {
+			c := min(dot-j, 19)
+			grown, over := mul128by64(coef, pow10u64[c&31])
+			grown, carry := add128(grown, u128{lo: digitRunVal(s, j, c)})
+			if over|carry != 0 {
+				goto general
+			}
+			coef = grown
+			j += c
+		}
+		if frac > 0 {
+			grown, over := mul128by64(coef, pow10u64[frac&31])
+			grown, carry := add128(grown, u128{lo: digitRunVal(s, dot+1, frac)})
+			if over|carry != 0 {
+				goto general
+			}
+			coef = grown
+			// Canonical form: strip trailing fractional zeros, exactly the
+			// general parser's loop. The final text byte is the last
+			// fractional digit, so a nonzero one skips the divmod probe.
+			if s[n-1] == '0' {
+				for frac > 0 {
+					q, r := divmod128Pow10(coef, 1)
+					if r != 0 {
+						break
+					}
+					coef = q
+					frac--
+				}
+			}
+		}
+		//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 on this path, so the uint8 conversion is exact
+		return newDecimal(coef, neg, uint8(frac)), nil
+	}
+
+general:
+	return parseGeneral(s, start, neg, trunc)
+}
+
+// parseWindow parses the plain literals whose post-skip text is 16 to 20
+// bytes: long enough that the masked word-at-a-time scan beats the fast
+// loop's per-digit arm, short enough that one uint64 limb holds every digit
+// combination except the 20-digit dot-less integer, whose wrap is recovered
+// exactly into two limbs. start is the post-sign index and i the post-skip
+// index, exactly as parseCore left them. Anything beyond the plain shape —
+// an exponent marker, a second dot or other invalid byte, a dot with no
+// digit anywhere before it, a trailing dot — falls through to parseGeneral
+// with the pre-skip start index, so a scientific form is never wrongly
+// rejected here and every error verdict stays in one place.
+//
+// One digitRunScan pass per digit run validates, converts, and locates the
+// run boundary together, and the fraction run continues the integer run's
+// accumulator, folding integer·10^frac + fraction without a scaling
+// multiply.
+//
+// PRECONDITION: 16 ≤ len(s)-i ≤ 20, so with a dot present the two runs
+// carry at most 19 digits combined (no wrap, and frac ≤ 19 ≤ MaxPrec needs
+// no check), and only the dot-less shape can reach a 20th digit.
+func parseWindow[T string | []byte](s T, start, i int, neg, trunc bool) (Decimal, error) {
+	n := len(s)
+	var lo uint64
+	dot := i
+	if s[i] != '.' {
+		// Skip the integer-run scan when the post-skip byte is the dot
+		// itself: the sub-one high-precision shape ("0.19 digits") is the
+		// window's most common literal, and its integer run is empty.
+		lo, dot = digitRunScan(s, i, 0)
+	}
+	if dot == n {
+		// Pure integer, every byte a digit. At exactly 20 of them lo may
+		// have wrapped, but s[i] is the first significant digit d0 (nonzero:
+		// the zero skip stopped on it) and the trailing 19 digits' value R
+		// is below 10^19 < 2^64, so R = lo - d0·10^19 is exact in wrapping
+		// uint64 arithmetic and d0·10^19 + R rebuilds the value in 128 bits
+		// — at most 10^20-1, always in range (float64 shortest forms of
+		// large magnitudes land here).
+		if n-i == 20 {
+			d0 := uint64(s[i] - '0')
+			coef, _ := mul128by64(u128{lo: d0}, pow10u64[19])
+			coef, _ = add128(coef, u128{lo: lo - d0*pow10u64[19]})
+			return newDecimal(coef, neg, 0), nil
+		}
+		return newDecimal(u128{lo: lo}, neg, 0), nil
+	}
+	if s[dot] != '.' || dot == n-1 || dot == start {
+		// Exponent or invalid byte, a trailing dot, or a dot with no digit
+		// anywhere before it (dot == start: the zero skip never moved and
+		// the integer run is empty — the ".5…" shape the grammar rejects).
+		return parseGeneral(s, start, neg, trunc)
+	}
+	frac := n - 1 - dot
+	lo, end := digitRunScan(s, dot+1, lo)
+	if end != n {
+		return parseGeneral(s, start, neg, trunc) // second dot, exponent, or invalid byte
+	}
+	// Canonical form: strip trailing fractional zeros (also collapses
+	// "0.00…0" to the canonical zero). The final text byte is the last
+	// fractional digit and lo holds it exactly, so a nonzero one skips the
+	// magic-mod chain outright.
+	if s[n-1] == '0' {
+		for frac > 0 && lo%10 == 0 {
+			lo /= 10
+			frac--
+		}
+	}
+	//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 on this path (length-bounded), so the uint8 conversion is exact
+	return newDecimal(u128{lo: lo}, neg, uint8(frac)), nil
+}
+
+// digitRunScan folds the ASCII-digit run starting at s[j] into acc and
+// returns the updated accumulator along with the index of the first
+// non-digit byte (or len(s)). Each eight-byte step shares one load between
+// validation and conversion: the mask probe proves all eight bytes are
+// digits and swarVal8 folds them in, so a full word costs one multiply-add
+// regardless of its digits. A mask hit or a sub-word remainder finishes per
+// byte, which also pins the exact boundary index the callers check.
+//
+// PRECONDITION: the caller bounds the run so acc cannot wrap — at most 19
+// digits in total accumulate exactly (10^19-1 < 2^64); parseWindow's one
+// 20-digit shape recovers its wrap explicitly.
+func digitRunScan[T string | []byte](s T, j int, acc uint64) (uint64, int) {
+	n := len(s)
+	for n-j >= 8 {
+		w := le64(s[j:])
+		if nonDigitMask(w) != 0 {
+			break // a non-digit within the word: the byte loop locates it
+		}
+		acc = acc*100_000_000 + swarVal8(w)
+		j += 8
+	}
+	if n-j >= 4 {
+		// Pad the upper half with ASCII zeros so the eight-byte mask
+		// validates exactly the four loaded bytes.
+		if w := le32(s[j:]); nonDigitMask(w|0x30303030_00000000) == 0 {
+			acc = acc*10_000 + swarVal4(w)
+			j += 4
+		}
+	}
+	for ; j < n; j++ {
+		d := s[j] - '0'
+		if d > 9 {
+			break
+		}
+		acc = acc*10 + uint64(d)
+	}
+	return acc, j
+}
+
+// digitRunLen returns the length of the ASCII-digit run starting at s[i],
+// scanning eight bytes per step through the nonDigitMask probe and finishing
+// the sub-word tail byte by byte.
+func digitRunLen[T string | []byte](s T, i int) int {
+	j := i
+	for len(s)-j >= 8 {
+		if m := nonDigitMask(le64(s[j:])); m != 0 {
+			return j + bits.TrailingZeros64(m)>>3 - i
+		}
+		j += 8
+	}
+	for j < len(s) && s[j]-'0' <= 9 {
+		j++
+	}
+	return j - i
+}
+
+// digitRunVal converts the digit run s[i:i+cnt] to its numeric value, eight
+// digits per multiply-add step, then four, then one.
+//
+// PRECONDITION: every byte of the run is an ASCII digit (a digitRunLen scan
+// already proved it) and 1 ≤ cnt ≤ 19, so the accumulator cannot wrap
+// (10^19-1 < 2^64).
+func digitRunVal[T string | []byte](s T, i, cnt int) uint64 {
+	var v uint64
+	for cnt >= 8 {
+		v = v*100_000_000 + swarVal8(le64(s[i:]))
+		i += 8
+		cnt -= 8
+	}
+	if cnt >= 4 {
+		v = v*10_000 + swarVal4(le32(s[i:]))
+		i += 4
+		cnt -= 4
+	}
+	for ; cnt > 0; cnt-- {
+		v = v*10 + uint64(s[i]-'0')
+		i++
+	}
+	return v
+}
+
+// le64 assembles the first eight bytes of b into a little-endian word. The
+// shift-or chain compiles to a single 8-byte load on little-endian targets,
+// and the explicit shifts keep the packing — byte 0 in the low lane, the one
+// nonDigitMask, swarVal8, and TrailingZeros64>>3 all assume — portable to
+// big-endian hosts.
+func le64[T string | []byte](b T) uint64 {
+	_ = b[7] // one bounds check for all eight loads
+	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
+		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
+}
+
+// le32 assembles the first four bytes of b into a little-endian word
+// (see le64).
+func le32[T string | []byte](b T) uint64 {
+	_ = b[3] // one bounds check for all four loads
+	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24
+}
+
+// nonDigitMask returns a word whose bit 7 is set in the first byte of w that
+// is not an ASCII digit — zero iff all eight bytes are digits. After the
+// '0'-xor, digits map to 0x00..0x09: the add flags 0x0A..0x89 through their
+// high bit and the or-in of x itself flags 0x80 and above. A byte past 0x89
+// carries into its higher neighbor and can falsely flag a digit there, but
+// digit bytes never carry, so bytes below the first offender stay clean and
+// the lowest set bit — all the scan consumes — is always the true first
+// non-digit.
+func nonDigitMask(w uint64) uint64 {
+	x := w ^ 0x3030303030303030
+	return ((x + 0x7676767676767676) | x) & 0x8080808080808080
+}
+
+// swarVal8 converts eight ASCII digits packed little-endian (text order from
+// the low byte up) to their numeric value, 0..99999999. The multiply-shift
+// folds adjacent digits into byte pairs (no byte exceeds 99, so nothing
+// carries), then two mask-multiplies sum the four pairs with their decimal
+// weights in bits 32..63 of a single product each.
+//
+// PRECONDITION: every byte of w is an ASCII digit.
+func swarVal8(w uint64) uint64 {
+	const (
+		pairs = 0x000000FF000000FF // byte lanes 0 and 4 after the pair fold
+		even  = 100 + 1_000_000<<32
+		odd   = 1 + 10_000<<32
+	)
+	w -= 0x3030303030303030
+	w = w*10 + w>>8
+	return ((w&pairs)*even + (w>>16&pairs)*odd) >> 32
+}
+
+// swarVal4 is swarVal8 for exactly four digits in the low bytes of w,
+// yielding 0..9999.
+//
+// PRECONDITION: the low four bytes of w are ASCII digits and the rest of w
+// is zero (le32 guarantees both).
+func swarVal4(w uint64) uint64 {
+	w -= 0x30303030
+	w = w*10 + w>>8
+	return (w&0xFF)*100 + w>>16&0xFF
 }
 
 // accumRun folds the digit run starting at s[i] into coef and returns the
@@ -465,13 +761,12 @@ func RequireFromFloat(f float64) Decimal {
 	return d
 }
 
-// newFromFloat implements the float constructors: guard the domain, print the
-// shortest 'f'-form decimal for the given bit size into a stack buffer, and
-// reuse the byte parser. The guards also bound the text — |f| < 2^128 caps
-// the integer part at 39 digits and |f| ≥ 10^-19 caps the leading fractional
-// zeros at 18, so with at most 17 significant digits the 64-byte buffer never
-// grows — keeping the whole conversion allocation-free. This is the one place
-// the library calls into strconv formatting.
+// newFromFloat implements the float constructors: guard the domain, generate
+// the shortest round-trip decimal digits straight from the float bits with the
+// Dragonbox core in dbox.go, and assemble the coefficient with no text round
+// trip. The guards bound the result — |f| < 2^128 keeps the scale-up under
+// 2^128 and a nonzero |f| ≥ 10^-19 keeps the integer part in range — so the
+// whole conversion is allocation-free and never touches strconv.
 func newFromFloat(f float64, bitSize int) (Decimal, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return Decimal{}, ErrInvalidFloat
@@ -482,6 +777,94 @@ func newFromFloat(f float64, bitSize int) (Decimal, error) {
 	if f != 0 && math.Abs(f) < 1e-19 {
 		return Decimal{}, ErrPrecOutOfRange
 	}
-	var buf [64]byte
-	return ParseBytes(strconv.AppendFloat(buf[:0], f, 'f', -1, bitSize))
+	if bitSize == 32 {
+		return newFromFloat32(float32(f))
+	}
+	// Exact-integer fast path (64-bit), kept inline so the common integral
+	// case never pays an extra call frame. ±0.0 is handled before bit
+	// extraction so the no-negative-zero invariant holds. Every |f| < 2^53 is
+	// uniquely and exactly representable, so its shortest decimal is the
+	// integer itself (coef=N, prec=0). |f| ≥ 2^53 (e2 > 0) must NOT fire —
+	// there the binary-exact integer differs from the shortest decimal — but
+	// those inputs fail the e2 ≤ 0 filter, so the gate is sound.
+	b := math.Float64bits(f)
+	if b<<1 == 0 { // ±0.0 → canonical zero, sign dropped
+		return Decimal{}, nil
+	}
+	mant := b&(1<<52-1) | 1<<52
+	e2 := int(b>>52&0x7FF) - 1075
+	if e2 >= -52 && e2 <= 0 && mant<<uint(64+e2) == 0 {
+		return newDecimal(u128{lo: mant >> uint(-e2)}, b>>63 == 1, 0), nil
+	}
+	return newFromFloat64(b, mant, e2)
+}
+
+// newFromFloat64 generates the shortest round-trip decimal of a non-integral,
+// in-range float64 via Dragonbox and assembles the Decimal. It takes the
+// already-extracted bits, significand and unbiased exponent so the inlinable
+// integer fast path in newFromFloat is reached without recomputing them.
+func newFromFloat64(b, mant uint64, e2 int) (Decimal, error) {
+	neg := b>>63 == 1
+	exp := e2
+	denorm := false
+	if b>>52&0x7FF == 0 { // subnormal: no implicit leading bit, exp is biased+1
+		mant = b & (1<<52 - 1)
+		exp = -1074
+		denorm = true
+	}
+	digits, e10 := dboxShortest64(mant, exp, denorm)
+	return assembleFloat(digits, e10, neg)
+}
+
+// newFromFloat32 converts a guarded float32 to a Decimal via the 32-bit
+// shortest round-trip decimal digits, so NewFromFloat32(0.1) is exactly 0.1.
+func newFromFloat32(f float32) (Decimal, error) {
+	b := math.Float32bits(f)
+	if b<<1 == 0 { // ±0.0 → canonical zero, sign dropped
+		return Decimal{}, nil
+	}
+	neg := b>>31 == 1
+	mant := b&(1<<23-1) | 1<<23
+	exp := int(b>>23&0xFF) - 150
+	denorm := false
+	if b>>23&0xFF == 0 { // subnormal
+		mant = b & (1<<23 - 1)
+		exp = -149
+		denorm = true
+	}
+	digits, e10 := dboxShortest32(mant, exp, denorm)
+	return assembleFloat(digits, e10, neg)
+}
+
+// assembleFloat builds a Decimal from the shortest decimal (digits·10^e10).
+// For e10 < 0 the precision is −e10, rejected when it exceeds MaxPrec (the
+// 10^-19 guard is necessary but not sufficient — e.g. 1.5e-19's shortest form
+// needs prec 35). For e10 ≥ 0 the digits are scaled up: 10^e10 may exceed a
+// single uint64 for e10 in 20..38, so the scale-up takes two multiply steps
+// there. A nonzero overflow word cannot occur under the |f| < 2^128 guard
+// (the shortest decimal is within ulp/2 of f); ErrOverflow guards it anyway so
+// the result is never silently wrong.
+func assembleFloat(digits uint64, e10 int, neg bool) (Decimal, error) {
+	if e10 < 0 {
+		p := -e10
+		if p > int(MaxPrec) {
+			return Decimal{}, ErrPrecOutOfRange
+		}
+		return newDecimal(u128{lo: digits}, neg, uint8(p)), nil
+	}
+	var coef u128
+	var carry uint64
+	if e10 <= int(MaxPrec) {
+		coef, carry = mul128by64(u128{lo: digits}, pow10u64[e10])
+	} else {
+		var lo u128
+		lo, carry = mul128by64(u128{lo: digits}, pow10u64[MaxPrec])
+		var c2 uint64
+		coef, c2 = mul128by64(lo, pow10u64[e10-int(MaxPrec)])
+		carry |= c2
+	}
+	if carry != 0 {
+		return Decimal{}, ErrOverflow
+	}
+	return newDecimal(coef, neg, 0), nil
 }

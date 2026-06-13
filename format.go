@@ -46,7 +46,16 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 	// pure-integer rendering path call-free up to the digit writers.
 	q, r := d.coef, uint64(0)
 	if d.prec != 0 {
-		q, r = divmod128Pow10(d.coef, d.prec)
+		// Open-code the one-limb dispatch the non-inlinable divmod128Pow10
+		// wrapper performs (div10.go:106-107): the dominant coef.hi == 0 case
+		// inlines divmod64Pow10 directly, and the two-limb shape jumps straight
+		// to the outlined Slow path — both saving the dispatcher call. q == coef
+		// here, so q.hi == 0 already reconstructs the fast-path quotient.
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
 	}
 
 	// Fractional part. r == 0 covers both prec == 0 and an all-zero
@@ -76,6 +85,57 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 		return dst
 	}
 	return append(dst, scratch[pos:end]...)
+}
+
+// canonicalScratch renders the canonical decimal form of d (see
+// appendCanonical) right to left into scratch and returns the window
+// [pos, end) holding the rendered bytes. It is a deliberate copy of
+// appendCanonical's core, minus the trailing append: String, Value,
+// MarshalJSON, and MarshalText convert that window straight to a string or
+// copy it once, so they pay a single memmove instead of appending into a
+// stack buffer and then converting (two copies). appendCanonical stays a
+// standalone body — duplicating the core rather than calling it keeps the
+// remaining appendCanonical callers (AppendText, InexactFloat64) call-free
+// and inlinable.
+//
+// The returned window satisfies 0 ≤ pos ≤ end ≤ len(scratch); callers
+// restate that guard verbatim at the conversion site so the slice carries no
+// bounds check.
+func canonicalScratch(scratch *[scratchLen]byte, d Decimal) (pos, end int) {
+	pos = len(scratch)
+	end = len(scratch)
+
+	// Precision 0 needs no split at all; skipping the divmod call keeps the
+	// pure-integer rendering path call-free up to the digit writers.
+	q, r := d.coef, uint64(0)
+	if d.prec != 0 {
+		// Open-code the one-limb dispatch (see appendCanonical).
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
+	}
+
+	// Fractional part. r == 0 covers both prec == 0 and an all-zero
+	// fraction, which trims away entirely, point included.
+	if r != 0 {
+		pos = writePadded(scratch, pos, r, int(d.prec))
+		// r != 0 guarantees a nonzero digit, so the trim loop terminates.
+		for scratch[(end-1)&scratchMask] == '0' {
+			end--
+		}
+		pos--
+		scratch[pos&scratchMask] = '.'
+	}
+
+	pos = writeIntPart(scratch, pos, q)
+
+	if d.neg {
+		pos--
+		scratch[pos&scratchMask] = '-'
+	}
+	return pos, end
 }
 
 // writeIntPart writes the decimal digits of q right to left into buf, ending
@@ -167,15 +227,75 @@ func (d Decimal) String() string {
 	if s, ok := cachedString(d); ok {
 		return s
 	}
-	var buf [48]byte
-	return string(appendCanonical(buf[:0], d))
+	var scratch [scratchLen]byte
+	pos, end := canonicalScratch(&scratch, d)
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see
+	// canonicalScratch); restating it in this checkable form drops the slice
+	// bounds check, and the impossible branch keeps the result empty.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return ""
+	}
+	return string(scratch[pos:end])
 }
 
 // AppendText appends the canonical decimal representation of d to b and
 // returns the extended slice, matching the encoding.TextAppender shape. The
-// error is always nil. It allocates only if b lacks capacity.
+// error is always nil. Values inside the small-value cache window append the
+// precomputed string (byte-identical to appendCanonical's output, since the
+// cache is built through it — see cache.go); everything else renders inline.
+// It allocates only if b lacks capacity.
 func (d Decimal) AppendText(b []byte) ([]byte, error) {
-	return appendCanonical(b, d), nil
+	if s, ok := cachedString(d); ok {
+		return append(b, s...), nil
+	}
+	// Miss path: a manual flatten of appendCanonical's body (it stays a
+	// standalone, inlinable function for its other callers, and wrapping it
+	// here would cost a non-inlined frame on every miss — see canonicalScratch
+	// for the same rationale). The duplicated body is kept byte-identical by
+	// TestStringRandom, which cross-checks this path against the oracle.
+	var scratch [scratchLen]byte
+	pos := len(scratch)
+	end := len(scratch)
+
+	// Precision 0 needs no split at all; skipping the divmod call keeps the
+	// pure-integer rendering path call-free up to the digit writers.
+	q, r := d.coef, uint64(0)
+	if d.prec != 0 {
+		// Open-code the one-limb dispatch (see appendCanonical).
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
+	}
+
+	// Fractional part. r == 0 covers both prec == 0 and an all-zero
+	// fraction, which trims away entirely, point included.
+	if r != 0 {
+		pos = writePadded(&scratch, pos, r, int(d.prec))
+		// r != 0 guarantees a nonzero digit, so the trim loop terminates.
+		for scratch[(end-1)&scratchMask] == '0' {
+			end--
+		}
+		pos--
+		scratch[pos&scratchMask] = '.'
+	}
+
+	pos = writeIntPart(&scratch, pos, q)
+
+	if d.neg {
+		pos--
+		scratch[pos&scratchMask] = '-'
+	}
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see appendCanonical);
+	// restating it in this checkable form drops the slice bounds check, and the
+	// impossible branch leaves b untouched.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return b, nil
+	}
+	return append(b, scratch[pos:end]...), nil
 }
 
 // zeroRun is the padding source for AppendFixed's trailing zeros: 32 zeros,
@@ -201,8 +321,16 @@ func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
 	var scratch [scratchLen]byte
 	pos := len(scratch)
 
-	q, r := divmod128Pow10(d.coef, d.prec)
+	// Open-code the divmod128Pow10 dispatch (see appendCanonical). Unlike that
+	// path, d.prec can legitimately be 0 here, so the k == 0 short-circuit is
+	// preserved up front (the table magic is meaningless for k == 0).
+	q, r := d.coef, uint64(0)
 	if d.prec > 0 {
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
 		pos = writePadded(&scratch, pos, r, int(d.prec))
 	}
 	if places > 0 {

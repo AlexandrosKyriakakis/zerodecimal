@@ -5,77 +5,94 @@ import "math/bits"
 // Add returns d + e computed exactly at precision max(d.prec, e.prec).
 // ErrOverflow is returned iff the exact coefficient at that precision does
 // not fit 128 bits — alignment itself can never fail, and opposite-sign
-// operands can never overflow. The dominant same-precision, same-sign case
-// is a single 128-bit add; every other combination outlines into addSlow.
+// operands can never overflow. Both same-precision cases run inline: same
+// signs add as a single 128-bit magnitude add, opposite signs subtract as a
+// single 128-bit magnitude subtract with a conditional two's-complement fix
+// keyed on the borrow. Only differing precisions outline, straight into
+// addUnaligned.
 func (d Decimal) Add(e Decimal) (Decimal, error) {
-	if d.prec == e.prec && d.neg == e.neg {
-		coef, carry := add128(d.coef, e.coef)
-		if carry != 0 {
-			return Decimal{}, ErrOverflow
-		}
-		// coef can be zero here only when both operands are canonical zeros,
-		// so the fields below are canonical without a newDecimal pass.
-		return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
-	}
-	return addSlow(d, e, e.neg)
-}
-
-// Sub returns d - e computed exactly at precision max(d.prec, e.prec), with
-// the same overflow contract as Add. Same-precision operands of opposite
-// signs subtract as a magnitude add; everything else delegates to the shared
-// signed-add core with the sign of e flipped (a zero e keeps its canonical
-// unsigned form, so its sign is never flipped).
-func (d Decimal) Sub(e Decimal) (Decimal, error) {
-	if d.prec == e.prec && d.neg != e.neg {
-		coef, carry := add128(d.coef, e.coef)
-		if carry != 0 {
-			return Decimal{}, ErrOverflow
-		}
-		// d.neg != e.neg means at least one operand is nonzero, and a
-		// magnitude add of canonical operands with distinct signs cannot
-		// produce zero, so the result needs no zero normalization.
-		return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
-	}
-	return addSlow(d, e, !e.neg && !e.coef.isZero())
-}
-
-// addSlow is the shared signed-add core behind Add and Sub: it returns
-// d + (eNeg ? -1 : +1)·|e| at precision max(d.prec, e.prec). eNeg stands in
-// for e.neg so Sub can flip the sign of e without materializing a negated
-// Decimal. Same-precision opposite signs cost ONE sub128 with a conditional
-// two's-complement fix keyed on the borrow — no compare-then-subtract double
-// pass — and can never overflow. Results that cancel to zero normalize to
-// the canonical Decimal{}.
-func addSlow(d, e Decimal, eNeg bool) (Decimal, error) {
 	if d.prec == e.prec {
-		if d.neg == eNeg {
+		if d.neg == e.neg {
+			if d.coef.hi|e.coef.hi == 0 {
+				// One-limb operands: a single Add64 whose carry becomes the hi
+				// limb can never overflow 128 bits, so the ErrOverflow branch and
+				// the serial add128 carry chain drop off this dominant path. coef
+				// can be zero here only when both operands are canonical zeros, so
+				// the fields below are canonical without a newDecimal pass.
+				lo, c := bits.Add64(d.coef.lo, e.coef.lo, 0)
+				return Decimal{coef: u128{hi: c, lo: lo}, neg: d.neg, prec: d.prec}, nil
+			}
 			coef, carry := add128(d.coef, e.coef)
 			if carry != 0 {
 				return Decimal{}, ErrOverflow
 			}
-			return newDecimal(coef, d.neg, d.prec), nil
+			// coef can be zero here only when both operands are canonical zeros,
+			// so the fields below are canonical without a newDecimal pass.
+			return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
 		}
+		// Opposite signs: |d| - |e| as one magnitude subtract. A borrow means
+		// |e| won, so the wrapped difference recovers via two's complement and
+		// the result takes e's sign. A magnitude subtract never overflows, and
+		// newDecimal normalizes the d == -e cancel-to-zero result to the
+		// canonical Decimal{} (the raw-literal shortcut of the same-sign arm
+		// does not apply once cancellation is possible).
 		diff, borrow := sub128(d.coef, e.coef)
 		neg := d.neg
 		if borrow != 0 {
-			// |e| won: the wrapped difference recovers via two's complement
-			// and the result takes e's sign.
 			diff = neg128(diff)
-			neg = eNeg
+			neg = e.neg
 		}
 		return newDecimal(diff, neg, d.prec), nil
 	}
-	return addUnaligned(d, e, eNeg)
+	return addUnaligned(d, e, e.neg)
 }
 
-// addUnaligned is the differing-precision arm of addSlow: the lower-precision
-// coefficient widens by 10^diff into 192 bits via mul128by64to192, so the
-// rescaled value is never materialized in 128 bits and alignment cannot
-// overflow. ErrOverflow iff the exact result coefficient at the higher
-// precision is ≥ 2^128; a result on the higher-precision operand's side of a
-// mixed-sign subtraction always fits, because that coefficient is < 2^128.
+// Sub returns d - e computed exactly at precision max(d.prec, e.prec), with
+// the same overflow contract as Add. Both same-precision cases run inline:
+// opposite signs subtract as a magnitude add, same signs as a single 128-bit
+// magnitude subtract with a conditional two's-complement fix keyed on the
+// borrow. Only differing precisions outline, straight into addUnaligned (the
+// shared differing-precision arm) with the sign of e flipped — a zero e keeps
+// its canonical unsigned form, so its sign is never flipped.
+func (d Decimal) Sub(e Decimal) (Decimal, error) {
+	if d.prec == e.prec {
+		if d.neg != e.neg {
+			coef, carry := add128(d.coef, e.coef)
+			if carry != 0 {
+				return Decimal{}, ErrOverflow
+			}
+			// d.neg != e.neg means at least one operand is nonzero, and a
+			// magnitude add of canonical operands with distinct signs cannot
+			// produce zero, so the result needs no zero normalization.
+			return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
+		}
+		// Same sign: |d| - |e| as one magnitude subtract. A borrow means |e|
+		// won, so the wrapped difference recovers via two's complement and the
+		// result takes the opposite sign. A magnitude subtract never overflows;
+		// e == 0 can never borrow, so the sign flip is safe, and newDecimal
+		// normalizes the d == e cancel-to-zero result to the canonical Decimal{}.
+		diff, borrow := sub128(d.coef, e.coef)
+		neg := d.neg
+		if borrow != 0 {
+			diff = neg128(diff)
+			neg = !d.neg
+		}
+		return newDecimal(diff, neg, d.prec), nil
+	}
+	return addUnaligned(d, e, !e.neg && !e.coef.isZero())
+}
+
+// addUnaligned is the differing-precision arm shared by Add and Sub: the
+// lower-precision coefficient widens by 10^diff into 192 bits via
+// mul128by64to192, so the rescaled value is never materialized in 128 bits and
+// alignment cannot overflow. ErrOverflow iff the exact result coefficient at
+// the higher precision is ≥ 2^128; a result on the higher-precision operand's
+// side of a mixed-sign subtraction always fits, because that coefficient is
+// < 2^128. eNeg stands in for the (possibly flipped, for Sub) sign of e so a
+// caller need not materialize a negated Decimal.
 //
-// PRECONDITION (not checked): d.prec != e.prec, both ≤ MaxPrec.
+// PRECONDITION (not checked): d.prec != e.prec, both ≤ MaxPrec. Both call
+// sites are guarded by a prec-equality test that satisfies this.
 func addUnaligned(d, e Decimal, eNeg bool) (Decimal, error) {
 	lo, hi := d, e
 	loNeg, hiNeg := d.neg, eNeg
@@ -189,6 +206,12 @@ func bitLen128(u u128) int {
 // huge magnitudes degrade precision gracefully instead of failing.
 // ErrOverflow only when even the integer quotient (p = 0) does not fit;
 // ErrDivideByZero when e is zero. Dividing zero by anything nonzero is Zero.
+//
+// The common case is fast-pathed: p = DefaultPrec is the maximum precision, so
+// when its quotient already fits 128 bits (the overwhelmingly common shape) it
+// trivially realizes the largest-p contract and Div returns immediately,
+// skipping the bound estimate, descent loop and p+1 probe entirely. Those run
+// only on the degradation path, when even p = DefaultPrec overflows.
 func (d Decimal) Div(e Decimal) (Decimal, error) {
 	if e.coef.isZero() {
 		return Decimal{}, ErrDivideByZero
@@ -198,13 +221,22 @@ func (d Decimal) Div(e Decimal) (Decimal, error) {
 	}
 	neg := d.neg != e.neg
 
-	// Estimate the largest p that provably fits: with f = p + e.prec - d.prec,
-	// the quotient is < 2^(bitLen(d.coef) + bitlen10[f] - bitLen(e.coef) + 1),
-	// so it fits whenever that exponent is ≤ 128; f ≤ 0 fits trivially
-	// (the quotient is at most d.coef). Both disjuncts are monotone in p, so
-	// the first hit walking down from DefaultPrec is the largest such p.
+	// Fast path: p = DefaultPrec is the largest p the contract allows, so a fit
+	// there is immediately the answer — no estimate needed.
+	if coef, ok := divCoefAt(d, e, int(DefaultPrec)); ok {
+		return newDecimal(coef, neg, DefaultPrec), nil
+	}
+
+	// Degradation path: p = DefaultPrec overflowed, so find the largest fitting
+	// p < DefaultPrec. Estimate it: with f = p + e.prec - d.prec, the quotient
+	// is < 2^(bitLen(d.coef) + bitlen10[f] - bitLen(e.coef) + 1), so it fits
+	// whenever that exponent is ≤ 128; f ≤ 0 fits trivially (the quotient is at
+	// most d.coef). Both disjuncts are monotone in p, so the first hit walking
+	// down is the largest such p. Start the descent at DefaultPrec-1: both break
+	// disjuncts at p = DefaultPrec imply a fit there, contradicting the failed
+	// fast-path attempt, so p = DefaultPrec can never be the chosen estimate.
 	bound := 127 + bitLen128(e.coef) - bitLen128(d.coef)
-	p := int(DefaultPrec)
+	p := int(DefaultPrec) - 1
 	for p > 0 {
 		f := p + int(e.prec) - int(d.prec)
 		if f <= 0 || int(bitlen10[f]) <= bound {
@@ -225,13 +257,16 @@ func (d Decimal) Div(e Decimal) (Decimal, error) {
 		return Decimal{}, ErrOverflow
 	}
 	// The pre-check is conservative by at most one digit: probe p+1 once and
-	// keep it when it fits, which realizes the largest-p contract with at
-	// most one extra division.
-	if p < int(DefaultPrec) {
+	// keep it when it fits, which realizes the largest-p contract with at most
+	// one extra division. Guard with p+1 < DefaultPrec: p+1 == DefaultPrec is
+	// already known to overflow from the failed fast-path attempt.
+	if p+1 < int(DefaultPrec) {
 		if c2, ok2 := divCoefAt(d, e, p+1); ok2 {
+			//nolint:gosec // p ≤ DefaultPrec-2 in this arm, so p+1 fits uint8
 			return newDecimal(c2, neg, uint8(p)+1), nil
 		}
 	}
+	//nolint:gosec // 0 ≤ p ≤ DefaultPrec-1 on the degrade path, so it fits uint8
 	return newDecimal(coef, neg, uint8(p)), nil
 }
 
@@ -261,6 +296,21 @@ func divCoefAt(d, e Decimal, p int) (u128, bool) {
 	}
 	num := mulToU256(d.coef, pow10u128[f&63])
 	if e.coef.hi == 0 {
+		// 128/64 fast path: when the numerator fits 128 bits the quotient
+		// always fits too (dividend < 2^128 ⇒ quotient < 2^128), so ok is
+		// unconditionally true and no overflow test is needed. e.coef.lo != 0
+		// here because Div ruled out a zero divisor and hi == 0 ⇒ lo != 0.
+		if num.isZeroUpper() {
+			if num.d1 < e.coef.lo {
+				// num.d1 < e.coef.lo is exactly bits.Div64's documented
+				// no-trap precondition (high word below the divisor), so the
+				// single divide cannot panic on quotient overflow.
+				q, _ := bits.Div64(num.d1, num.d0, e.coef.lo)
+				return u128{lo: q}, true
+			}
+			q, _ := quoRem64(num.lo128(), e.coef.lo)
+			return q, true
+		}
 		q, _, err := div256by64(num, e.coef.lo)
 		if err != nil {
 			return u128{}, false
@@ -297,12 +347,37 @@ func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 		return newDecimal(u128{lo: q}, qNeg, 0), newDecimal(u128{lo: r}, d.neg, d.prec), nil
 	}
 	f := max(d.prec, e.prec)
-	num := mulToU256(d.coef, pow10u128[(f-d.prec)&63])
-	den, overflow := mul128by64(e.coef, pow10u64[(f-e.prec)&31])
-	if overflow != 0 {
-		return Decimal{}, Decimal{}, ErrOverflow
+	// f = max(d.prec, e.prec) ⇒ at least one factor below is 10^0. Skip the
+	// multiply-by-one for whichever operand is already aligned: scaling by 1
+	// is a no-op the schoolbook path would otherwise pay 4 Mul64 + 6 Add64
+	// for (mulToU256) or a divisor multiply that provably never overflows.
+	var num u256
+	if f == d.prec {
+		num = u256{d0: d.coef.lo, d1: d.coef.hi}
+	} else {
+		num = mulToU256(d.coef, pow10u128[(f-d.prec)&63])
+	}
+	den := e.coef
+	if f != e.prec {
+		var overflow uint64
+		den, overflow = mul128by64(e.coef, pow10u64[(f-e.prec)&31])
+		if overflow != 0 {
+			return Decimal{}, Decimal{}, ErrOverflow
+		}
 	}
 	if den.hi == 0 {
+		// 128/64 fast path mirroring divCoefAt: a numerator that fits 128 bits
+		// yields a quotient that fits too, so ErrOverflow is impossible here.
+		// den.lo != 0 because the zero check above ruled out hi|lo == 0.
+		if num.isZeroUpper() {
+			if num.d1 < den.lo {
+				// num.d1 < den.lo is bits.Div64's no-trap precondition.
+				q, r := bits.Div64(num.d1, num.d0, den.lo)
+				return newDecimal(u128{lo: q}, qNeg, 0), newDecimal(u128{lo: r}, d.neg, f), nil
+			}
+			q, r := quoRem64(num.lo128(), den.lo)
+			return newDecimal(q, qNeg, 0), newDecimal(u128{lo: r}, d.neg, f), nil
+		}
 		q, r, err := div256by64(num, den.lo)
 		if err != nil {
 			return Decimal{}, Decimal{}, err
