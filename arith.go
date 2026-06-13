@@ -278,6 +278,21 @@ func divCoefAt(d, e Decimal, p int) (u128, bool) {
 	}
 	num := mulToU256(d.coef, pow10u128[f&63])
 	if e.coef.hi == 0 {
+		// 128/64 fast path: when the numerator fits 128 bits the quotient
+		// always fits too (dividend < 2^128 ⇒ quotient < 2^128), so ok is
+		// unconditionally true and no overflow test is needed. e.coef.lo != 0
+		// here because Div ruled out a zero divisor and hi == 0 ⇒ lo != 0.
+		if num.isZeroUpper() {
+			if num.d1 < e.coef.lo {
+				// num.d1 < e.coef.lo is exactly bits.Div64's documented
+				// no-trap precondition (high word below the divisor), so the
+				// single divide cannot panic on quotient overflow.
+				q, _ := bits.Div64(num.d1, num.d0, e.coef.lo)
+				return u128{lo: q}, true
+			}
+			q, _ := quoRem64(num.lo128(), e.coef.lo)
+			return q, true
+		}
 		q, _, err := div256by64(num, e.coef.lo)
 		if err != nil {
 			return u128{}, false
@@ -320,6 +335,18 @@ func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 		return Decimal{}, Decimal{}, ErrOverflow
 	}
 	if den.hi == 0 {
+		// 128/64 fast path mirroring divCoefAt: a numerator that fits 128 bits
+		// yields a quotient that fits too, so ErrOverflow is impossible here.
+		// den.lo != 0 because the zero check above ruled out hi|lo == 0.
+		if num.isZeroUpper() {
+			if num.d1 < den.lo {
+				// num.d1 < den.lo is bits.Div64's no-trap precondition.
+				q, r := bits.Div64(num.d1, num.d0, den.lo)
+				return newDecimal(u128{lo: q}, qNeg, 0), newDecimal(u128{lo: r}, d.neg, f), nil
+			}
+			q, r := quoRem64(num.lo128(), den.lo)
+			return newDecimal(q, qNeg, 0), newDecimal(u128{lo: r}, d.neg, f), nil
+		}
 		q, r, err := div256by64(num, den.lo)
 		if err != nil {
 			return Decimal{}, Decimal{}, err
