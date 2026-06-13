@@ -76,18 +76,22 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 	}
 
 	// Fast path: a plain literal — digits with at most one dot, no exponent —
-	// whose digits after the leading-zero skip fit one uint64 limb. The single
-	// tight loop carries one branch per digit; anything it cannot prove exact
-	// or valid (a second dot, an exponent marker, any other byte, too many
-	// digits, too much precision) falls through to the general parser, which
-	// re-scans from the sign with full validation. The digit count is
-	// conservative: zeros between the dot and the first significant digit
-	// ("0.0005") count toward the 19-digit budget even though they carry no
-	// value, which only ever sends exact-but-long input down the slow path,
-	// never the reverse.
+	// whose digits after the leading-zero skip fit one uint64 limb. The digit
+	// arm of the tight loop mutates only lo and i, keeping every other local
+	// out of the backedge's register set (the dot validates itself in place,
+	// so no dot index or second accumulator stays live across iterations);
+	// anything the loop cannot prove exact or valid (a second dot, an
+	// exponent marker, any other byte, too many digits, too much precision)
+	// falls through to the general parser, which re-scans from the sign with
+	// full validation. The digit count is conservative: zeros between the dot
+	// and the first significant digit ("0.0005") count toward the 19-digit
+	// budget even though they carry no value, which only ever sends
+	// exact-but-long input down the slow path, never the reverse.
 	start := i
-	for i < n && s[i] == '0' {
-		i++ // leading integer zeros: positions without value
+	if s[i] == '0' { // typical input opens with a significant digit: one compare, no loop
+		for i < n && s[i] == '0' {
+			i++ // leading integer zeros: positions without value
+		}
 	}
 	zeros := i - start
 	if n-i > 20 {
@@ -98,41 +102,47 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 		goto general
 	}
 	{
-		var lo, prev uint64
-		dot := -1
+		var lo uint64
+		frac := -1 // seen-dot sentinel: stays negative until a dot fixes it
 		for ; i < n; i++ {
 			c := s[i]
 			if d := c - '0'; d <= 9 {
-				prev = lo
 				lo = lo*10 + uint64(d)
 				continue
 			}
-			if c == '.' && dot < 0 {
-				dot = i
+			if c == '.' && frac < 0 {
+				// One dot with a digit on each side: rejects ".1", "1.", and
+				// a bare "." (i == start covers it: no digit, zero or
+				// otherwise, precedes the dot). Validating here keeps the
+				// dot's position out of the loop-carried state — only the
+				// fraction length survives, and the digit arm never touches
+				// it.
+				if i == start || i == n-1 {
+					return Decimal{}, ErrInvalidFormat
+				}
+				frac = n - 1 - i
 				continue
 			}
 			goto general // exponent, second dot, or invalid byte
 		}
 		digits := n - start - zeros
-		frac := 0
-		if dot >= 0 {
-			digits--
-			// One dot with a digit on each side: rejects ".1", "1.", and a
-			// bare "." (dot == start covers it: no digit, zero or otherwise,
-			// precedes the dot).
-			if dot == start || dot == n-1 {
-				return Decimal{}, ErrInvalidFormat
-			}
-			frac = n - 1 - dot
+		if frac < 0 {
+			frac = 0 // no dot: an integer with zero fractional digits
+		} else {
+			digits-- // the dot occupied one of the counted positions
 		}
 		if digits > 19 {
 			// Exactly 20 dot-less digits — the only way past 19 under the
-			// length bail, so the run ended at n. lo may have wrapped, but
-			// prev still holds the first 19 digits exactly: the value is
-			// prev·10 + the last digit, at most 10^20-1, always in range
-			// (float64 shortest forms of large magnitudes land here).
-			coef, _ := mul128by64(u128{lo: prev}, 10)
-			coef, _ = add128(coef, u128{lo: uint64(s[n-1] - '0')})
+			// length bail, so the run ended at n and s[start+zeros] is the
+			// first significant digit d0 (nonzero: the zero skip stopped on
+			// it). lo may have wrapped, but the trailing 19 digits' value R
+			// is below 10^19 < 2^64, so R = lo - d0·10^19 is exact in
+			// wrapping uint64 arithmetic and d0·10^19 + R rebuilds the value
+			// in 128 bits — at most 10^20-1, always in range (float64
+			// shortest forms of large magnitudes land here).
+			d0 := uint64(s[start+zeros] - '0')
+			coef, _ := mul128by64(u128{lo: d0}, pow10u64[19])
+			coef, _ = add128(coef, u128{lo: lo - d0*pow10u64[19]})
 			return newDecimal(coef, neg, 0), nil
 		}
 		if frac > int(MaxPrec) {
@@ -142,12 +152,17 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 			goto general // truncation semantics live in the general parser
 		}
 		// Canonical form: strip trailing fractional zeros (also collapses
-		// "0.000" to the canonical zero).
-		for frac > 0 && lo%10 == 0 {
-			lo /= 10
-			frac--
+		// "0.000" to the canonical zero). The final text byte is the last
+		// fractional digit and lo holds it exactly (digits ≤ 19, no wrap),
+		// so lo%10 == 0 iff s[n-1] == '0' — a nonzero final byte skips the
+		// magic-mod chain outright.
+		if frac > 0 && s[n-1] == '0' {
+			for frac > 0 && lo%10 == 0 {
+				lo /= 10
+				frac--
+			}
 		}
-		//nolint:gosec // 0 ≤ frac ≤ MaxPrec ≤ 19 here, so the uint8 conversion is exact
+		//nolint:gosec // the sentinel reset above pinned frac ≥ 0 and the MaxPrec check capped it at 19, so the uint8 conversion is exact
 		return newDecimal(u128{lo: lo}, neg, uint8(frac)), nil
 	}
 
