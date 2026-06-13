@@ -213,23 +213,24 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //
 // Decision record, measured against the go1.26 cost model:
 //
-//   - Decimal.Add (149) and Decimal.Mul (152) CANNOT fit the default inline
-//     budget of 80. Their mandatory call into the outlined slow arm costs 57
-//     on its own and the inlined add128 fast path another 33, so no
-//     restructuring brings them under budget — the same structural ceiling
-//     Decimal.Cmp (192) and divmod128Pow10 (134) already live with. Their
-//     ceilings below protect the thin-wrapper/outlined-slow-arm split:
-//     re-merging mulSlow (422) into Mul would roughly triple its cost.
-//   - Decimal.Sub (288) deliberately inlines BOTH same-precision arms — the
-//     opposite-sign magnitude add and the same-sign magnitude subtract (one
-//     sub128 + conditional neg128) — and outlines straight into addUnaligned
-//     only when precisions differ. This pulls a stack-guard+frame and
-//     addSlow's duplicate prec/sign re-tests off every same-precision Sub;
-//     measurement shows all five Sub shapes got faster, refuting the earlier
-//     rationale that re-merging the slow arm "regresses the fast path's
-//     instruction stream" for Sub. It never inlined, so the larger body is no
-//     regression; the ceiling guards against unbounded growth. addSlow (289)
-//     now serves only Add.
+//   - Decimal.Add and Decimal.Mul (152) CANNOT fit the default inline budget
+//     of 80. Their mandatory call into the outlined slow arm costs 57 on its
+//     own and an inlined 128-bit fast path another 33, so no restructuring
+//     brings them under budget — the same structural ceiling Decimal.Cmp (192)
+//     and divmod128Pow10 (134) already live with. Their ceilings below protect
+//     the thin-wrapper/outlined-slow-arm split: re-merging mulSlow (422) into
+//     Mul would roughly triple its cost.
+//   - Decimal.Add and Decimal.Sub now both inline BOTH same-precision arms —
+//     the same-sign magnitude add and the opposite-sign magnitude subtract
+//     (one sub128 + conditional neg128 + newDecimal) — and outline straight
+//     into addUnaligned, the single shared differing-precision arm, only when
+//     precisions differ. addSlow is gone: with both same-precision arms of
+//     both operations inlined, its body was dead. This pulls a
+//     stack-guard+frame and addSlow's duplicate prec/sign re-tests off every
+//     same-precision Add and Sub; measurement showed all five Sub shapes got
+//     faster, and the differing-precision rows (e.g. Add/near_max) drop one
+//     outlined frame too. Neither wrapper inlines, so the larger bodies are no
+//     regression; the ceilings guard against unbounded growth.
 //   - The rounding family is split into per-mode outlined cores (truncCore,
 //     roundHalfAwayCore, roundBankCore, dirCore) behind thin exported
 //     wrappers. The wrappers inline an early-out plus exactly ONE call into
@@ -257,10 +258,9 @@ func TestArithRoundingInlineBudgets(t *testing.T) {
 		// maxCost bounds the reported cost; 0 means presence-only.
 		maxCost int
 	}{
-		{"add_wrapper_stays_thin", "Decimal.Add", false, 200},
+		{"add_wrapper_stays_thin", "Decimal.Add", false, 320},
 		{"sub_wrapper_stays_thin", "Decimal.Sub", false, 320},
 		{"mul_wrapper_stays_thin", "Decimal.Mul", false, 200},
-		{"addSlow_stays_outlined", "addSlow", false, 0},
 		{"addUnaligned_stays_outlined", "addUnaligned", false, 0},
 		{"mulSlow_stays_outlined", "mulSlow", false, 0},
 		{"trunc_core_stays_outlined", "Decimal.truncCore", false, 0},

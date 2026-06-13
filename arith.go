@@ -5,37 +5,55 @@ import "math/bits"
 // Add returns d + e computed exactly at precision max(d.prec, e.prec).
 // ErrOverflow is returned iff the exact coefficient at that precision does
 // not fit 128 bits — alignment itself can never fail, and opposite-sign
-// operands can never overflow. The dominant same-precision, same-sign case
-// is a single 128-bit add; every other combination outlines into addSlow.
+// operands can never overflow. Both same-precision cases run inline: same
+// signs add as a single 128-bit magnitude add, opposite signs subtract as a
+// single 128-bit magnitude subtract with a conditional two's-complement fix
+// keyed on the borrow. Only differing precisions outline, straight into
+// addUnaligned.
 func (d Decimal) Add(e Decimal) (Decimal, error) {
-	if d.prec == e.prec && d.neg == e.neg {
-		if d.coef.hi|e.coef.hi == 0 {
-			// One-limb operands: a single Add64 whose carry becomes the hi
-			// limb can never overflow 128 bits, so the ErrOverflow branch and
-			// the serial add128 carry chain drop off this dominant path. coef
-			// can be zero here only when both operands are canonical zeros, so
-			// the fields below are canonical without a newDecimal pass.
-			lo, c := bits.Add64(d.coef.lo, e.coef.lo, 0)
-			return Decimal{coef: u128{hi: c, lo: lo}, neg: d.neg, prec: d.prec}, nil
+	if d.prec == e.prec {
+		if d.neg == e.neg {
+			if d.coef.hi|e.coef.hi == 0 {
+				// One-limb operands: a single Add64 whose carry becomes the hi
+				// limb can never overflow 128 bits, so the ErrOverflow branch and
+				// the serial add128 carry chain drop off this dominant path. coef
+				// can be zero here only when both operands are canonical zeros, so
+				// the fields below are canonical without a newDecimal pass.
+				lo, c := bits.Add64(d.coef.lo, e.coef.lo, 0)
+				return Decimal{coef: u128{hi: c, lo: lo}, neg: d.neg, prec: d.prec}, nil
+			}
+			coef, carry := add128(d.coef, e.coef)
+			if carry != 0 {
+				return Decimal{}, ErrOverflow
+			}
+			// coef can be zero here only when both operands are canonical zeros,
+			// so the fields below are canonical without a newDecimal pass.
+			return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
 		}
-		coef, carry := add128(d.coef, e.coef)
-		if carry != 0 {
-			return Decimal{}, ErrOverflow
+		// Opposite signs: |d| - |e| as one magnitude subtract. A borrow means
+		// |e| won, so the wrapped difference recovers via two's complement and
+		// the result takes e's sign. A magnitude subtract never overflows, and
+		// newDecimal normalizes the d == -e cancel-to-zero result to the
+		// canonical Decimal{} (the raw-literal shortcut of the same-sign arm
+		// does not apply once cancellation is possible).
+		diff, borrow := sub128(d.coef, e.coef)
+		neg := d.neg
+		if borrow != 0 {
+			diff = neg128(diff)
+			neg = e.neg
 		}
-		// coef can be zero here only when both operands are canonical zeros,
-		// so the fields below are canonical without a newDecimal pass.
-		return Decimal{coef: coef, neg: d.neg, prec: d.prec}, nil
+		return newDecimal(diff, neg, d.prec), nil
 	}
-	return addSlow(d, e, e.neg)
+	return addUnaligned(d, e, e.neg)
 }
 
 // Sub returns d - e computed exactly at precision max(d.prec, e.prec), with
 // the same overflow contract as Add. Both same-precision cases run inline:
 // opposite signs subtract as a magnitude add, same signs as a single 128-bit
 // magnitude subtract with a conditional two's-complement fix keyed on the
-// borrow. Only differing precisions outline, straight into addUnaligned with
-// the sign of e flipped (a zero e keeps its canonical unsigned form, so its
-// sign is never flipped).
+// borrow. Only differing precisions outline, straight into addUnaligned (the
+// shared differing-precision arm) with the sign of e flipped — a zero e keeps
+// its canonical unsigned form, so its sign is never flipped.
 func (d Decimal) Sub(e Decimal) (Decimal, error) {
 	if d.prec == e.prec {
 		if d.neg != e.neg {
@@ -64,44 +82,17 @@ func (d Decimal) Sub(e Decimal) (Decimal, error) {
 	return addUnaligned(d, e, !e.neg && !e.coef.isZero())
 }
 
-// addSlow is the outlined signed-add core behind Add (Sub handles both of its
-// same-precision arms inline and outlines straight into addUnaligned): it
-// returns d + (eNeg ? -1 : +1)·|e| at precision max(d.prec, e.prec). eNeg
-// stands in for e.neg so a caller can flip the sign of e without materializing
-// a negated Decimal. Same-precision opposite signs cost ONE sub128 with a
-// conditional two's-complement fix keyed on the borrow — no compare-then-
-// subtract double pass — and can never overflow. Results that cancel to zero
-// normalize to the canonical Decimal{}.
-func addSlow(d, e Decimal, eNeg bool) (Decimal, error) {
-	if d.prec == e.prec {
-		if d.neg == eNeg {
-			coef, carry := add128(d.coef, e.coef)
-			if carry != 0 {
-				return Decimal{}, ErrOverflow
-			}
-			return newDecimal(coef, d.neg, d.prec), nil
-		}
-		diff, borrow := sub128(d.coef, e.coef)
-		neg := d.neg
-		if borrow != 0 {
-			// |e| won: the wrapped difference recovers via two's complement
-			// and the result takes e's sign.
-			diff = neg128(diff)
-			neg = eNeg
-		}
-		return newDecimal(diff, neg, d.prec), nil
-	}
-	return addUnaligned(d, e, eNeg)
-}
-
-// addUnaligned is the differing-precision arm of addSlow: the lower-precision
-// coefficient widens by 10^diff into 192 bits via mul128by64to192, so the
-// rescaled value is never materialized in 128 bits and alignment cannot
-// overflow. ErrOverflow iff the exact result coefficient at the higher
-// precision is ≥ 2^128; a result on the higher-precision operand's side of a
-// mixed-sign subtraction always fits, because that coefficient is < 2^128.
+// addUnaligned is the differing-precision arm shared by Add and Sub: the
+// lower-precision coefficient widens by 10^diff into 192 bits via
+// mul128by64to192, so the rescaled value is never materialized in 128 bits and
+// alignment cannot overflow. ErrOverflow iff the exact result coefficient at
+// the higher precision is ≥ 2^128; a result on the higher-precision operand's
+// side of a mixed-sign subtraction always fits, because that coefficient is
+// < 2^128. eNeg stands in for the (possibly flipped, for Sub) sign of e so a
+// caller need not materialize a negated Decimal.
 //
-// PRECONDITION (not checked): d.prec != e.prec, both ≤ MaxPrec.
+// PRECONDITION (not checked): d.prec != e.prec, both ≤ MaxPrec. Both call
+// sites are guarded by a prec-equality test that satisfies this.
 func addUnaligned(d, e Decimal, eNeg bool) (Decimal, error) {
 	lo, hi := d, e
 	loNeg, hiNeg := d.neg, eNeg
