@@ -347,10 +347,23 @@ func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 		return newDecimal(u128{lo: q}, qNeg, 0), newDecimal(u128{lo: r}, d.neg, d.prec), nil
 	}
 	f := max(d.prec, e.prec)
-	num := mulToU256(d.coef, pow10u128[(f-d.prec)&63])
-	den, overflow := mul128by64(e.coef, pow10u64[(f-e.prec)&31])
-	if overflow != 0 {
-		return Decimal{}, Decimal{}, ErrOverflow
+	// f = max(d.prec, e.prec) ⇒ at least one factor below is 10^0. Skip the
+	// multiply-by-one for whichever operand is already aligned: scaling by 1
+	// is a no-op the schoolbook path would otherwise pay 4 Mul64 + 6 Add64
+	// for (mulToU256) or a divisor multiply that provably never overflows.
+	var num u256
+	if f == d.prec {
+		num = u256{d0: d.coef.lo, d1: d.coef.hi}
+	} else {
+		num = mulToU256(d.coef, pow10u128[(f-d.prec)&63])
+	}
+	den := e.coef
+	if f != e.prec {
+		var overflow uint64
+		den, overflow = mul128by64(e.coef, pow10u64[(f-e.prec)&31])
+		if overflow != 0 {
+			return Decimal{}, Decimal{}, ErrOverflow
+		}
 	}
 	if den.hi == 0 {
 		// 128/64 fast path mirroring divCoefAt: a numerator that fits 128 bits
