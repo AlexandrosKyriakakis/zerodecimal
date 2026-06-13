@@ -387,6 +387,16 @@ func TestCmp(t *testing.T) {
 		{"negative_max_coef_prec_0_vs_negative_small_prec_19", Decimal{coef: maxCoef, neg: true}, Decimal{coef: u128{lo: 5}, neg: true, prec: 19}, -1},
 		{"pow2_64_minus_1_prec_0_vs_max_coef_prec_19", Decimal{coef: u128{lo: maxUint64}}, Decimal{coef: maxCoef, prec: 19}, -1},
 		{"max_coef_same_prec_equal", Decimal{coef: maxCoef, prec: 19}, Decimal{coef: maxCoef, prec: 19}, 0},
+		// Canonical zero (prec 0) versus a nonzero value at differing prec now
+		// routes through the unaligned arm instead of a Sign short-circuit.
+		{"zero_vs_positive_prec_2", Zero, MustNew(5, -2), -1},
+		{"zero_vs_negative_prec_2", Zero, MustNew(-5, -2), 1},
+		{"positive_prec_2_vs_zero", MustNew(5, -2), Zero, 1},
+		// Both negative, differing prec: cmpSlow must negate cmpUnaligned's
+		// magnitude result so the larger magnitude orders smaller.
+		{"both_negative_unaligned_greater_mag_less", MustNew(-15, -1), MustNew(-149, -2), -1},
+		{"both_negative_unaligned_less_mag_greater", MustNew(-149, -2), MustNew(-15, -1), 1},
+		{"both_negative_unaligned_equal", MustNew(-15, -1), Decimal{coef: u128{lo: 150}, neg: true, prec: 2}, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

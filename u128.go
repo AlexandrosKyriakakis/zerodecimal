@@ -41,6 +41,19 @@ func cmp128(u, v u128) int {
 	return 1
 }
 
+// cmp128i returns -1 if u < v, 0 if u == v, and +1 if u > v using two
+// full-width subtracts: borrow of u-v (b1) flags u<v, borrow of v-u (b2)
+// flags u>v, and b2-b1 collapses to exactly -1/0/+1 with no compare ladder
+// or branch. Faster than cmp128's eq-then-less two-pass on the hot path.
+func cmp128i(u, v u128) int {
+	_, b1 := bits.Sub64(u.lo, v.lo, 0)
+	_, b1 = bits.Sub64(u.hi, v.hi, b1)
+	_, b2 := bits.Sub64(v.lo, u.lo, 0)
+	_, b2 = bits.Sub64(v.hi, u.hi, b2)
+	//nolint:gosec // b1,b2 are 0/1 borrow words; the difference is in [-1,1].
+	return int(b2) - int(b1)
+}
+
 // add128 returns u+v mod 2^128 and the carry out of bit 127 (0 or 1).
 func add128(u, v u128) (u128, uint64) {
 	lo, carry := bits.Add64(u.lo, v.lo, 0)

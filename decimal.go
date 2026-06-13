@@ -206,21 +206,41 @@ func (d Decimal) IntPart() (int64, error) {
 // Decimals of different precision compare by value: 1.5 equals 1.50.
 // Comparison is infallible — no precision alignment can overflow.
 func (d Decimal) Cmp(e Decimal) int {
-	// Sign discrimination is exact: canonical zero never carries a sign.
-	ds, es := d.Sign(), e.Sign()
-	switch {
-	case ds < es:
-		return -1
-	case ds > es:
+	// Sign-class discrimination by the neg flag alone is exact: canonical zero
+	// never carries a sign (decimal.go INVARIANT), so neg partitions operands
+	// into negatives and non-negatives with no Sign()/isZero check needed.
+	if d.prec == e.prec && d.neg == e.neg {
+		// Aligned, same sign class: one dual-borrow magnitude compare, then
+		// orient. The negate compiles to a branch-over-SUB (CSNEG-class).
+		c := cmp128i(d.coef, e.coef)
+		if d.neg {
+			return -c
+		}
+		return c
+	}
+	if d.neg != e.neg {
+		// Opposite sign classes: the negative one is smaller. Equal coefficients
+		// cannot both be zero here (canonical zero is non-negative), so this is
+		// never a spurious 0.
+		if d.neg {
+			return -1
+		}
 		return 1
-	case ds == 0:
-		return 0
 	}
-	// Same nonzero sign: compare magnitudes, then orient by that sign.
-	if d.prec == e.prec {
-		return ds * cmp128(d.coef, e.coef)
+	return cmpSlow(d, e)
+}
+
+// cmpSlow handles the differing-precision arm of Cmp for operands already
+// known to share a sign class. It compares magnitudes via cmpUnaligned and
+// orients by that shared sign. Outlined so Cmp's aligned fast path stays lean;
+// it cannot inline cmpUnaligned (cost), so this is one extra frame on the
+// non-benchmarked prec-mismatch path only.
+func cmpSlow(d, e Decimal) int {
+	c := cmpUnaligned(d, e)
+	if d.neg {
+		return -c
 	}
-	return ds * cmpUnaligned(d, e)
+	return c
 }
 
 // cmpUnaligned compares the magnitudes of d and e across differing
