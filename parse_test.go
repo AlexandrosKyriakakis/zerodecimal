@@ -208,13 +208,25 @@ func forcedGeneral(s string, trunc bool) (Decimal, error) {
 }
 
 // parseAgreeSeeds are inputs aimed at the accept/reject/value boundaries of
-// the specialized parser paths, the long plain path above all: trailing
-// dots past the length bail, the 20/21-digit limb boundaries, fold
-// overflows that must still defer their verdict to parseGeneral, all-zero
-// long fractions, and dots straight after a leading-zero run.
+// the specialized parser paths, the long plain path above all: the 16-byte
+// run-path cut, trailing dots past the length bail, the 19/20/21-digit limb
+// boundaries, fold overflows that must still defer their verdict to
+// parseGeneral, all-zero long fractions, and dots straight after a
+// leading-zero run.
 var parseAgreeSeeds = []string{
-	"12345678901234567890.",                       // trailing dot past the length bail
-	"12345678901234567890",                        // 20 digits: the fast path's two-limb fold
+	"1234567890123456",                            // 16 digits: shortest run-path input
+	"1234567890123456789",                         // 19 digits: the one-limb edge
+	"0.1234567890123456789",                       // zero integer limb, 19-digit fraction
+	"0.0000000000000001",                          // zero limb behind a near-zero fraction
+	"0.000000000000000000",                        // all-zero window collapses to canonical zero
+	".0000000000000005",                           // dot with no digit before it, in the window
+	"1.50000000000000000",                         // one-limb trim chain down to "1.5"
+	"1234567890123456e2",                          // exponent behind a 16-digit run
+	"12345678901234567.",                          // trailing dot in the window
+	"123456789012345..5",                          // second dot stops the window's fraction run
+	"0001234567890123456.7",                       // zero skip into the run path
+	"12345678901234567890.",                       // trailing dot past the one-limb window
+	"12345678901234567890",                        // 20 digits: the long path's two-limb fold
 	"123456789012345678901",                       // 21 digits: shortest long-path integer
 	"12345678901234567890123456789012345678",      // 38 digits
 	"123456789012345678901234567890123456789",     // 39 digits, in range
