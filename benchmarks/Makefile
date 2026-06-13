@@ -1,4 +1,4 @@
-.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec compare pgo
+.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
@@ -26,12 +26,18 @@ bench-eric:
 bench-dec:
 	go test -bench=/^dec$$/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/dec/|/|g" > bench-dec.txt
 
+# gv (govalues) only emits the three shapes it can represent (<=19 significant
+# digits); its large/near_max rows are absent by design.
+bench-gv:
+	go test -bench=/gv/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/gv/|/|g" > bench-gv.txt
+
 compare:
 	benchstat udecimal=bench-udec.txt zerodecimal=bench-zd.txt > bench-vs-udecimal.txt
 	benchstat alpacadecimal=bench-alpaca.txt zerodecimal=bench-zd.txt > bench-vs-alpacadecimal.txt
 	benchstat shopspring=bench-ss.txt zerodecimal=bench-zd.txt > bench-vs-shopspring.txt
 	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd.txt > bench-vs-ericlagergren.txt
 	benchstat dec128=bench-dec.txt zerodecimal=bench-zd.txt > bench-vs-dec128.txt
+	benchstat govalues=bench-gv.txt zerodecimal=bench-zd.txt > bench-vs-govalues.txt
 
 # PGO delta: collect a CPU profile over the zd benchmarks, re-run them with
 # the benchmark binary rebuilt against that profile, and publish the

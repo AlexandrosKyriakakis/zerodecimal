@@ -1,16 +1,18 @@
 // Package benchmarks compares zerodecimal against udecimal, alpacadecimal,
-// shopspring/decimal, ericlagergren/decimal, and jokruger/dec128 on a shared
-// op × shape matrix. Sub-benchmarks are named Benchmark<Op>/<lib>/<shape>
-// with lib in {zd, udec, alpaca, ss, eric, dec} so that per-library runs can
-// be filtered with -bench=/<lib>/ (anchored as /^dec$/ for dec, which is a
-// substring of udec) and compared with benchstat after stripping the lib
-// segment.
+// shopspring/decimal, ericlagergren/decimal, jokruger/dec128, and
+// govalues/decimal on a shared op × shape matrix. Sub-benchmarks are named
+// Benchmark<Op>/<lib>/<shape> with lib in {zd, udec, alpaca, ss, eric, dec,
+// gv} so that per-library runs can be filtered with -bench=/<lib>/ (anchored
+// as /^dec$/ for dec, which is a substring of udec) and compared with
+// benchstat after stripping the lib segment.
 //
 // Inputs are parsed once at package level per library type; every leaf
 // benchmark reports allocations, uses b.Loop, and writes results (errors
 // included) into package-level sinks so no call is dead-code-eliminated.
 // Operations a library does not provide are skipped, never approximated;
-// the README lists every skip and semantic asymmetry.
+// shapes a library cannot represent are skipped too (govalues caps at 19
+// significant digits, so its large and near_max rows are absent). The README
+// lists every skip and semantic asymmetry.
 package benchmarks
 
 import (
@@ -21,6 +23,7 @@ import (
 	alpaca "github.com/alpacahq/alpacadecimal"
 	ed "github.com/ericlagergren/decimal"
 	ericpg "github.com/ericlagergren/decimal/sql/postgres"
+	gv "github.com/govalues/decimal"
 	dec "github.com/jokruger/dec128"
 	udec "github.com/quagmt/udecimal"
 	ss "github.com/shopspring/decimal"
@@ -55,15 +58,21 @@ var (
 	ssA, ssB         [numShapes]ss.Decimal
 	ericA, ericB     [numShapes]*ed.Big
 	decA, decB       [numShapes]dec.Dec128
+	gvA, gvB         [numShapes]gv.Decimal
 )
+
+// gvOK[i] is true when govalues can represent both operands of shape i; it
+// caps at 19 significant digits, so the large and near_max shapes are absent.
+// Every gv sub-benchmark is gated on it.
+var gvOK [numShapes]bool
 
 // Pre-encoded inputs for the decode-direction codec and conversion benchmarks.
 var (
 	floats   [numShapes]float64
 	scanSrcs [numShapes]any
 
-	zdJSON, udecJSON, alpacaJSON, ssJSON, ericJSON, decJSON [numShapes][]byte
-	zdBin, udecBin, ssBin, decBin                           [numShapes][]byte
+	zdJSON, udecJSON, alpacaJSON, ssJSON, ericJSON, decJSON, gvJSON [numShapes][]byte
+	zdBin, udecBin, ssBin, decBin, gvBin                            [numShapes][]byte
 )
 
 // ericValuers wraps each eric operand for the driver.Valuer benchmarks.
@@ -76,6 +85,7 @@ var (
 	alpacaSink, alpacaSink2 alpaca.Decimal
 	ssSink, ssSink2         ss.Decimal
 	decSink, decSink2       dec.Dec128
+	gvSink, gvSink2         gv.Decimal
 	ericPtrSink             *ed.Big
 	ericPtrSink2            *ed.Big
 
@@ -94,6 +104,7 @@ var (
 	alpacaDst alpaca.Decimal
 	ssDst     ss.Decimal
 	decDst    dec.Dec128
+	gvDst     gv.Decimal
 	ericDst   = newEricSink(ed.ToNearestEven)
 	ericPGDst = ericpg.Decimal{V: newEricSink(ed.ToNearestEven)}
 )
@@ -162,6 +173,14 @@ func init() {
 		decA[i] = mustDec(sh.a)
 		decB[i] = mustDec(sh.b)
 
+		// govalues caps at 19 significant digits; the large and near_max
+		// operands do not fit, so those shapes stay skipped (gvOK false).
+		if ga, ea := gv.Parse(sh.a); ea == nil {
+			if gb, eb := gv.Parse(sh.b); eb == nil {
+				gvA[i], gvB[i], gvOK[i] = ga, gb, true
+			}
+		}
+
 		f, err := strconv.ParseFloat(sh.a, 64)
 		if err != nil {
 			panic(err)
@@ -181,12 +200,17 @@ func init() {
 		ssBin[i] = mustBytes(ssA[i].MarshalBinary())
 		decBin[i] = mustBytes(decA[i].MarshalBinary())
 
+		if gvOK[i] {
+			gvJSON[i] = mustBytes(gvA[i].MarshalJSON())
+			gvBin[i] = mustBytes(gvA[i].MarshalBinary())
+		}
+
 		ericValuers[i] = &ericpg.Decimal{V: ericA[i]}
 	}
 }
 
 func BenchmarkParse(b *testing.B) {
-	for _, sh := range shapes {
+	for i, sh := range shapes {
 		s := sh.a
 		b.Run("zd/"+sh.name, func(b *testing.B) {
 			b.ReportAllocs()
@@ -224,6 +248,14 @@ func BenchmarkParse(b *testing.B) {
 				decSink = dec.FromString(s)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = gv.Parse(s)
+				}
+			})
+		}
 	}
 }
 
@@ -271,6 +303,15 @@ func BenchmarkString(b *testing.B) {
 				strSink = d.String()
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					strSink = d.String()
+				}
+			})
+		}
 	}
 }
 
@@ -318,6 +359,15 @@ func BenchmarkAdd(b *testing.B) {
 				decSink = d.Add(e)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = d.Add(e)
+				}
+			})
+		}
 	}
 }
 
@@ -365,6 +415,15 @@ func BenchmarkSub(b *testing.B) {
 				decSink = d.Sub(e)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = d.Sub(e)
+				}
+			})
+		}
 	}
 }
 
@@ -414,6 +473,17 @@ func BenchmarkMul(b *testing.B) {
 				decSink = d.Mul(e)
 			}
 		})
+		// gv on max_prec rounds the product half-even to fit 19 digits (the
+		// exact product needs more scale); see README.
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = d.Mul(e)
+				}
+			})
+		}
 	}
 }
 
@@ -461,6 +531,15 @@ func BenchmarkDiv(b *testing.B) {
 				decSink = d.Div(e)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = d.Quo(e)
+				}
+			})
+		}
 	}
 }
 
@@ -508,6 +587,15 @@ func BenchmarkQuoRem(b *testing.B) {
 				decSink, decSink2 = d.QuoRem(e)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, gvSink2, errSink = d.QuoRem(e)
+				}
+			})
+		}
 	}
 }
 
@@ -555,6 +643,15 @@ func BenchmarkCmp(b *testing.B) {
 				intSink = d.Compare(e)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d, e := gvA[i], gvB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					intSink = d.Cmp(e)
+				}
+			})
+		}
 	}
 }
 
@@ -602,6 +699,15 @@ func BenchmarkRoundBank(b *testing.B) {
 				decSink = d.RoundBank(roundPlaces)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink = d.Round(roundPlaces)
+				}
+			})
+		}
 	}
 }
 
@@ -649,6 +755,15 @@ func BenchmarkTruncate(b *testing.B) {
 				decSink = d.Trunc(roundPlaces)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink = d.Trunc(roundPlaces)
+				}
+			})
+		}
 	}
 }
 
@@ -691,6 +806,15 @@ func BenchmarkMarshalJSON(b *testing.B) {
 				bytesSink, errSink = d.MarshalJSON()
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					bytesSink, errSink = d.MarshalJSON()
+				}
+			})
+		}
 	}
 }
 
@@ -738,6 +862,15 @@ func BenchmarkUnmarshalJSON(b *testing.B) {
 				errSink = decDst.UnmarshalJSON(data)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				data := gvJSON[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					errSink = gvDst.UnmarshalJSON(data)
+				}
+			})
+		}
 	}
 }
 
@@ -774,6 +907,15 @@ func BenchmarkMarshalBinary(b *testing.B) {
 				bytesSink, errSink = d.MarshalBinary()
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					bytesSink, errSink = d.MarshalBinary()
+				}
+			})
+		}
 	}
 }
 
@@ -808,6 +950,15 @@ func BenchmarkUnmarshalBinary(b *testing.B) {
 				errSink = decDst.UnmarshalBinary(data)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				data := gvBin[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					errSink = gvDst.UnmarshalBinary(data)
+				}
+			})
+		}
 	}
 }
 
@@ -838,6 +989,15 @@ func BenchmarkAppendText(b *testing.B) {
 				bytesSink = d.StringToBuf(appendBuf)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					bytesSink, errSink = d.AppendText(appendBuf)
+				}
+			})
+		}
 	}
 }
 
@@ -885,6 +1045,15 @@ func BenchmarkSQLValue(b *testing.B) {
 				valueSink, errSink = d.Value()
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				d := gvA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					valueSink, errSink = d.Value()
+				}
+			})
+		}
 	}
 }
 
@@ -932,6 +1101,15 @@ func BenchmarkSQLScan(b *testing.B) {
 				errSink = decDst.Scan(src)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				src := scanSrcs[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					errSink = gvDst.Scan(src)
+				}
+			})
+		}
 	}
 }
 
@@ -979,5 +1157,14 @@ func BenchmarkNewFromFloat(b *testing.B) {
 				decSink = dec.FromFloat64(f)
 			}
 		})
+		if gvOK[i] {
+			b.Run("gv/"+sh.name, func(b *testing.B) {
+				f := floats[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					gvSink, errSink = gv.NewFromFloat64(f)
+				}
+			})
+		}
 	}
 }

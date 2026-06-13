@@ -11,6 +11,7 @@ libraries on one shared operation × shape matrix:
 | `ss`     | github.com/shopspring/decimal                                             |
 | `eric`   | github.com/ericlagergren/decimal                                          |
 | `dec`    | github.com/jokruger/dec128                                                |
+| `gv`     | github.com/govalues/decimal                                               |
 
 It is a separate Go module (`replace`d onto the parent directory) so the
 competitor dependencies never touch the library's own `go.mod`.
@@ -29,7 +30,10 @@ pairs spanning the representation regimes that matter:
 | `near_max`      | `17014118346046923173.1687303715884105727` | `1.000000001`           |
 
 `near_max` carries the coefficient 2^127−1 at precision 19 — the widest value
-every u128-based library still represents. Ops: Parse, String, Add, Sub, Mul,
+every u128-based library still represents. `govalues` is the exception: it
+caps at 19 significant digits, so it cannot represent `large` (29 digits) or
+`near_max` (39 digits) and its rows for those two shapes are absent (gated on
+`gvOK` in the harness). Ops: Parse, String, Add, Sub, Mul,
 Div, QuoRem, Cmp, RoundBank, Truncate, MarshalJSON, UnmarshalJSON,
 MarshalBinary, UnmarshalBinary, AppendText, SQLValue, SQLScan, NewFromFloat.
 Single-operand ops use column `a`.
@@ -95,6 +99,19 @@ These are part of the story the numbers tell, not benchmark bugs:
   (`buf[:0]`) instead of appending. The harness's append buffer is empty, so
   the measured work is identical; the row is a buffer-reuse comparison, not
   an `encoding.TextAppender` contract match.
+- **gv 19-digit cap**: govalues stores at most 19 significant digits, so the
+  `large` and `near_max` operands do not fit and those rows are skipped
+  entirely (not approximated) — `bench-vs-govalues.txt` lists those shapes with
+  a zerodecimal column only, and the comparison geomean is over the three
+  shapes both libraries can represent. It maps cleanly onto every op for those
+  three shapes: `Quo` for Div, `Round` for RoundBank (half-even, the same
+  mode), `Trunc` for Truncate, and the full `(Decimal, error)` codec/SQL
+  surface. Where an exact result needs more than 19 digits it takes govalues's
+  internal big-integer path rather than overflowing — `Add`/`Mul` on `max_prec`
+  and every `Quo` run there (≈107/132/280 ns/op vs zerodecimal's single-digit
+  ns) — but that path is allocation-free in steady state, so govalues stays 0
+  B/op throughout, matching zerodecimal on allocations and differing only in
+  time.
 
 ## Known trade-offs
 
@@ -124,6 +141,7 @@ make bench-alpaca
 make bench-ss
 make bench-eric
 make bench-dec      # anchored -bench=/^dec$/ so it does not also match udec
+make bench-gv       # govalues; only the three shapes it can represent
 make compare        # benchstat per-pair reports into bench-vs-*.txt
 make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
 ```
