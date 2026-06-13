@@ -190,15 +190,22 @@ pinned tie-by-tie against its shopspring equivalent in
 
 ## Benchmarks
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/comparison-dark.svg">
+  <img alt="Geomean latency of zerodecimal versus other Go decimal libraries (ns/op, shorter is faster); zerodecimal and zerodecimal+PGO are the two fastest" src="benchmarks/comparison-light.svg">
+</picture>
+
 The comparative suite lives in [benchmarks/](benchmarks/) — a **separate Go
 module**, so the competitor dependencies never touch the library's `go.mod`.
 Full committed results: [bench-vs-dec128.txt](benchmarks/bench-vs-dec128.txt),
 [bench-vs-udecimal.txt](benchmarks/bench-vs-udecimal.txt),
+[bench-vs-govalues.txt](benchmarks/bench-vs-govalues.txt),
 [bench-vs-shopspring.txt](benchmarks/bench-vs-shopspring.txt),
 [bench-vs-alpacadecimal.txt](benchmarks/bench-vs-alpacadecimal.txt),
 [bench-vs-ericlagergren.txt](benchmarks/bench-vs-ericlagergren.txt);
 methodology and the deliberate semantic asymmetries are documented in
-[benchmarks/README.md](benchmarks/README.md).
+[benchmarks/README.md](benchmarks/README.md). The chart above is regenerated
+from those files with `make -C benchmarks chart`.
 
 Against jokruger/dec128 — the closest competitor (also a 128-bit,
 zero-allocation fixed-point design) — zerodecimal wins the geomean by −41% and
