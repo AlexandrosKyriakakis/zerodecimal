@@ -13,3 +13,5 @@ require (
 )
 
 require github.com/jokruger/dec128 v1.0.20
+
+require github.com/govalues/decimal v0.1.36
