@@ -80,7 +80,19 @@ func (d Decimal) Value() (driver.Value, error) {
 	if v, ok := cachedValue(d); ok {
 		return v, nil
 	}
-	return d.String(), nil
+	// Render and convert directly rather than delegating to String: String
+	// would re-run the cache probe (cacheIndex) a second time for every miss.
+	// The result is still exactly the canonical string, so the documented
+	// exactly-two-allocations contract (string + interface header) holds.
+	var scratch [scratchLen]byte
+	pos, end := canonicalScratch(&scratch, d)
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see
+	// canonicalScratch); the guard drops the slice bounds check.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return "", nil
+	}
+	return string(scratch[pos:end]), nil
 }
 
 // NullDecimal is a Decimal that can represent SQL NULL: Valid false means

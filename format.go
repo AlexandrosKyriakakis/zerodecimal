@@ -87,6 +87,57 @@ func appendCanonical(dst []byte, d Decimal) []byte {
 	return append(dst, scratch[pos:end]...)
 }
 
+// canonicalScratch renders the canonical decimal form of d (see
+// appendCanonical) right to left into scratch and returns the window
+// [pos, end) holding the rendered bytes. It is a deliberate copy of
+// appendCanonical's core, minus the trailing append: String, Value,
+// MarshalJSON, and MarshalText convert that window straight to a string or
+// copy it once, so they pay a single memmove instead of appending into a
+// stack buffer and then converting (two copies). appendCanonical stays a
+// standalone body — duplicating the core rather than calling it keeps the
+// remaining appendCanonical callers (AppendText, InexactFloat64) call-free
+// and inlinable.
+//
+// The returned window satisfies 0 ≤ pos ≤ end ≤ len(scratch); callers
+// restate that guard verbatim at the conversion site so the slice carries no
+// bounds check.
+func canonicalScratch(scratch *[scratchLen]byte, d Decimal) (pos, end int) {
+	pos = len(scratch)
+	end = len(scratch)
+
+	// Precision 0 needs no split at all; skipping the divmod call keeps the
+	// pure-integer rendering path call-free up to the digit writers.
+	q, r := d.coef, uint64(0)
+	if d.prec != 0 {
+		// Open-code the one-limb dispatch (see appendCanonical).
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
+	}
+
+	// Fractional part. r == 0 covers both prec == 0 and an all-zero
+	// fraction, which trims away entirely, point included.
+	if r != 0 {
+		pos = writePadded(scratch, pos, r, int(d.prec))
+		// r != 0 guarantees a nonzero digit, so the trim loop terminates.
+		for scratch[(end-1)&scratchMask] == '0' {
+			end--
+		}
+		pos--
+		scratch[pos&scratchMask] = '.'
+	}
+
+	pos = writeIntPart(scratch, pos, q)
+
+	if d.neg {
+		pos--
+		scratch[pos&scratchMask] = '-'
+	}
+	return pos, end
+}
+
 // writeIntPart writes the decimal digits of q right to left into buf, ending
 // just before pos, without leading zeros (a single "0" when q is zero), and
 // returns the index of the first digit written. It walks least-significant
@@ -176,8 +227,16 @@ func (d Decimal) String() string {
 	if s, ok := cachedString(d); ok {
 		return s
 	}
-	var buf [48]byte
-	return string(appendCanonical(buf[:0], d))
+	var scratch [scratchLen]byte
+	pos, end := canonicalScratch(&scratch, d)
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see
+	// canonicalScratch); restating it in this checkable form drops the slice
+	// bounds check, and the impossible branch keeps the result empty.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return ""
+	}
+	return string(scratch[pos:end])
 }
 
 // AppendText appends the canonical decimal representation of d to b and

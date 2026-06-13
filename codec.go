@@ -28,12 +28,11 @@ var (
 	_ driver.Valuer              = Decimal{}
 )
 
-// marshalCap is the size of the stack buffer the single-allocation marshalers
-// render into before copying out: the widest canonical rendering is 41 bytes
-// (sign, 39 digits, point) and MarshalJSON adds two quotes for 43, so a
-// 48-byte buffer always suffices. Rendering on the stack first lets the one
-// real allocation be exactly the rendered length — a 3-byte result allocates
-// 3 bytes, not 48.
+// marshalCap is the size of the stack buffer MarshalJSON renders into before
+// copying out: the widest canonical rendering is 41 bytes (sign, 39 digits,
+// point) and the two quotes bring it to 43, so a 48-byte buffer always
+// suffices. Rendering on the stack first lets the one real allocation be
+// exactly the rendered length.
 const marshalCap = 48
 
 // jsonNull is the JSON null literal; the unmarshalers match it byte-for-byte
@@ -46,10 +45,16 @@ const jsonNull = "null"
 // allocated slice. It costs exactly one allocation — the result, sized
 // exactly (the rendering happens in a stack buffer first).
 func (d Decimal) MarshalText() ([]byte, error) {
-	var buf [marshalCap]byte
-	b := appendCanonical(buf[:0], d)
-	out := make([]byte, len(b))
-	copy(out, b)
+	var scratch [scratchLen]byte
+	pos, end := canonicalScratch(&scratch, d)
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see
+	// canonicalScratch); the guard drops the slice bounds check.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return []byte{}, nil
+	}
+	out := make([]byte, end-pos)
+	copy(out, scratch[pos:end])
 	return out, nil
 }
 
