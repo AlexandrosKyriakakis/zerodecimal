@@ -76,6 +76,12 @@ func TestStringRandom(t *testing.T) {
 		want := canonicalOracle(neg, u128{hi: hi, lo: lo}, prec)
 		require.Equal(t, want, d.String(), "String of %+v", d)
 		require.Equal(t, want, string(appendCanonical(nil, d)), "appendCanonical of %+v", d)
+		// AppendText carries its own flattened copy of the canonical body on
+		// the cache-miss path; cross-check it here so the duplication stays in
+		// sync with the oracle.
+		b, err := d.AppendText(nil)
+		require.NoError(t, err)
+		require.Equal(t, want, string(b), "AppendText of %+v", d)
 	}
 }
 

@@ -241,9 +241,61 @@ func (d Decimal) String() string {
 
 // AppendText appends the canonical decimal representation of d to b and
 // returns the extended slice, matching the encoding.TextAppender shape. The
-// error is always nil. It allocates only if b lacks capacity.
+// error is always nil. Values inside the small-value cache window append the
+// precomputed string (byte-identical to appendCanonical's output, since the
+// cache is built through it — see cache.go); everything else renders inline.
+// It allocates only if b lacks capacity.
 func (d Decimal) AppendText(b []byte) ([]byte, error) {
-	return appendCanonical(b, d), nil
+	if s, ok := cachedString(d); ok {
+		return append(b, s...), nil
+	}
+	// Miss path: a manual flatten of appendCanonical's body (it stays a
+	// standalone, inlinable function for its other callers, and wrapping it
+	// here would cost a non-inlined frame on every miss — see canonicalScratch
+	// for the same rationale). The duplicated body is kept byte-identical by
+	// TestStringRandom, which cross-checks this path against the oracle.
+	var scratch [scratchLen]byte
+	pos := len(scratch)
+	end := len(scratch)
+
+	// Precision 0 needs no split at all; skipping the divmod call keeps the
+	// pure-integer rendering path call-free up to the digit writers.
+	q, r := d.coef, uint64(0)
+	if d.prec != 0 {
+		// Open-code the one-limb dispatch (see appendCanonical).
+		if q.hi == 0 {
+			q.lo, r = divmod64Pow10(q.lo, d.prec)
+		} else {
+			q, r = divmod128Pow10Slow(q, d.prec)
+		}
+	}
+
+	// Fractional part. r == 0 covers both prec == 0 and an all-zero
+	// fraction, which trims away entirely, point included.
+	if r != 0 {
+		pos = writePadded(&scratch, pos, r, int(d.prec))
+		// r != 0 guarantees a nonzero digit, so the trim loop terminates.
+		for scratch[(end-1)&scratchMask] == '0' {
+			end--
+		}
+		pos--
+		scratch[pos&scratchMask] = '.'
+	}
+
+	pos = writeIntPart(&scratch, pos, q)
+
+	if d.neg {
+		pos--
+		scratch[pos&scratchMask] = '-'
+	}
+	// 0 ≤ pos ≤ end ≤ len(scratch) holds on every path (see appendCanonical);
+	// restating it in this checkable form drops the slice bounds check, and the
+	// impossible branch leaves b untouched.
+	//nolint:gosec // deliberate: the uint view sends negative cursors above len, failing the guard
+	if uint(end) > uint(len(scratch)) || uint(pos) > uint(end) {
+		return b, nil
+	}
+	return append(b, scratch[pos:end]...), nil
 }
 
 // zeroRun is the padding source for AppendFixed's trailing zeros: 32 zeros,
