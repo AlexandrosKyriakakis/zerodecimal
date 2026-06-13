@@ -190,7 +190,10 @@ pinned tie-by-tie against its shopspring equivalent in
 
 ## Benchmarks
 
-![Geomean latency of zerodecimal versus other Go decimal libraries (ns/op, shorter is faster)](benchmarks/comparison.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/comparison-dark.svg">
+  <img alt="Geomean latency of zerodecimal versus other Go decimal libraries (ns/op, shorter is faster); zerodecimal and zerodecimal+PGO are the two fastest" src="benchmarks/comparison-light.svg">
+</picture>
 
 The comparative suite lives in [benchmarks/](benchmarks/) — a **separate Go
 module**, so the competitor dependencies never touch the library's `go.mod`.

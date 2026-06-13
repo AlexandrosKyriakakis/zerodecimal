@@ -144,7 +144,7 @@ make bench-dec      # anchored -bench=/^dec$/ so it does not also match udec
 make bench-gv       # govalues; only the three shapes it can represent
 make compare        # benchstat per-pair reports into bench-vs-*.txt
 make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
-make chart          # render comparison.svg from the committed bench-vs-*.txt geomeans
+make chart          # render comparison-{light,dark}.svg from the committed bench-vs-*.txt + bench-pgo.txt geomeans
 ```
 
 `compare` and `pgo` need `benchstat`

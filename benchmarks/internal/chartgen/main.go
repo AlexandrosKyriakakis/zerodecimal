@@ -1,14 +1,19 @@
-// Command chartgen renders benchmarks/comparison.svg: a horizontal bar chart
-// of each decimal library's geomean latency (ns/op), zerodecimal highlighted.
+// Command chartgen renders comparison-light.svg and comparison-dark.svg: a
+// horizontal bar chart of each decimal library's geomean latency (ns/op),
+// zerodecimal (and zerodecimal+PGO) highlighted. The two transparent variants
+// are swapped by prefers-color-scheme via a <picture> element in the README,
+// so the chart matches GitHub's light/dark theme.
 //
-// It reads the committed bench-vs-<lib>.txt benchstat files, so the chart is
-// regenerated from the published numbers rather than hand-drawn. Run it from
-// the benchmarks module root (the Makefile `chart` target does this):
+// It reads the committed bench-vs-<lib>.txt and bench-pgo.txt benchstat files,
+// so the chart is regenerated from the published numbers rather than
+// hand-drawn. Run it from the benchmarks module root (the Makefile `chart`
+// target does this):
 //
 //	go run ./internal/chartgen
 //
-// zerodecimal's own bar is taken from the dec128 comparison (the full
-// five-shape run); each competitor's bar is its own geomean column.
+// Each competitor's bar is its own geomean column; the zerodecimal and
+// zerodecimal+PGO bars are the default and pgo columns of bench-pgo.txt (the
+// same default-vs-pgo session, so the two are directly comparable).
 package main
 
 import (
@@ -89,54 +94,76 @@ func parseNs(tok string) (float64, error) {
 type bar struct {
 	name string
 	ns   float64
-	self bool
+	self bool // zerodecimal (default build)
+	pgo  bool // zerodecimal rebuilt with PGO
 }
 
 func main() {
 	var bars []bar
-	var zdNs float64
 	for _, l := range libs {
-		comp, zd, err := geomeans(l.file)
+		comp, _, err := geomeans(l.file)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "chartgen:", err)
 			os.Exit(1)
 		}
 		bars = append(bars, bar{name: l.name, ns: comp})
-		if l.name == "dec128" { // the full five-shape run; canonical zd geomean
-			zdNs = zd
-		}
 	}
-	bars = append(bars, bar{name: "zerodecimal", ns: zdNs, self: true})
 
-	sort.Slice(bars, func(i, j int) bool { return bars[i].ns < bars[j].ns })
-
-	const out = "comparison.svg"
-	if err := os.WriteFile(out, []byte(render(bars)), 0o644); err != nil {
+	// zerodecimal's default and PGO geomeans both come from bench-pgo.txt, the
+	// same default-vs-pgo session, so the two bars are directly comparable.
+	zdDefault, zdPGO, err := geomeans("bench-pgo.txt")
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "chartgen:", err)
 		os.Exit(1)
 	}
-	fmt.Println("wrote", out)
+	bars = append(bars,
+		bar{name: "zerodecimal", ns: zdDefault, self: true},
+		bar{name: "zerodecimal +PGO", ns: zdPGO, pgo: true},
+	)
+
+	sort.Slice(bars, func(i, j int) bool { return bars[i].ns < bars[j].ns })
+
+	// Two transparent variants, swapped by prefers-color-scheme via a <picture>
+	// element in the README so the chart matches GitHub's light/dark theme.
+	for _, t := range themes {
+		out := "comparison-" + t.name + ".svg"
+		if err := os.WriteFile(out, []byte(render(bars, t)), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "chartgen:", err)
+			os.Exit(1)
+		}
+		fmt.Println("wrote", out)
+	}
 }
 
-// render builds the SVG. Layout: a label column, a proportional bar, and a
-// value label, one row per library, on a self-contained white card.
-func render(bars []bar) string {
+// theme is a color set; bars and the card are transparent, so only text, the
+// muted footnote/subtitle, the competitor bars, and the zerodecimal accent
+// change between light and dark.
+type theme struct {
+	name, text, muted, bar, accent, accentPGO string
+}
+
+var themes = []theme{
+	{"light", "#1f2328", "#57606a", "#afb8c1", "#2da44e", "#0969da"},
+	{"dark", "#e6edf3", "#8b949e", "#484f58", "#3fb950", "#4493f8"},
+}
+
+// render builds one transparent SVG: a label column, a proportional bar, and a
+// value label, one row per library. No background rect, so it blends into
+// whatever page background GitHub paints in the active theme.
+func render(bars []bar, t theme) string {
 	const (
-		width    = 760
-		labelW   = 150
-		valueW   = 64
-		padX     = 16
-		rowH     = 36
-		barH     = 20
-		titleH   = 64
-		footH    = 30
-		barX     = labelW
-		barMax   = width - labelW - valueW - padX
-		accent = "#2da44e"
-		gray   = "#afb8c1"
-		text   = "#1f2328"
-		muted  = "#57606a"
+		width  = 760
+		labelW = 150
+		valueW = 64
+		padX   = 16
+		rowH   = 36
+		barH   = 20
+		titleH = 64
+		footH  = 46
+		barX   = labelW
+		barMax = width - labelW - valueW - padX
 	)
+	text, muted, gray, accent, accentPGO := t.text, t.muted, t.bar, t.accent, t.accentPGO
 	font := "-apple-system,Segoe UI,Helvetica,Arial,sans-serif"
 	height := titleH + len(bars)*rowH + footH
 
@@ -149,7 +176,6 @@ func render(bars []bar) string {
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" font-family="%s">`+"\n", width, height, width, height, font)
-	fmt.Fprintf(&sb, `<rect width="%d" height="%d" rx="8" fill="#ffffff" stroke="#d0d7de"/>`+"\n", width, height)
 	fmt.Fprintf(&sb, `<text x="%d" y="28" font-size="16" font-weight="700" fill="%s">zerodecimal vs other Go decimal libraries</text>`+"\n", padX, text)
 	fmt.Fprintf(&sb, `<text x="%d" y="48" font-size="12" fill="%s">geomean latency, ns/op (shorter is faster) — Apple M1 Pro, Go 1.26, count=10</text>`+"\n", padX, muted)
 
@@ -161,8 +187,11 @@ func render(bars []bar) string {
 			w = b.ns / maxNs * float64(barMax)
 		}
 		fill, weight, lblFill := gray, "400", text
-		if b.self {
+		switch {
+		case b.self:
 			fill, weight, lblFill = accent, "700", accent
+		case b.pgo:
+			fill, weight, lblFill = accentPGO, "700", accentPGO
 		}
 		fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="12.5" font-weight="%s" fill="%s" text-anchor="end">%s</text>`+"\n",
 			labelW-10, barY+barH-6, weight, lblFill, b.name)
@@ -171,7 +200,9 @@ func render(bars []bar) string {
 			float64(barX)+w+6, barY+barH-6, weight, lblFill, fmtNs(b.ns))
 	}
 
-	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">govalues geomean is over the three shapes it can represent (≤19 significant digits); all others over five.</text>`+"\n",
+	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">zerodecimal +PGO = the same library rebuilt with profile-guided optimization.</text>`+"\n",
+		padX, height-26, muted)
+	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">govalues geomean covers its three representable shapes (≤19 sig. digits); all others, five.</text>`+"\n",
 		padX, height-10, muted)
 	sb.WriteString("</svg>\n")
 	return sb.String()
