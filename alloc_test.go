@@ -29,6 +29,7 @@ package zerodecimal
 import (
 	"database/sql/driver"
 	"testing"
+	"time"
 )
 
 // allocRuns is the invocation count handed to testing.AllocsPerRun for every
@@ -49,6 +50,31 @@ var (
 	sinkString   string
 	sinkBytes    []byte
 	sinkValue    driver.Value
+)
+
+// Error-path and NullDecimal fixtures, pre-boxed once so the measured
+// closures load package state only (boxing into any allocates; see aStrAny).
+var (
+	sinkNull NullDecimal
+
+	allocInvalidStr   = "not-a-number"
+	allocInvalidBytes = []byte("1..2")
+	allocPrecStr      = "0.00000000000000000001" // > MaxPrec fractional digits
+	allocValidStr     = "1.5"
+	allocValidBytes   = []byte("1.5")
+	allocInvalidJSON  = []byte(`"abc"`)
+	allocInvalidBin   = []byte{0x00, 0x00, 0x00} // wrong length → ErrInvalidBinaryData
+	allocInvalidText  = []byte("abc")
+
+	allocScanBadStr   any = "not-a-number"
+	allocScanBadBytes any = []byte("1..2")
+	allocScanValidStr any = "1.5"
+	allocScanBool     any = true
+	allocScanTime     any = time.Unix(0, 0)
+	allocScanUnknown  any = struct{}{} // legal Go value, not a driver.Value
+	allocScanNil      any
+
+	allocNullValid = NewNullDecimal(RequireFromString("1.5")) // 1.5 is in the cache window
 )
 
 // allocSinkBuf is the pre-allocated destination for the Append* gates: each
@@ -274,6 +300,20 @@ var allocOps = []struct {
 			sinkBytes = s.b.AppendFixed(allocSinkBuf[:0], 4)
 		}
 	}},
+	{name: "trim", bind: func(s allocShape) func() {
+		return func() {
+			sinkDecimal = s.a.Trim()
+			sinkDecimal2 = s.b.Trim()
+		}
+	}},
+	{name: "rescale", bind: func(s allocShape) func() {
+		// Lowering and raising by shape (2 sits below and above the shapes'
+		// precisions), plus the ErrPrecOutOfRange path at 20.
+		return func() {
+			sinkDecimal, errSink = s.a.Rescale(2)
+			sinkDecimal2, errSink = s.b.Rescale(20)
+		}
+	}},
 	{name: "min", bind: func(s allocShape) func() {
 		return func() { sinkDecimal = Min(s.a, s.b) }
 	}},
@@ -325,6 +365,60 @@ func TestAllocsZero(t *testing.T) {
 			}
 		})
 	}
+}
+
+// allocErrOps binds the error and NullDecimal paths whose zero-allocation
+// contract does not vary by value shape (rejections, Trunc parsers, invalid
+// Unmarshal/Scan inputs, NullDecimal rows). doc.go promises these allocate
+// nothing on the error path just as the success paths do.
+var allocErrOps = []struct {
+	name string
+	fn   func()
+}{
+	{name: "new_from_string_invalid", fn: func() { sinkDecimal, errSink = NewFromString(allocInvalidStr) }},
+	{name: "new_from_string_prec", fn: func() { sinkDecimal, errSink = NewFromString(allocPrecStr) }},
+	{name: "new_from_string_trunc_ok", fn: func() { sinkDecimal, errSink = NewFromStringTrunc(allocValidStr) }},
+	{name: "new_from_string_trunc_invalid", fn: func() { sinkDecimal, errSink = NewFromStringTrunc(allocInvalidStr) }},
+	{name: "parse_bytes_trunc_ok", fn: func() { sinkDecimal, errSink = ParseBytesTrunc(allocValidBytes) }},
+	{name: "parse_bytes_trunc_invalid", fn: func() { sinkDecimal, errSink = ParseBytesTrunc(allocInvalidBytes) }},
+	{name: "unmarshal_text_invalid", fn: func() { errSink = sinkDecimal.UnmarshalText(allocInvalidText) }},
+	{name: "unmarshal_json_invalid", fn: func() { errSink = sinkDecimal.UnmarshalJSON(allocInvalidJSON) }},
+	{name: "unmarshal_binary_invalid", fn: func() { errSink = sinkDecimal.UnmarshalBinary(allocInvalidBin) }},
+	{name: "scan_string_invalid", fn: func() { errSink = sinkDecimal.Scan(allocScanBadStr) }},
+	{name: "scan_bytes_invalid", fn: func() { errSink = sinkDecimal.Scan(allocScanBadBytes) }},
+	{name: "scan_bool", fn: func() { errSink = sinkDecimal.Scan(allocScanBool) }},
+	{name: "scan_time", fn: func() { errSink = sinkDecimal.Scan(allocScanTime) }},
+	{name: "scan_unknown", fn: func() { errSink = sinkDecimal.Scan(allocScanUnknown) }},
+	{name: "scan_nil", fn: func() { errSink = sinkDecimal.Scan(allocScanNil) }},
+	{name: "null_scan_valid", fn: func() { errSink = sinkNull.Scan(allocScanValidStr) }},
+	{name: "null_scan_nil", fn: func() { errSink = sinkNull.Scan(allocScanNil) }},
+	{name: "null_scan_invalid", fn: func() { errSink = sinkNull.Scan(allocScanBadStr) }},
+	{name: "null_value_invalid", fn: func() { sinkValue, errSink = (NullDecimal{}).Value() }},
+}
+
+// TestAllocsErrorPaths asserts every rejection and NullDecimal path allocates
+// exactly zero — the error-path half of doc.go's Scan/Unmarshal contract.
+func TestAllocsErrorPaths(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	for _, op := range allocErrOps {
+		t.Run(op.name, func(t *testing.T) {
+			requireAllocs(t, 0, op.fn)
+		})
+	}
+}
+
+// TestAllocsNullValueCached asserts NullDecimal.Value on a cache-window value
+// forwards to Decimal.Value's zero-allocation cached path.
+func TestAllocsNullValueCached(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	if !strCacheEnabled {
+		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+	}
+	requireAllocs(t, 0, func() { sinkValue, errSink = allocNullValid.Value() })
 }
 
 // TestAllocsOne asserts that String and StringFixed cost EXACTLY one
@@ -459,4 +553,16 @@ func TestAllocsSQLValueUncached(t *testing.T) {
 		t.Skip("allocation counts are unreliable under -race")
 	}
 	requireAllocs(t, 2, func() { sinkValue, errSink = allocUncachedValue.Value() })
+}
+
+// allocRescaleOverflow is a precision-0 maximal coefficient no raise can fit.
+var allocRescaleOverflow = RequireFromString("340282366920938463463374607431768211455")
+
+// TestAllocsRescaleOverflow pins Rescale's ErrOverflow path at zero
+// allocations — the one sentinel the shape matrix cannot reach.
+func TestAllocsRescaleOverflow(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	requireAllocs(t, 0, func() { sinkDecimal, errSink = allocRescaleOverflow.Rescale(1) })
 }

@@ -127,6 +127,7 @@ func checkValue(t *testing.T, v crossVal) {
 	checkRounding(t, v)
 	checkParseFormat(t, v)
 	checkIntPart(t, v)
+	checkTrimRescale(t, v)
 }
 
 // checkCmp cross-checks Cmp against shopspring and pins the predicate family
@@ -343,6 +344,40 @@ func checkIntPart(t *testing.T, v crossVal) {
 	require.NoErrorf(t, err, "int_part: d=%+v", v.zd)
 	require.Equalf(t, mag.Int64(), got, "int_part vs big.Int oracle: d=%+v", v.zd)
 	require.Equalf(t, v.ss.IntPart(), got, "int_part vs shopspring: d=%+v", v.zd)
+}
+
+// checkTrimRescale cross-checks the canonicalization pair. Trim must
+// preserve the value exactly (shopspring is the oracle), be idempotent, and
+// leave no ten-divisible coefficient behind a nonzero precision. Rescale
+// must equal RoundBank when lowering, be exact when raising fits, and
+// return ErrOverflow precisely when the raised coefficient is >= 2^128.
+func checkTrimRescale(t *testing.T, v crossVal) {
+	t.Helper()
+	trimmed := v.zd.Trim()
+	requireSameValue(t, v.ss, trimmed, "trim", v.zd)
+	require.Equalf(t, trimmed, trimmed.Trim(), "trim idempotence: d=%+v", v.zd)
+	if trimmed.IsZero() {
+		require.Equalf(t, Decimal{}, trimmed, "trim zero must be canonical: d=%+v", v.zd)
+	} else if trimmed.Prec() > 0 {
+		_, r := divmod128Pow10(trimmed.coef, 1)
+		require.NotZerof(t, r, "trim must reach the minimal precision: d=%+v", v.zd)
+	}
+	for _, prec := range crossRoundPlaces {
+		got, err := v.zd.Rescale(prec)
+		if prec < v.zd.Prec() {
+			require.NoErrorf(t, err, "rescale lower: d=%+v prec=%d", v.zd, prec)
+			require.Equalf(t, v.zd.RoundBank(prec), got, "rescale lowering must equal RoundBank: d=%+v prec=%d", v.zd, prec)
+			continue
+		}
+		exact := new(big.Int).Mul(u128ToBig(v.zd.coef), bp10(int(prec-v.zd.Prec())))
+		if exact.Cmp(mod128big) >= 0 {
+			require.ErrorIsf(t, err, ErrOverflow, "rescale raise overflow oracle: d=%+v prec=%d", v.zd, prec)
+			continue
+		}
+		require.NoErrorf(t, err, "rescale raise: d=%+v prec=%d", v.zd, prec)
+		requireSameValue(t, v.ss, got, "rescale_raise", v.zd, prec)
+		requireResultPrec(t, got, prec, "rescale_raise", v.zd, prec)
+	}
 }
 
 // crossBoundaryValues builds the deterministic boundary value set: every

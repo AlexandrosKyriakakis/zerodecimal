@@ -6,6 +6,7 @@ import (
 	"encoding"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // Compile-time interface assertions for NullDecimal (see codec.go for the
@@ -20,6 +21,14 @@ var (
 	_ encoding.TextUnmarshaler = (*NullDecimal)(nil)
 )
 
+// Precomputed wrapped errors for the legal-but-unsupported driver.Value types
+// Scan can meet per row. Built once at init so the branch that returns them
+// stays allocation-free; each wraps ErrScanType, so errors.Is still matches.
+var (
+	errScanBool = fmt.Errorf("%w: bool", ErrScanType)
+	errScanTime = fmt.Errorf("%w: time.Time", ErrScanType)
+)
+
 // Scan implements sql.Scanner, populating d from a value produced by a
 // database driver. string and []byte parse as strict decimal literals
 // (NewFromString grammar, scientific notation included); int64, int32, int,
@@ -29,10 +38,11 @@ var (
 // use NullDecimal for nullable columns. Any other type returns an error
 // wrapping ErrScanType. d is left unchanged on every error path.
 //
-// Every supported conversion is allocation-free. The unsupported-type branch
-// is the package's one fmt call: it allocates the wrapped error, which is
-// acceptable on a path that is cold by construction — a column's driver type
-// does not change between rows.
+// Every path is allocation-free, error paths included: the legal-but-
+// unsupported driver.Value types bool and time.Time return precomputed
+// wrapped errors (errScanBool, errScanTime), and any other type returns the
+// bare ErrScanType sentinel, so scanning a mis-typed column allocates nothing
+// per row.
 func (d *Decimal) Scan(src any) error {
 	switch v := src.(type) {
 	case string:
@@ -61,10 +71,14 @@ func (d *Decimal) Scan(src any) error {
 			return err
 		}
 		*d = dec
+	case bool:
+		return errScanBool
+	case time.Time:
+		return errScanTime
 	case nil:
 		return ErrScanNil
 	default:
-		return fmt.Errorf("%w: %T", ErrScanType, src)
+		return ErrScanType
 	}
 	return nil
 }

@@ -16,7 +16,7 @@ Zero-allocation, panic-free, fixed-point decimals for latency-critical Go.
 - **Bit-exact.** Every operation is differentially checked against
   shopspring/decimal's unbounded arithmetic — including an *iff* proof for
   every returned overflow — deterministically in the default suite
-  ([crosscheck_test.go](crosscheck_test.go)) and by 23 fuzz targets
+  ([crosscheck_test.go](crosscheck_test.go)) and by 26 fuzz targets
   ([fuzz_test.go](fuzz_test.go)).
 - **Panic-free.** Fallible operations return zero-allocation sentinel errors
   ([errors.go](errors.go)) and the fuzz suite requires every target to be
@@ -66,10 +66,12 @@ A Decimal is a 24-byte pointer-free value: copy it freely, compare it cheaply,
 pack it densely. The domain is |value| < 2^128 / 10^prec — up to 39
 significant digits with up to 19 fractional. There is **no `big.Int` anywhere
 in the package**: every operation runs on fixed-width 128/256-bit integer
-math, so nothing can escape to the heap and out-of-domain results return
-`ErrOverflow` instead of degrading into arbitrary-precision slowness. The
-zero value is the canonical decimal zero, ready to use; no operation produces
-a negative zero.
+math, so nothing can escape to the heap and magnitude overflow returns
+`ErrOverflow` instead of degrading into arbitrary-precision slowness; a result
+needing more than `DefaultPrec` fractional digits is instead truncated toward
+zero by `Mul` and `Div` (possibly to exact zero, as with a tiny nonzero
+product). The zero value is the canonical decimal zero, ready to use; no
+operation produces a negative zero.
 
 **Reciprocal division is the headline optimization.** Decimal rescaling,
 rounding, formatting, and division all reduce to dividing by powers of ten,
@@ -90,13 +92,16 @@ still fits 128 bits, so huge quotients degrade precision gracefully and
 Because `==` compares representations, an arithmetic result of `1.50` differs
 from a parsed `1.5` under `==`; use `Equal` or `Cmp` for numeric comparison.
 Parsing trims trailing fractional zeros; arithmetic never does (it would tax
-the hot path); formatting trims at output.
+the hot path); formatting trims at output. `Trim` canonicalizes a value on
+demand — equal numbers become identical under `==` and as map keys — and
+`Rescale` sets an exact representation precision (e.g. `1.50` for a
+two-decimal wire format), rounding ties to even when lowering.
 
 ## Error model
 
 All sentinels live in [errors.go](errors.go), are returned bare (never
-wrapped, except `Scan`'s unsupported-type message), and match with
-`errors.Is`. The constructors and arithmetic operations have panicking twins
+wrapped, except `Scan`'s precomputed `bool` and `time.Time` unsupported-type
+errors, which wrap `ErrScanType`), and match with `errors.Is`. The constructors and arithmetic operations have panicking twins
 for call sites with proven bounds; rows marked `—` below have none.
 
 | Operation | Possible sentinels | Panicking twin |
@@ -110,6 +115,7 @@ for call sites with proven bounds; rows marked `—` below have none.
 | `Div` | `ErrDivideByZero`, `ErrOverflow` | `MustDiv` |
 | `QuoRem`, `Mod` | `ErrDivideByZero`, `ErrOverflow` | `MustQuoRem`, `MustMod` |
 | `Sum`, `Avg` | `ErrOverflow` | `MustSum`, `MustAvg` |
+| `Rescale` | `ErrPrecOutOfRange`, `ErrOverflow` | `MustRescale` |
 | `IntPart` | `ErrIntPartOverflow` | — |
 | `UnmarshalText`, `UnmarshalJSON` | the parse sentinels | — |
 | `UnmarshalBinary` | `ErrInvalidBinaryData` | — |
@@ -117,7 +123,7 @@ for call sites with proven bounds; rows marked `—` below have none.
 
 Everything else is infallible: `NewFromInt`/`NewFromInt32`/`NewFromUint64`,
 `Neg`, `Abs`, `Sign`, the `Is*` predicates, `Cmp` and the comparison family,
-`Min`/`Max`, the entire rounding family, `Prec`, `ToHiLo`, `String`,
+`Min`/`Max`, the entire rounding family, `Trim`, `Prec`, `ToHiLo`, `String`,
 `StringFixed`, `AppendFixed`, and `InexactFloat64`. `AppendText`,
 `AppendBinary`, the `Marshal*` methods, and `Value` return an error only to
 satisfy their interfaces — it is always nil.
@@ -131,10 +137,11 @@ mismatch, near-2^128 coefficients, negatives), on success *and* error paths:
 
 | Allocations | Operations | Gate |
 | --- | --- | --- |
-| **exactly 0** | `NewFromString`, `ParseBytes`, `Add`, `Sub`, `Mul`, `Div`, `QuoRem`, `Mod`, `Cmp`, `Equal`, `Neg`, `Abs`, `Sign`, `Round`, `RoundBank`, `RoundUp`, `RoundDown`, `RoundCeil`, `RoundFloor`, `Truncate`, `Floor`, `Ceil`, `IntPart`, `InexactFloat64`, `NewFromFloat`, `AppendText`, `AppendFixed`, `AppendBinary`, `Min`, `Max`, `MustAdd`, `UnmarshalText`, `UnmarshalJSON`, `UnmarshalBinary`, `Scan` (string and `[]byte`) | `TestAllocsZero` |
+| **exactly 0** | `NewFromString`, `ParseBytes`, `Add`, `Sub`, `Mul`, `Div`, `QuoRem`, `Mod`, `Cmp`, `Equal`, `Neg`, `Abs`, `Sign`, `Round`, `RoundBank`, `RoundUp`, `RoundDown`, `RoundCeil`, `RoundFloor`, `Truncate`, `Floor`, `Ceil`, `Trim`, `Rescale`, `IntPart`, `InexactFloat64`, `NewFromFloat`, `AppendText`, `AppendFixed`, `AppendBinary`, `Min`, `Max`, `MustAdd`, `UnmarshalText`, `UnmarshalJSON`, `UnmarshalBinary`, `Scan` (string and `[]byte`) | `TestAllocsZero` |
 | **exactly 1** | `String` (outside the cache window), `StringFixed` — the returned string itself | `TestAllocsOne` |
 | **exactly 1** | `MarshalText`, `MarshalJSON`, `MarshalBinary` — the returned slice, sized exactly | `TestAllocsCodecMarshal` |
-| **exactly 0** | `String` and `Value` on values inside the small-value cache window (−1000.00..+1000.00, ≤ 2 places) | `TestAllocsStringCached`, `TestAllocsSQLValueCached` |
+| **exactly 0** | every rejection and `NullDecimal` path — invalid input to the parsers (strict and `Trunc`), `UnmarshalText`/`UnmarshalJSON`/`UnmarshalBinary`, `Scan` (malformed, `bool`, `time.Time`, unknown type, `nil`), `Rescale` overflow, `NullDecimal.Scan` and invalid `NullDecimal.Value` | `TestAllocsErrorPaths`, `TestAllocsRescaleOverflow` |
+| **exactly 0** | `String`, `Value`, and `NullDecimal.Value` on values inside the small-value cache window (−1000.00..+1000.00, ≤ 2 places) | `TestAllocsStringCached`, `TestAllocsSQLValueCached`, `TestAllocsNullValueCached` |
 | **exactly 2** | `Value` outside the cache window — the canonical string plus boxing it into `driver.Value` | `TestAllocsSQLValueUncached` |
 
 The counts are asserted as *exact*, not upper bounds, so a regression in
@@ -342,7 +349,7 @@ supported verification level for the `zerodecimal_prec9` and
   pairs. The overflow oracle is *iff*: every `ErrOverflow` must be proven
   exact (the true coefficient really is ≥ 2^128) and every fitting result
   must be returned — a spurious error fails as loudly as a wrong value.
-- **23 differential fuzz targets** ([fuzz_test.go](fuzz_test.go), `make
+- **26 differential fuzz targets** ([fuzz_test.go](fuzz_test.go), `make
   fuzz-all`): parse round trips and raw-string parsing, Add/Sub/Mul/Div/
   QuoRem/Mod/Cmp with the same iff overflow proofs, all seven rounding modes
   pinned to their shopspring equivalents, StringFixed, JSON/binary/SQL round
@@ -364,7 +371,9 @@ supported verification level for the `zerodecimal_prec9` and
 
 - **Bounded domain.** |value| < 2^128 / 10^prec — at most 39 significant
   digits and 19 fractional digits. There is no arbitrary-precision fallback;
-  out-of-domain results return `ErrOverflow`. shopspring is unbounded.
+  magnitude overflow returns `ErrOverflow`, while a result needing more than
+  `DefaultPrec` fractional digits is truncated toward zero by `Mul` and `Div`
+  (possibly to exact zero). shopspring is unbounded.
 - **`places` is `uint8`.** Negative places (rounding at tens/hundreds
   positions, shopspring's `Round(-2)`) are unsupported by design — this is
   what keeps the entire rounding family infallible.

@@ -454,15 +454,89 @@ func FuzzStringFixed(f *testing.F) {
 	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8, pc uint8) {
 		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
 		c := fuzzProduct(t, a, b)
-		places := pc % 20
+		// Full uint8 range, not pc%20: places past 32+prec are the only inputs
+		// that drive AppendFixed's whole-block zeroRun padding loop, and
+		// shopspring's StringFixed(int32) matches byte for byte at every places
+		// up to 255.
+		places := pc
 		got := c.StringFixed(places)
 		require.Equalf(t, ssOf(c).StringFixed(int32(places)), got, "string_fixed: c=%+v places=%d", c, places)
 		// Trunc mode: the fixed padding can push the written coefficient past
 		// 39 significant digits, which strict parsing deliberately rejects;
-		// only padding zeros are ever dropped, so the value stays exact.
+		// only padding zeros are ever dropped, so the value stays exact. Past
+		// maxParseLen the whole-block padding overruns the parser's documented
+		// input cap — the single reason a fixed output fails to reparse — so
+		// assert the exact sentinel there, leaving a formatting defect to still
+		// fail loudly.
 		reparsed, err := NewFromStringTrunc(got)
+		if len(got) > maxParseLen {
+			require.ErrorIsf(t, err, ErrMaxStrLen, "over-long fixed output rejects only on length: %q", got)
+			return
+		}
 		require.NoErrorf(t, err, "string_fixed output must trunc-reparse: %q", got)
 		require.Zerof(t, c.Round(places).Cmp(reparsed), "string_fixed reparse: c=%+v places=%d", c, places)
+	})
+}
+
+// FuzzTrim checks the canonicalizer on raw representations (trailing
+// fractional zeros intact, exactly what Trim exists to strip): the trimmed
+// value must equal shopspring's reading of the original, trimming must be
+// idempotent, a trimmed nonzero coefficient behind a nonzero precision must
+// not divide by ten, and representations of the same number must trim to the
+// identical — ==-comparable — Decimal.
+func FuzzTrim(f *testing.F) {
+	fuzzPairs(f)
+	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8) {
+		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
+		for _, d := range []Decimal{a, b, fuzzProduct(t, a, b)} {
+			got := d.Trim()
+			require.Truef(t, ssOf(d).Equal(ssOf(got)), "trim preserves the value: d=%+v got=%+v", d, got)
+			require.Equalf(t, got, got.Trim(), "trim idempotence: d=%+v", d)
+			if got.IsZero() {
+				require.Equalf(t, Decimal{}, got, "trim zero must be canonical: d=%+v", d)
+			} else if got.Prec() > 0 {
+				_, r := divmod128Pow10(got.coef, 1)
+				require.NotZerof(t, r, "trim must reach the minimal precision: d=%+v got=%+v", d, got)
+			}
+			if d.Prec() < MaxPrec {
+				if widened, over := mul128by64(d.coef, 10); over == 0 {
+					e := newDecimal(widened, d.neg, d.Prec()+1)
+					require.Equalf(t, got, e.Trim(), "equal values must trim to one representation: d=%+v e=%+v", d, e)
+				}
+			}
+		}
+	})
+}
+
+// FuzzRescale checks both rescaling directions at every fuzzed prec 0..19
+// plus the out-of-range row at 20: lowering must be bit-identical to
+// RoundBank, raising must preserve the value at exactly the requested
+// precision with an iff big.Int overflow oracle, and prec > MaxPrec must be
+// ErrPrecOutOfRange.
+func FuzzRescale(f *testing.F) {
+	fuzzPairsPlaces(f)
+	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8, pc uint8) {
+		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
+		prec := pc % 21 // 0..20: one past MaxPrec covers the range guard
+		for _, d := range []Decimal{a, b, fuzzProduct(t, a, b)} {
+			got, err := d.Rescale(prec)
+			switch {
+			case prec > MaxPrec:
+				require.ErrorIsf(t, err, ErrPrecOutOfRange, "prec %d is out of range: d=%+v", prec, d)
+			case prec < d.Prec():
+				require.NoErrorf(t, err, "rescale lower: d=%+v prec=%d", d, prec)
+				require.Equalf(t, d.RoundBank(prec), got, "rescale lowering must equal RoundBank: d=%+v prec=%d", d, prec)
+			default:
+				exact := new(big.Int).Mul(u128ToBig(d.coef), bp10(int(prec-d.Prec())))
+				if exact.Cmp(mod128big) >= 0 {
+					require.ErrorIsf(t, err, ErrOverflow, "rescale raise overflow oracle: d=%+v prec=%d", d, prec)
+					continue
+				}
+				require.NoErrorf(t, err, "rescale raise: d=%+v prec=%d", d, prec)
+				require.Truef(t, ssOf(d).Equal(ssOf(got)), "raising preserves the value: d=%+v got=%+v", d, got)
+				requireResultPrec(t, got, prec, "rescale_raise", d, prec)
+			}
+		}
 	})
 }
 
@@ -622,9 +696,12 @@ func FuzzInvariants(f *testing.F) {
 			a.Floor(), a.Ceil(), b.Floor(), b.Ceil(),
 			a.Round(places), a.RoundBank(places), a.RoundUp(places),
 			a.RoundDown(places), a.RoundCeil(places), a.RoundFloor(places),
-			a.Truncate(places),
+			a.Truncate(places), a.Trim(), b.Trim(),
 		}
 		if c, err := a.Add(b); err == nil {
+			results = append(results, c)
+		}
+		if c, err := a.Rescale(places); err == nil {
 			results = append(results, c)
 		}
 		if c, err := a.Sub(b); err == nil {
