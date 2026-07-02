@@ -56,6 +56,7 @@ func TestScanErrors(t *testing.T) {
 		{name: "unsupported_bool", src: true, wantErr: ErrScanType},
 		{name: "unsupported_time", src: time.Unix(0, 0), wantErr: ErrScanType},
 		{name: "unsupported_float32", src: float32(1.5), wantErr: ErrScanType},
+		{name: "unsupported_struct", src: struct{}{}, wantErr: ErrScanType},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,14 +68,23 @@ func TestScanErrors(t *testing.T) {
 	}
 }
 
-// TestScanTypeErrorNamesType verifies the one fmt-built error in the package
-// reports the offending Go type, the detail that makes driver misconfiguration
-// debuggable.
+// TestScanTypeErrorNamesType verifies the precomputed scan-type errors report
+// the offending Go type, the detail that makes driver misconfiguration
+// debuggable. bool and time.Time — the legal driver.Value types Scan cannot
+// convert — still name the offending type; other types wrap ErrScanType bare.
 func TestScanTypeErrorNamesType(t *testing.T) {
 	var d Decimal
-	err := d.Scan(true)
-	require.ErrorIs(t, err, ErrScanType)
-	assert.Contains(t, err.Error(), "bool")
+
+	errBool := d.Scan(true)
+	require.ErrorIs(t, errBool, ErrScanType)
+	assert.Contains(t, errBool.Error(), "bool")
+
+	errTime := d.Scan(time.Unix(0, 0))
+	require.ErrorIs(t, errTime, ErrScanType)
+	assert.Contains(t, errTime.Error(), "time.Time")
+
+	errStruct := d.Scan(struct{}{})
+	require.ErrorIs(t, errStruct, ErrScanType)
 }
 
 func TestValue(t *testing.T) {

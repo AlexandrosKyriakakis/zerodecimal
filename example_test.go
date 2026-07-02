@@ -132,6 +132,36 @@ func ExampleDecimal_Equal() {
 	// 0
 }
 
+func ExampleDecimal_Trim() {
+	a := zerodecimal.RequireFromString("1.5")
+	b := zerodecimal.RequireFromString("0.75").MustAdd(zerodecimal.RequireFromString("0.75")) // 1.50
+
+	fmt.Println(a == b)               // representations differ...
+	fmt.Println(a.Trim() == b.Trim()) // ...until Trim canonicalizes them
+	fmt.Println(b.Trim())
+	// Output:
+	// false
+	// true
+	// 1.5
+}
+
+func ExampleDecimal_Rescale() {
+	d := zerodecimal.RequireFromString("1.5")
+
+	cents := d.MustRescale(2) // exactly two fractional digits for wire formats
+	_, _, lo, prec := cents.ToHiLo()
+	fmt.Println(cents, lo, prec)
+
+	fmt.Println(zerodecimal.RequireFromString("2.345").MustRescale(2)) // lowering rounds ties to even
+
+	_, err := zerodecimal.RequireFromString("340282366920938463463374607431768211455").Rescale(1)
+	fmt.Println(errors.Is(err, zerodecimal.ErrOverflow))
+	// Output:
+	// 1.5 150 2
+	// 2.34
+	// true
+}
+
 func ExampleDecimal_MarshalJSON() {
 	type Order struct {
 		Price zerodecimal.Decimal `json:"price"`

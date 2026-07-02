@@ -265,6 +265,11 @@ func fixedOracle(d Decimal, places uint8) string {
 
 func TestStringFixed(t *testing.T) {
 	maxCoef := u128{hi: maxUint64, lo: maxUint64}
+	// maxCoefD is the 2^128-1 coefficient at prec 0 (39 integer digits); its
+	// padding at large places is the only path through AppendFixed's whole-block
+	// zeroRun loop (format.go pad >= len(zeroRun)).
+	maxCoefD := mustHiLo(t, false, maxUint64, maxUint64, 0)
+	const maxCoefDigits = "340282366920938463463374607431768211455"
 	tests := []struct {
 		name   string
 		d      Decimal
@@ -285,6 +290,17 @@ func TestStringFixed(t *testing.T) {
 		{name: "max_coef_full_precision", d: Decimal{coef: maxCoef, prec: 19}, places: 19, want: "34028236692093846346.3374607431768211455"},
 		{name: "two_chunk_integer_part", d: Decimal{coef: u128{hi: 10, lo: 5}, prec: 1}, places: 2, want: "18446744073709551616.50"},
 		{name: "places_beyond_max_prec_pads", d: RequireFromString("1.5"), places: 25, want: "1.5000000000000000000000000"},
+		// Large-places padding around the len(zeroRun)==32 whole-block boundary.
+		// pad = places - prec after Round; the loop runs only for pad >= 32.
+		{name: "prec0_places_31_below_block_boundary", d: maxCoefD, places: 31, want: maxCoefDigits + "." + strings.Repeat("0", 31)},                                     // pad 31: final mask append only
+		{name: "prec0_places_32_first_whole_block", d: maxCoefD, places: 32, want: maxCoefDigits + "." + strings.Repeat("0", 32)},                                        // pad 32: one loop iteration, empty tail
+		{name: "prec0_places_33_block_plus_remainder", d: maxCoefD, places: 33, want: maxCoefDigits + "." + strings.Repeat("0", 33)},                                     // pad 33: one block + 1
+		{name: "prec1_positive_places_47", d: RequireFromString("1.5"), places: 47, want: "1.5" + strings.Repeat("0", 46)},                                               // pad 46: one block + 14
+		{name: "prec1_negative_places_48", d: RequireFromString("-1.5"), places: 48, want: "-1.5" + strings.Repeat("0", 47)},                                             // pad 47: one block + 15
+		{name: "prec2_positive_places_49", d: RequireFromString("2.75"), places: 49, want: "2.75" + strings.Repeat("0", 47)},                                             // pad 47: one block + 15
+		{name: "zero_places_255", d: Zero, places: 255, want: "0." + strings.Repeat("0", 255)},                                                                           // pad 255: 7 blocks + 31
+		{name: "prec0_max_coef_places_255", d: maxCoefD, places: 255, want: maxCoefDigits + "." + strings.Repeat("0", 255)},                                              // pad 255: 7 blocks + 31
+		{name: "prec19_max_coef_places_49", d: Decimal{coef: maxCoef, prec: 19}, places: 49, want: "34028236692093846346.3374607431768211455" + strings.Repeat("0", 30)}, // pad 30: below boundary, prec>0 straddle check
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -302,6 +318,15 @@ func TestAppendFixedAppendsToExisting(t *testing.T) {
 	// A second append must extend, never restart, the buffer.
 	buf = One.AppendFixed(buf, 1)
 	assert.Equal(t, "price=-123.461.0", string(buf))
+}
+
+// TestAppendFixedLargePlacesPrefix exercises the whole-block zeroRun padding
+// loop (format.go pad >= len(zeroRun)) while a non-empty prefix already
+// occupies dst: the padding must extend that prefix, never restart it.
+func TestAppendFixedLargePlacesPrefix(t *testing.T) {
+	buf := []byte("amount=")
+	buf = RequireFromString("1.5").AppendFixed(buf, 100) // pad 99: three whole blocks + 3
+	assert.Equal(t, "amount=1.5"+strings.Repeat("0", 99), string(buf))
 }
 
 // TestStringFixedReparse pins the parse contract of fixed renderings flagged
@@ -356,7 +381,7 @@ func TestStringFixedRandom(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0xF18ED, 0x0016))
 	for range 20_000 {
 		d := newDecimal(randShapedU128(rng), rng.Uint64()&1 == 1, uint8(rng.Uint64N(uint64(MaxPrec)+1)))
-		places := uint8(rng.Uint64N(23)) // beyond MaxPrec to cover pure padding
+		places := uint8(rng.Uint64N(256)) // full uint8: past 32+prec drives the whole-block padding loop
 		want := fixedOracle(d, places)
 		require.Equal(t, want, d.StringFixed(places), "StringFixed of %+v at %d", d, places)
 		require.Equal(t, want, string(d.AppendFixed(nil, places)), "AppendFixed of %+v at %d", d, places)
