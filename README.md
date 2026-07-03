@@ -16,7 +16,7 @@ Zero-allocation, panic-free, fixed-point decimals for latency-critical Go.
 - **Bit-exact.** Every operation is differentially checked against
   shopspring/decimal's unbounded arithmetic — including an *iff* proof for
   every returned overflow — deterministically in the default suite
-  ([crosscheck_test.go](crosscheck_test.go)) and by 26 fuzz targets
+  ([crosscheck_test.go](crosscheck_test.go)) and by 34 fuzz targets
   ([fuzz_test.go](fuzz_test.go)).
 - **Panic-free.** Fallible operations return zero-allocation sentinel errors
   ([errors.go](errors.go)) and the fuzz suite requires every target to be
@@ -349,12 +349,15 @@ supported verification level for the `zerodecimal_prec9` and
   pairs. The overflow oracle is *iff*: every `ErrOverflow` must be proven
   exact (the true coefficient really is ≥ 2^128) and every fitting result
   must be returned — a spurious error fails as loudly as a wrong value.
-- **26 differential fuzz targets** ([fuzz_test.go](fuzz_test.go), `make
+- **34 differential fuzz targets** ([fuzz_test.go](fuzz_test.go), `make
   fuzz-all`): parse round trips and raw-string parsing, Add/Sub/Mul/Div/
-  QuoRem/Mod/Cmp with the same iff overflow proofs, all seven rounding modes
-  pinned to their shopspring equivalents, StringFixed, JSON/binary/SQL round
-  trips, garbage binary input (which must never panic), float conversion, and
-  a structural-invariant target. quagmt/udecimal serves as a second,
+  QuoRem/Mod/Cmp with the same iff overflow proofs, the Must twins and the
+  Min/Max/Sum/Avg aggregates, the remaining constructors, all seven rounding
+  modes pinned to their shopspring equivalents, StringFixed, text/JSON/
+  binary/SQL round trips, garbage binary and text input (which must never
+  panic), SQL Scan over every driver source type, float32/float64
+  conversion, the outlined division cores against math/big, and a
+  structural-invariant target. quagmt/udecimal serves as a second,
   bit-compatible oracle for Add/Sub/Mul.
 - **6.5+ million fixed-seed primitive cases**: the u128/u256 primitives and
   every reciprocal-division path are verified against `bits.Div64` and
