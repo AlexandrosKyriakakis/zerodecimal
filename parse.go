@@ -803,21 +803,18 @@ func newFromFloat(f float64, bitSize int) (Decimal, error) {
 // in-range float64 via Dragonbox and assembles the Decimal. It takes the
 // already-extracted bits, significand and unbiased exponent so the inlinable
 // integer fast path in newFromFloat is reached without recomputing them.
+// Subnormals never reach here: |f| < 2^-1022 is rejected by the 10^-19 guard
+// in newFromFloat, so the implicit leading bit in mant is always valid.
 func newFromFloat64(b, mant uint64, e2 int) (Decimal, error) {
 	neg := b>>63 == 1
-	exp := e2
-	denorm := false
-	if b>>52&0x7FF == 0 { // subnormal: no implicit leading bit, exp is biased+1
-		mant = b & (1<<52 - 1)
-		exp = -1074
-		denorm = true
-	}
-	digits, e10 := dboxShortest64(mant, exp, denorm)
+	digits, e10 := dboxShortest64(mant, e2)
 	return assembleFloat(digits, e10, neg)
 }
 
 // newFromFloat32 converts a guarded float32 to a Decimal via the 32-bit
 // shortest round-trip decimal digits, so NewFromFloat32(0.1) is exactly 0.1.
+// Subnormals never reach here: |f| < 2^-126 is rejected by the 10^-19 guard
+// in newFromFloat, so the implicit leading bit in mant is always valid.
 func newFromFloat32(f float32) (Decimal, error) {
 	b := math.Float32bits(f)
 	if b<<1 == 0 { // ±0.0 → canonical zero, sign dropped
@@ -826,13 +823,7 @@ func newFromFloat32(f float32) (Decimal, error) {
 	neg := b>>31 == 1
 	mant := b&(1<<23-1) | 1<<23
 	exp := int(b>>23&0xFF) - 150
-	denorm := false
-	if b>>23&0xFF == 0 { // subnormal
-		mant = b & (1<<23 - 1)
-		exp = -149
-		denorm = true
-	}
-	digits, e10 := dboxShortest32(mant, exp, denorm)
+	digits, e10 := dboxShortest32(mant, exp)
 	return assembleFloat(digits, e10, neg)
 }
 

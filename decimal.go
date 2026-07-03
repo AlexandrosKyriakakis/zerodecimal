@@ -16,7 +16,7 @@ package zerodecimal
 //
 // Arithmetic never trims trailing fractional zeros, so == compares
 // representations, not numbers (1.5 != 1.50 under ==); use Equal or Cmp for
-// numeric comparison.
+// numeric comparison, or Trim to canonicalize the representation.
 type Decimal struct {
 	coef u128
 	neg  bool

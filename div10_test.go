@@ -244,6 +244,9 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //     fitting the budget. The wrappers sit at cost ~68 against the budget of
 //     80 — only ~12 points of headroom — so a maxCost guard surfaces any edit
 //     (or inliner cost-model change) that would silently de-inline them.
+//   - Trim and Rescale follow the same wrapper/core split: the wrappers
+//     inline (Trim 67, Rescale 78 — Rescale has only ~2 points of headroom,
+//     hence no maxCost pin), trimCore/rescaleCore stay outlined.
 func TestArithRoundingInlineBudgets(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
@@ -274,6 +277,10 @@ func TestArithRoundingInlineBudgets(t *testing.T) {
 		{"round_ceil_fits_inline_budget", "Decimal.RoundCeil", true, 75},
 		{"round_floor_fits_inline_budget", "Decimal.RoundFloor", true, 75},
 		{"truncate_fits_inline_budget", "Decimal.Truncate", true, 75},
+		{"trim_fits_inline_budget", "Decimal.Trim", true, 75},
+		{"trim_core_stays_outlined", "Decimal.trimCore", false, 0},
+		{"rescale_fits_inline_budget", "Decimal.Rescale", true, 0},
+		{"rescale_core_stays_outlined", "Decimal.rescaleCore", false, 0},
 		{"floor_fits_inline_budget", "Decimal.Floor", true, 75},
 		{"ceil_fits_inline_budget", "Decimal.Ceil", true, 75},
 		{"string_fixed_fits_inline_budget", "Decimal.StringFixed", true, 0},

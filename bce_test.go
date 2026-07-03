@@ -47,6 +47,7 @@ func TestBoundsCheckFreeHotPaths(t *testing.T) {
 		{name: "decimal_go", file: "decimal.go"},
 		{name: "div10_go", file: "div10.go"},
 		{name: "round_go", file: "round.go"},
+		{name: "rescale_go", file: "rescale.go"},
 		{name: "u128_go", file: "u128.go"},
 		{name: "u256_go", file: "u256.go"},
 	}

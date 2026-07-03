@@ -228,10 +228,12 @@ const dboxMaxUint64 = 1<<64 - 1
 // float is digits·10^e10, with digits free of trailing zeros.
 //
 // PRECONDITION: the decimal exponent k it derives lies in dboxPow10's range —
-// guaranteed for the NewFromFloat guarded domain. The lookup masks would
-// otherwise be unchecked, so dboxPow10 covers a safe superset (see internal/gen).
-func dboxShortest64(mant uint64, exp int, denorm bool) (uint64, int) {
-	if mant == 1<<float64MantBits && !denorm {
+// guaranteed for the NewFromFloat guarded domain, which also excludes
+// subnormals, so mant always carries the implicit leading bit. The lookup
+// masks would otherwise be unchecked, so dboxPow10 covers a safe superset
+// (see internal/gen).
+func dboxShortest64(mant uint64, exp int) (uint64, int) {
+	if mant == 1<<float64MantBits {
 		// Algorithm 5.6 (page 24): the left endpoint is closer.
 		k0 := -mulLog10_2MinusLog10_4Over3(exp)
 		phi, beta := dboxPow64(k0, exp)
@@ -297,8 +299,8 @@ func dboxShortest64(mant uint64, exp int, denorm bool) (uint64, int) {
 
 // dboxShortest32 is dboxShortest64 for float32 (Go 1.26's dboxFtoa32). digits
 // is returned widened to uint64; it never exceeds 9 significant decimal digits.
-func dboxShortest32(mant uint32, exp int, denorm bool) (uint64, int) {
-	if mant == 1<<float32MantBits && !denorm {
+func dboxShortest32(mant uint32, exp int) (uint64, int) {
+	if mant == 1<<float32MantBits {
 		// Algorithm 5.6 (page 24).
 		k0 := -mulLog10_2MinusLog10_4Over3(exp)
 		phi, beta := dboxPow32(k0, exp)
