@@ -8,48 +8,128 @@ on:
 permissions:
   contents: read
 
+env:
+  # Do not let Go silently download and substitute a different toolchain: CI
+  # must exercise the version selected by setup-go.
+  GOTOOLCHAIN: local
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
       # Pinned to the version developers run locally: linter releases move
       # which findings exist, and nolintlint turns a newly-unused directive
       # into an error. Bump local and CI together.
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
         with:
           version: v2.11.3
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Scan library module
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Scan benchmark module
+        working-directory: benchmarks
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   test:
     strategy:
       fail-fast: false
       matrix:
-        go: [oldstable, stable]
+        go: ['1.26.x', stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: ${{ matrix.go }}
       - name: Unit tests (race)
         run: go test -race -failfast -coverpkg=. -coverprofile=coverage.out -covermode=atomic .
       - name: Allocation assertions (no race)
-        run: go test -run TestAllocs -count=1 .
+        run: go test -run '^Test.*Alloc' -count=1 .
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
           files: coverage.out
 
-  test-nostrcache:
+  test-build-tags:
+    name: tags (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default-precision/default-cache-off
+            tags: ''
+          - name: default-precision/explicit-cache-off
+            tags: zerodecimal_nostrcache
+          - name: default-precision/cache-on
+            tags: zerodecimal_strcache
+          - name: default-precision/cache-opt-out-wins
+            tags: zerodecimal_strcache,zerodecimal_nostrcache
+          - name: prec9/default-cache-off
+            tags: zerodecimal_prec9
+          - name: prec9/explicit-cache-off
+            tags: zerodecimal_prec9,zerodecimal_nostrcache
+          - name: prec9/cache-on
+            tags: zerodecimal_prec9,zerodecimal_strcache
+          - name: prec9/cache-opt-out-wins
+            tags: zerodecimal_prec9,zerodecimal_strcache,zerodecimal_nostrcache
+          - name: prec12/default-cache-off
+            tags: zerodecimal_prec12
+          - name: prec12/explicit-cache-off
+            tags: zerodecimal_prec12,zerodecimal_nostrcache
+          - name: prec12/cache-on
+            tags: zerodecimal_prec12,zerodecimal_strcache
+          - name: prec12/cache-opt-out-wins
+            tags: zerodecimal_prec12,zerodecimal_strcache,zerodecimal_nostrcache
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - run: go test -tags=zerodecimal_nostrcache -race -failfast .
+      - name: Full suite
+        run: go test -tags="${{ matrix.tags }}" -count=1 ./...
+
+  test-386:
+    name: linux/386
+    runs-on: ubuntu-latest
+    env:
+      GOARCH: '386'
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Full 32-bit suite
+        run: go test -count=1 ./...
+      - name: Vet 32-bit build
+        run: go vet ./...
+
+  benchmark-module:
+    name: benchmark module smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benchmarks
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: benchmarks/go.mod
+      - name: Test benchmark fixtures and helpers
+        run: go test ./...
+      - name: Exercise every production benchmark in both cache modes
+        run: make production-smoke

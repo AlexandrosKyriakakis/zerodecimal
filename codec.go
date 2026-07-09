@@ -7,13 +7,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 )
 
 // Compile-time interface assertions. Marshalers and Valuer take value
-// receivers (a Decimal is a 24-byte pointer-free value); unmarshalers and
-// Scanner need pointer receivers to write the result back. fmt is imported
-// for the Stringer assertion only — no library code path calls into it
-// except the documented cold-path wrap in Scan.
+// receivers (Decimal is a small pointer-free value whose layout is documented
+// on the type); unmarshalers and Scanner need pointer receivers to write the
+// result back. fmt is imported for the Stringer assertion only — no library
+// code path calls into it except the documented cold-path wrap in Scan.
 var (
 	_ fmt.Stringer               = Decimal{}
 	_ json.Marshaler             = Decimal{}
@@ -40,6 +41,13 @@ const marshalCap = 48
 // a null.
 const jsonNull = "null"
 
+// maxQuotedJSONLen is the largest encoded JSON string that can decode to the
+// parser's maxParseLen-byte input: every decoded byte can occupy at most six
+// source bytes (a \u00XX escape), plus the balanced quote pair. Rejecting
+// anything larger before scanning keeps adversarial JSON work bounded while
+// still admitting every valid spelling of every parseable decimal string.
+const maxQuotedJSONLen = 2 + 6*maxParseLen
+
 // MarshalText implements encoding.TextMarshaler, returning the canonical
 // decimal representation of d (the exact bytes String produces) in a freshly
 // allocated slice. It costs exactly one allocation — the result, sized
@@ -60,9 +68,13 @@ func (d Decimal) MarshalText() ([]byte, error) {
 
 // UnmarshalText implements encoding.TextUnmarshaler, parsing the strict
 // decimal literal grammar of NewFromString (scientific notation included).
-// Errors are the bare parse sentinels — match with errors.Is — and d is left
-// unchanged on every error path. It never allocates.
+// A nil receiver returns ErrNilReceiver before input validation. Errors are
+// bare sentinels — match with errors.Is — and d is left unchanged on every
+// error path. It never allocates.
 func (d *Decimal) UnmarshalText(b []byte) error {
+	if d == nil {
+		return ErrNilReceiver
+	}
 	dec, err := parseCore(b, false)
 	if err != nil {
 		return err
@@ -89,19 +101,59 @@ func (d Decimal) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements json.Unmarshaler, accepting both the package's
-// own quoted form ("1.23") and bare JSON numbers — the strict parse grammar
-// includes scientific notation, so float-encoded numbers like 1.5e-7 decode
-// exactly. A literal null is a no-op (the stdlib convention, mirroring
-// json.Unmarshal on pointers); use NullDecimal to distinguish null from a
-// value. Exactly one balanced quote pair is stripped, so "null" in quotes
-// and unbalanced quotes are parse errors. Errors are the bare parse
-// sentinels and leave d unchanged. It never allocates.
+// own quoted form ("1.23") and bare JSON numbers — scientific notation is
+// included, so float-encoded numbers like 1.5e-7 decode exactly. Bare input
+// follows JSON's number grammar: a leading plus and integer leading zeros are
+// rejected. Quoted strings retain the decimal-literal grammar, so "+1" and
+// "01" remain valid decimal strings. A literal null returns ErrJSONNull and
+// leaves d unchanged; use
+// NullDecimal when null is a valid domain value. Quoted strings are decoded
+// according to the JSON string grammar,
+// including Unicode escapes and surrogate pairs, before the strict decimal
+// parser sees them; therefore spellings such as "1\u002e5" are equivalent to
+// "1.5". Exactly one balanced quote pair is required, so "null" in quotes
+// and unbalanced quotes are parse errors. Decoded input remains subject to the
+// parser's 200-byte limit. Errors are bare package sentinels and leave d
+// unchanged. A nil receiver returns ErrNilReceiver before inspecting data.
+// It never allocates.
 func (d *Decimal) UnmarshalJSON(data []byte) error {
+	if d == nil {
+		return ErrNilReceiver
+	}
 	if string(data) == jsonNull {
-		return nil
+		return ErrJSONNull
 	}
 	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' {
-		data = data[1 : len(data)-1]
+		body := data[1 : len(data)-1]
+		// Preserve MarshalJSON's escape-free hot path: try the semantic bytes
+		// directly, then pay for escape discovery and decoding only when the
+		// raw body is not itself a decimal. A successful decimal contains only
+		// JSON-safe ASCII, so success here proves both grammars at once.
+		dec, err := parseCore(body, false)
+		if err == nil {
+			*d = dec
+			return nil
+		}
+		if len(data) > maxQuotedJSONLen {
+			return ErrMaxStrLen
+		}
+		for _, c := range body {
+			if c == '\\' {
+				dec, err = parseEscapedQuotedJSON(body)
+				if err != nil {
+					return err
+				}
+				*d = dec
+				return nil
+			}
+		}
+		// Any unescaped quote, control byte, or malformed UTF-8 byte is not a
+		// decimal-grammar byte, so parseCore's original error rejects every
+		// malformed JSON string on this zero-copy arm as well.
+		return err
+	}
+	if !bareJSONNumberStartOK(data) {
+		return ErrInvalidFormat
 	}
 	dec, err := parseCore(data, false)
 	if err != nil {
@@ -109,6 +161,190 @@ func (d *Decimal) UnmarshalJSON(data []byte) error {
 	}
 	*d = dec
 	return nil
+}
+
+// bareJSONNumberStartOK checks the only JSON-number constraints not already
+// enforced by parseCore's decimal grammar: JSON has no leading plus, and a
+// zero integer part must be the single zero before a point, exponent, or end.
+// Empty and over-limit inputs deliberately pass through so parseCore preserves
+// ErrEmptyString and ErrMaxStrLen precedence. Every other grammar byte is also
+// left to parseCore, keeping the ordinary bare-number path to a two-byte prefix
+// check instead of scanning the input twice.
+func bareJSONNumberStartOK(data []byte) bool {
+	n := len(data)
+	if n == 0 || n > maxParseLen {
+		return true
+	}
+	first := data[0]
+	if first == '+' {
+		return false
+	}
+	if first == '-' {
+		return n < 3 || data[1] != '0' || data[2] < '0' || data[2] > '9'
+	}
+	return first != '0' || n < 2 || data[1] < '0' || data[1] > '9'
+}
+
+// parseEscapedQuotedJSON decodes one known-escaped JSON string body into a
+// fixed stack buffer and parses its semantic contents. Keeping this cold path
+// separate leaves MarshalJSON's ordinary quoted wire form on the same direct
+// parseCore path it used before escape interoperability was added.
+func parseEscapedQuotedJSON(body []byte) (Decimal, error) {
+	var decoded [maxParseLen]byte
+	n, err := unescapeJSONString(body, &decoded)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return parseCore(decoded[:n], false)
+}
+
+// unescapeJSONString validates and decodes the contents between a JSON
+// string's quotes. It accepts precisely JSON's eight short escapes and
+// \uXXXX escapes, rejects unescaped controls and malformed UTF-8, and requires
+// UTF-16 surrogate pairs to be well formed. ErrMaxStrLen is returned as soon
+// as the decoded UTF-8 representation would exceed the parser's fixed bound.
+func unescapeJSONString(src []byte, dst *[maxParseLen]byte) (int, error) {
+	n := 0
+	for i := 0; i < len(src); {
+		c := src[i]
+		i++
+
+		switch {
+		case c == '"' || c < 0x20:
+			return 0, ErrInvalidFormat
+		case c == '\\':
+			if i == len(src) {
+				return 0, ErrInvalidFormat
+			}
+			esc := src[i]
+			i++
+			switch esc {
+			case '"', '\\', '/':
+				c = esc
+			case 'b':
+				c = '\b'
+			case 'f':
+				c = '\f'
+			case 'n':
+				c = '\n'
+			case 'r':
+				c = '\r'
+			case 't':
+				c = '\t'
+			case 'u':
+				r, ok := jsonHexRune(src, i)
+				if !ok {
+					return 0, ErrInvalidFormat
+				}
+				i += 4
+				if r >= 0xD800 && r <= 0xDBFF {
+					if len(src)-i < 6 || src[i] != '\\' || src[i+1] != 'u' {
+						return 0, ErrInvalidFormat
+					}
+					lo, lowOK := jsonHexRune(src, i+2)
+					if !lowOK || lo < 0xDC00 || lo > 0xDFFF {
+						return 0, ErrInvalidFormat
+					}
+					i += 6
+					r = 0x10000 + (r-0xD800)<<10 + lo - 0xDC00
+				} else if r >= 0xDC00 && r <= 0xDFFF {
+					return 0, ErrInvalidFormat
+				}
+				var appendOK bool
+				n, appendOK = appendJSONRune(dst, n, r)
+				if !appendOK {
+					return 0, ErrMaxStrLen
+				}
+				continue
+			default:
+				return 0, ErrInvalidFormat
+			}
+			if n == len(dst) {
+				return 0, ErrMaxStrLen
+			}
+			dst[n] = c
+			n++
+		case c < utf8.RuneSelf:
+			if n == len(dst) {
+				return 0, ErrMaxStrLen
+			}
+			dst[n] = c
+			n++
+		default:
+			r, size := utf8.DecodeRune(src[i-1:])
+			if r == utf8.RuneError && size == 1 {
+				return 0, ErrInvalidFormat
+			}
+			if size > len(dst)-n {
+				return 0, ErrMaxStrLen
+			}
+			copy(dst[n:n+size], src[i-1:i-1+size])
+			n += size
+			i += size - 1
+		}
+	}
+	return n, nil
+}
+
+// jsonHexRune decodes exactly four hexadecimal bytes at off. The length
+// check precedes all indexing, keeping arbitrary/truncated input panic-free.
+func jsonHexRune(src []byte, off int) (rune, bool) {
+	if len(src)-off < 4 {
+		return 0, false
+	}
+	var r rune
+	for _, c := range src[off : off+4] {
+		var digit byte
+		switch {
+		case c >= '0' && c <= '9':
+			digit = c - '0'
+		case c >= 'a' && c <= 'f':
+			digit = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			digit = c - 'A' + 10
+		default:
+			return 0, false
+		}
+		r = r<<4 | rune(digit)
+	}
+	return r, true
+}
+
+// appendJSONRune writes r's UTF-8 encoding to dst. jsonHexRune and the
+// surrogate checks guarantee r is a Unicode scalar value.
+func appendJSONRune(dst *[maxParseLen]byte, n int, r rune) (int, bool) {
+	size := 1
+	switch {
+	case r > 0xFFFF:
+		size = 4
+	case r > 0x7FF:
+		size = 3
+	case r > 0x7F:
+		size = 2
+	}
+	if size > len(dst)-n {
+		return n, false
+	}
+	// Each arm's size classification proves that every narrowed rune chunk is
+	// within one byte; the masks retain exactly the UTF-8 payload bits.
+	//nolint:gosec // G115 cannot infer the size switch's narrowing invariants
+	switch size {
+	case 1:
+		dst[n] = byte(r)
+	case 2:
+		dst[n] = 0xC0 | byte(r>>6)
+		dst[n+1] = 0x80 | byte(r)&0x3F
+	case 3:
+		dst[n] = 0xE0 | byte(r>>12)
+		dst[n+1] = 0x80 | byte(r>>6)&0x3F
+		dst[n+2] = 0x80 | byte(r)&0x3F
+	case 4:
+		dst[n] = 0xF0 | byte(r>>18)
+		dst[n+1] = 0x80 | byte(r>>12)&0x3F
+		dst[n+2] = 0x80 | byte(r>>6)&0x3F
+		dst[n+3] = 0x80 | byte(r)&0x3F
+	}
+	return n + size, true
 }
 
 // Binary wire format constants. The layout is fixed and compact:
@@ -183,8 +419,12 @@ func (d Decimal) putBinary(buf *[binSizeHi]byte) int {
 //
 // A zero coefficient is normalized through newDecimal regardless of the
 // encoded sign and precision, so a foreign encoder's "-0.000" still decodes
-// to the canonical Decimal{}. It never allocates.
+// to the canonical Decimal{}. A nil receiver returns ErrNilReceiver before
+// inspecting data. It never allocates.
 func (d *Decimal) UnmarshalBinary(data []byte) error {
+	if d == nil {
+		return ErrNilReceiver
+	}
 	// Dispatch on the length first: each arm then needs a single combined
 	// validity test, because the length fixes what the flag byte must be —
 	// 10 bytes demand every non-sign bit clear (no high limb, no reserved
@@ -193,19 +433,23 @@ func (d *Decimal) UnmarshalBinary(data []byte) error {
 	// comparison each.
 	switch len(data) {
 	case binSizeLo:
+		//nolint:gosec // this switch arm proves len(data) == binSizeLo == 10
 		flags, prec := data[0], data[1]
 		if flags&^binFlagNeg != 0 || prec > MaxPrec {
 			return ErrInvalidBinaryData
 		}
+		//nolint:gosec // this switch arm proves len(data) == binSizeLo == 10
 		*d = newDecimal(u128{lo: binary.BigEndian.Uint64(data[2:10])}, flags != 0, prec)
 		return nil
 	case binSizeHi:
+		//nolint:gosec // this switch arm proves len(data) == binSizeHi == 18
 		flags, prec := data[0], data[1]
 		//nolint:gosec // len(data) == binSizeHi == 18 in this arm, so data[10:18] is in range
 		hi := binary.BigEndian.Uint64(data[10:18])
 		if flags&^binFlagNeg != binFlagHiPresent || prec > MaxPrec || hi == 0 {
 			return ErrInvalidBinaryData
 		}
+		//nolint:gosec // this switch arm proves len(data) == binSizeHi == 18
 		*d = newDecimal(u128{hi: hi, lo: binary.BigEndian.Uint64(data[2:10])}, flags&binFlagNeg != 0, prec)
 		return nil
 	}

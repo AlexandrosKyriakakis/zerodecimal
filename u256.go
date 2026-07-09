@@ -23,6 +23,35 @@ func (u u256) hi128() u128 {
 	return u128{hi: u.d3, lo: u.d2}
 }
 
+// cmp256 compares two unsigned 256-bit values.
+func cmp256(u, v u256) int {
+	if u.d3 != v.d3 {
+		if u.d3 < v.d3 {
+			return -1
+		}
+		return 1
+	}
+	if u.d2 != v.d2 {
+		if u.d2 < v.d2 {
+			return -1
+		}
+		return 1
+	}
+	if u.d1 != v.d1 {
+		if u.d1 < v.d1 {
+			return -1
+		}
+		return 1
+	}
+	if u.d0 < v.d0 {
+		return -1
+	}
+	if u.d0 > v.d0 {
+		return 1
+	}
+	return 0
+}
+
 // mulToU256 returns the full 256-bit product u·v.
 func mulToU256(u, v u128) u256 {
 	// Dominant case: both operands fit in 64 bits and one multiply suffices.

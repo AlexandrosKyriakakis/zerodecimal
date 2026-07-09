@@ -218,6 +218,20 @@ func TestAddSubRandom(t *testing.T) {
 }
 
 func TestMul(t *testing.T) {
+	excessWant := map[uint8]string{
+		9:  "0.11111111",
+		12: "0.111111110111",
+		19: "0.111111110111111111",
+	}[DefaultPrec]
+	rescaledWant := map[uint8]string{
+		9:  "34028236692093846346.337460743",
+		12: "34028236692093846346.337460743176",
+		19: "34028236692093846346.3374607431768211455",
+	}[DefaultPrec]
+	rescaledOverflowWant, rescaledOverflowErr := rescaledWant, error(nil)
+	if DefaultPrec == MaxPrec {
+		rescaledOverflowWant, rescaledOverflowErr = "", ErrOverflow
+	}
 	tests := []struct {
 		name     string
 		a, b     Decimal
@@ -235,12 +249,12 @@ func TestMul(t *testing.T) {
 		{
 			name: "excess_precision_truncates_toward_zero",
 			a:    RequireFromString("0.1234567890123456789"), b: RequireFromString("0.9"),
-			want: "0.111111110111111111", wantPrec: 19,
+			want: excessWant, wantPrec: DefaultPrec,
 		},
 		{
 			name: "negative_excess_precision_truncates_toward_zero",
 			a:    RequireFromString("-0.1234567890123456789"), b: RequireFromString("0.9"),
-			want: "-0.111111110111111111", wantPrec: 19,
+			want: "-" + excessWant, wantPrec: DefaultPrec,
 		},
 		{
 			name: "tiny_product_truncates_to_canonical_zero",
@@ -250,7 +264,7 @@ func TestMul(t *testing.T) {
 		{
 			name: "one_limb_inputs_two_limb_product_rescales",
 			a:    mustHiLo(t, false, 0, 4_000_000_000, 10), b: mustHiLo(t, false, 0, 5_000_000_000, 10),
-			want: "0.2", wantPrec: 19,
+			want: "0.2", wantPrec: DefaultPrec,
 		},
 		{
 			name: "max128_fits_exactly",
@@ -263,14 +277,15 @@ func TestMul(t *testing.T) {
 			// the one-digit rescale lands exactly on the max coefficient.
 			name: "rescaled_product_just_fits",
 			a:    mustHiLo(t, false, 9, maxUint64-9, 1), b: mustHiLo(t, false, 1, 1, 19),
-			want: "34028236692093846346.3374607431768211455", wantPrec: 19,
+			want: rescaledWant, wantPrec: DefaultPrec,
 		},
 		{
-			// 10·2^64 · 2^64 = 10·2^128: the rescaled quotient is exactly
-			// 2^128 and must overflow.
+			// 10·2^64 · 2^64 = 10·2^128. At MaxPrec the one-digit
+			// rescale is exactly 2^128 and overflows; reduced-precision builds
+			// intentionally discard enough additional digits for the result to fit.
 			name: "rescaled_product_just_overflows",
 			a:    mustHiLo(t, false, 10, 0, 1), b: mustHiLo(t, false, 1, 0, 19),
-			wantErr: ErrOverflow,
+			want: rescaledOverflowWant, wantPrec: DefaultPrec, wantErr: rescaledOverflowErr,
 		},
 	}
 	for _, tc := range tests {
@@ -313,6 +328,16 @@ func TestMulRandom(t *testing.T) {
 
 func TestDiv(t *testing.T) {
 	maxInt := mustHiLo(t, false, maxUint64, maxUint64, 0)
+	oneThirdWant := map[uint8]string{
+		9:  "0.333333333",
+		12: "0.333333333333",
+		19: "0.3333333333333333333",
+	}[DefaultPrec]
+	maxPrecThirdWant := map[uint8]string{
+		9:  "11342745564031282115.445820247",
+		12: "11342745564031282115.445820247725",
+		19: "11342745564031282115.4458202477256070485",
+	}[DefaultPrec]
 	tests := []struct {
 		name     string
 		a, b     Decimal
@@ -322,13 +347,13 @@ func TestDiv(t *testing.T) {
 	}{
 		{name: "divide_by_zero", a: NewFromInt(1), b: Zero, wantErr: ErrDivideByZero},
 		{name: "zero_dividend_is_canonical_zero", a: Zero, b: NewFromInt(-3), want: "0", wantPrec: 0},
-		{name: "one_third_truncates_at_default_prec", a: One, b: NewFromInt(3), want: "0.3333333333333333333", wantPrec: 19},
-		{name: "exact_eighth_keeps_default_prec", a: One, b: NewFromInt(8), want: "0.125", wantPrec: 19},
-		{name: "seven_halves", a: NewFromInt(7), b: NewFromInt(2), want: "3.5", wantPrec: 19},
-		{name: "sign_rule_neg_pos", a: NewFromInt(-7), b: NewFromInt(2), want: "-3.5", wantPrec: 19},
-		{name: "sign_rule_pos_neg", a: NewFromInt(7), b: NewFromInt(-2), want: "-3.5", wantPrec: 19},
-		{name: "sign_rule_neg_neg", a: NewFromInt(-7), b: NewFromInt(-2), want: "3.5", wantPrec: 19},
-		{name: "max_prec_operands", a: RequireFromString("0.0000000000000000007"), b: RequireFromString("0.0000000000000000002"), want: "3.5", wantPrec: 19},
+		{name: "one_third_truncates_at_default_prec", a: One, b: NewFromInt(3), want: oneThirdWant, wantPrec: DefaultPrec},
+		{name: "exact_eighth_keeps_default_prec", a: One, b: NewFromInt(8), want: "0.125", wantPrec: DefaultPrec},
+		{name: "seven_halves", a: NewFromInt(7), b: NewFromInt(2), want: "3.5", wantPrec: DefaultPrec},
+		{name: "sign_rule_neg_pos", a: NewFromInt(-7), b: NewFromInt(2), want: "-3.5", wantPrec: DefaultPrec},
+		{name: "sign_rule_pos_neg", a: NewFromInt(7), b: NewFromInt(-2), want: "-3.5", wantPrec: DefaultPrec},
+		{name: "sign_rule_neg_neg", a: NewFromInt(-7), b: NewFromInt(-2), want: "3.5", wantPrec: DefaultPrec},
+		{name: "max_prec_operands", a: RequireFromString("0.0000000000000000007"), b: RequireFromString("0.0000000000000000002"), want: "3.5", wantPrec: DefaultPrec},
 		{
 			// 10^30 with 8 more digits saturates the 38-significant-digit
 			// budget: the adaptive precision lands exactly at p = 8.
@@ -344,7 +369,7 @@ func TestDiv(t *testing.T) {
 		{
 			name: "max_coefficient_at_max_prec_divides_exactly",
 			a:    mustHiLo(t, false, maxUint64, maxUint64, 19), b: NewFromInt(3),
-			want: "11342745564031282115.4458202477256070485", wantPrec: 19,
+			want: maxPrecThirdWant, wantPrec: DefaultPrec,
 		},
 		{
 			// 2^127/7 fits at p = 1 but the bit-length estimate stops at
@@ -463,7 +488,7 @@ func TestQuoRem(t *testing.T) {
 		// q = 10·2^64 - 1 and r = 2^64 - 10 at the common scale f = 1.
 		{name: "two_limb_divisor", a: maxInt, b: mustHiLo(t, false, 1, 0, 1), wantQ: "184467440737095516159", wantR: "1844674407370955160.6", wantRPrec: 1},
 		{name: "quotient_overflows", a: maxInt, b: RequireFromString("0.1"), wantErr: ErrOverflow},
-		{name: "aligned_divisor_overflows", a: RequireFromString("0.0000000000000000001"), b: mustHiLo(t, false, 1<<63, 0, 0), wantErr: ErrOverflow},
+		{name: "aligned_divisor_exceeds_u128", a: RequireFromString("0.0000000000000000001"), b: mustHiLo(t, false, 1<<63, 0, 0), wantQ: "0", wantR: "0.0000000000000000001", wantRPrec: 19},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -502,7 +527,7 @@ func TestQuoRemRandom(t *testing.T) {
 
 		q, r, err := a.QuoRem(b)
 		qBig, rBig := new(big.Int).QuoRem(num, den, new(big.Int))
-		if den.BitLen() > 128 || qBig.BitLen() > 128 {
+		if qBig.BitLen() > 128 {
 			require.ErrorIs(t, err, ErrOverflow, "%s quorem %s must overflow", a, b)
 			continue
 		}
@@ -588,8 +613,8 @@ func TestMustTwins(t *testing.T) {
 	t.Run("must_sum_panics_on_overflow", func(t *testing.T) {
 		require.Panics(t, func() { MustSum(maxInt, One) })
 	})
-	t.Run("must_avg_panics_on_overflow", func(t *testing.T) {
-		require.Panics(t, func() { MustAvg(maxInt, maxInt) })
+	t.Run("must_avg_handles_wide_intermediate", func(t *testing.T) {
+		assert.Equal(t, maxInt, MustAvg(maxInt, maxInt))
 	})
 }
 
@@ -652,10 +677,16 @@ func TestSumAvg(t *testing.T) {
 	t.Run("avg_truncates_at_default_prec", func(t *testing.T) {
 		got, err := Avg(NewFromInt(1), NewFromInt(2), NewFromInt(4))
 		require.NoError(t, err)
-		assert.Equal(t, "2.3333333333333333333", got.String())
+		want := map[uint8]string{
+			9:  "2.333333333",
+			12: "2.333333333333",
+			19: "2.3333333333333333333",
+		}[DefaultPrec]
+		assert.Equal(t, want, got.String())
 	})
-	t.Run("avg_sum_overflow", func(t *testing.T) {
-		_, err := Avg(maxInt, maxInt)
-		require.ErrorIs(t, err, ErrOverflow)
+	t.Run("avg_divides_wide_sum_before_narrowing", func(t *testing.T) {
+		got, err := Avg(maxInt, maxInt)
+		require.NoError(t, err)
+		assert.Equal(t, maxInt, got)
 	})
 }

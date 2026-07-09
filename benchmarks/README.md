@@ -3,6 +3,14 @@
 This module benchmarks [zerodecimal](..) against the other Go decimal
 libraries on one shared operation × shape matrix:
 
+> **Historical artifact notice:** the committed `bench-vs-*.txt`,
+> `bench-pgo.txt`, and comparison charts were collected before the
+> zerodecimal string cache became opt-in. Their cache-eligible zerodecimal
+> `String`/`SQLValue` rows therefore reflect a cache-enabled binary. New
+> untagged runs use the current production default (cache absent) and are not
+> directly comparable on those rows. The committed artifacts and charts have
+> intentionally not been regenerated as part of this methodology update.
+
 | key      | library                                                                  |
 | -------- | ------------------------------------------------------------------------ |
 | `zd`     | github.com/AlexandrosKyriakakis/zerodecimal                              |
@@ -80,8 +88,11 @@ These are part of the story the numbers tell, not benchmark bugs:
 - **Div precision**: zd and udec produce up to 19 fractional digits, ss and
   alpaca default to `DivisionPrecision = 16`, eric rounds to 19 significant
   digits. The work compared is each library's own contract.
-- **SQL caches**: zd (±1000.00, two decimal places) and alpaca have
-  small-value caches, so `small_int` SQLValue/String rows measure cache hits.
+- **SQL caches**: alpaca has its own small-value cache. Zerodecimal's cache is
+  absent by default and enabled only with `zerodecimal_strcache`; the
+  committed comparisons predate that default change and their `small_int`
+  zerodecimal SQLValue/String rows measure cache hits. Fresh untagged runs
+  measure cache misses instead.
 - **dec NaN poisoning**: dec128's fallible ops (FromString, Add, Sub, Mul,
   Div, QuoRem, FromFloat64) return a NaN-poisoned `Dec128` instead of a
   `(Decimal, error)` pair (NaN + 1 = NaN). The benchmarks sink the result
@@ -117,19 +128,22 @@ These are part of the story the numbers tell, not benchmark bugs:
 
 Allocation floors that are accepted by design rather than optimized away:
 
-- **String: 1 alloc/op** outside the small-value cache window. A
-  string-returning API must allocate the immutable result; the rendering
-  itself happens in a stack scratch buffer and the one allocation is exactly
-  the string. Inside the ±1000.00 cache window it is 0 allocs.
+- **String: 1 alloc/op for representative multi-byte output** in the default
+  cache-off build. A string-returning API must normally allocate the immutable
+  result; the rendering itself happens in a stack scratch buffer. Go serves
+  one-byte strings from a runtime static table, so values such as `0` can be a
+  zero-allocation exception even without the cache. With
+  `zerodecimal_strcache`, values inside the ±1000.00 window cost 0 allocs.
 - **MarshalText / MarshalJSON / MarshalBinary: 1 alloc/op** — the returned
   byte slice the caller owns (callers may mutate marshal results, so sharing
   cached bytes is off the table). The slice is sized exactly: MarshalJSON of
   `5` allocates 3 bytes, not a fixed 48-byte buffer.
-- **SQLValue: 2 allocs/op** outside the cache window: the canonical string
-  plus boxing its header into the `driver.Value` interface
+- **SQLValue: at most 2 allocs/op** in the default cache-off build: for a
+  representative multi-byte value, the canonical string plus boxing its
+  header into the `driver.Value` interface
   (`runtime.convTstring`); the bytes are shared, not copied. There is no
   cheaper portable shape — a `driver.Value` must carry a concrete boxed
-  type. Inside the cache window the pre-boxed value makes it 0 allocs.
+  type. With `zerodecimal_strcache`, an eligible pre-boxed value costs 0.
 
 ## Running
 
@@ -145,6 +159,13 @@ make bench-gv       # govalues; only the three shapes it can represent
 make compare        # benchstat per-pair reports into bench-vs-*.txt
 make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
 make chart          # render comparison-{light,dark}.svg from the committed bench-vs-*.txt + bench-pgo.txt geomeans
+make production-smoke    # every production row once, default and strcache
+make production-default  # production suite, current cache-off default
+make production-strcache # same suite with the opt-in cache
+make production-micro    # primitives and error paths only
+make production-pipeline # composed monetary workflows only
+make production-parallel          # RunParallel at 1,2,4,8 CPUs, cache off
+make production-parallel-strcache # same RunParallel rows, cache on
 ```
 
 `compare` and `pgo` need `benchstat`
@@ -157,3 +178,95 @@ scratch output (gitignored); the `bench-vs-*.txt` comparisons and
 published delta is what a consumer gets by feeding a production profile to
 `go build -pgo`: profile-driven inlining promotes zerodecimal's outlined slow
 paths into their hot call sites past the default inlining budget.
+
+## Production benchmark methodology
+
+The production suite is zerodecimal-only and deliberately separate from the
+competitor matrix. Names make the measurement boundary explicit:
+
+- `BenchmarkProductionMicro*` measures one API family at a time: canonical,
+  scientific, and rescue parsing; exact/direct-round multiplication and
+  division; mixed-sign/mixed-scale and cancellation-heavy aggregates; the
+  wide-scaled-divisor QuoRem path; escaped JSON and JSON-null rejection;
+  `StrictSQLDecimal`; narrow and very wide `StringFixed`; cache-eligible versus
+  ineligible String/Value; and representative sentinel error paths.
+- `BenchmarkProductionPipelineTradeCapture` composes escaped JSON price
+  ingestion, strict integer SQL ingestion, direct currency rounding, fee
+  aggregation, and fixed-width output. Its result-string allocation is part of
+  the measured workflow.
+- `BenchmarkProductionPipelinePortfolioMark` directly rounds eight pre-parsed
+  mixed-sign positions, then sums, averages, and formats the book.
+- `BenchmarkProductionParallel*` uses `RunParallel` with immutable fixtures and
+  goroutine-local sinks. It covers parse, direct Mul/Div rounding,
+  cancellation-heavy Sum, strict SQL scanning, and cache-eligible String.
+
+Every non-parse decimal fixture and every interface-valued Scan source is
+built before timing. Sequential results and errors are written to package
+sinks. Parallel workers retain local result/error sinks with
+`runtime.KeepAlive`, avoiding a shared-sink race or false-sharing bottleneck.
+Every row reports allocations. `TestProductionBenchmarkFixtures` verifies
+that success rows succeed, error rows hit their intended sentinel, the wide
+QuoRem result is exact, and both pipelines are valid.
+
+### Reproducible collection
+
+Use an otherwise idle target-class host, pin the repository revision, and
+record at least:
+
+```sh
+git rev-parse HEAD
+git status --short
+go version
+go env GOOS GOARCH GOAMD64 GOEXPERIMENT CGO_ENABLED
+uname -a
+env | grep -E '^(GOGC|GOMEMLIMIT|GOMAXPROCS)=' || true
+# Linux: lscpu; macOS: sysctl -n machdep.cpu.brand_string
+```
+
+The benchmark output records GOOS, GOARCH, CPU, ns/op, bytes/op, and allocs/op.
+The `-cpu` suffix records the selected GOMAXPROCS. For a stable single-thread
+baseline and a separately visible cache experiment:
+
+```sh
+make production-default  PRODUCTION_BENCHTIME=2s PRODUCTION_COUNT=10 PRODUCTION_CPU=1 | tee /tmp/zd-production-default.txt
+make production-strcache PRODUCTION_BENCHTIME=2s PRODUCTION_COUNT=10 PRODUCTION_CPU=1 | tee /tmp/zd-production-strcache.txt
+benchstat default=/tmp/zd-production-default.txt strcache=/tmp/zd-production-strcache.txt
+```
+
+For scaling, choose CPU counts that exist on the deployment host rather than
+blindly using the default list:
+
+```sh
+make production-parallel PRODUCTION_BENCHTIME=2s PRODUCTION_COUNT=10 PRODUCTION_PARALLEL_CPU=1,2,4,8 | tee /tmp/zd-production-parallel-default.txt
+make production-parallel-strcache PRODUCTION_BENCHTIME=2s PRODUCTION_COUNT=10 PRODUCTION_PARALLEL_CPU=1,2,4,8 | tee /tmp/zd-production-parallel-strcache.txt
+```
+
+Run at least ten samples for benchstat, keep Go version/build tags/GOAMD64,
+GOMAXPROCS, power mode, and background load fixed within a comparison, and
+compare like-named rows only. Preserve raw output outside the repository; the
+targets never overwrite committed comparison results or charts. Benchmark PGO
+and non-PGO binaries as separate populations if production uses PGO. The
+targets above use the default precision; if production uses
+`zerodecimal_prec9` or `zerodecimal_prec12`, repeat the underlying `go test`
+command with that tag (comma-combined with `zerodecimal_strcache` when needed)
+and keep it as a separately labeled population. Never combine the two mutually
+exclusive precision tags.
+
+### Limitations
+
+- These are synthetic in-process throughput benchmarks, not proof of database,
+  network, scheduler, NUMA, GC, or whole-application tail latency.
+- `RunParallel` reports aggregate steady-state throughput. It is not a p99/p999
+  latency or fairness measurement and contains no application locks.
+- Cache-on steady-state hits do not include the eager cache's process startup,
+  resident-memory, GC-root scanning, or deployment-density cost. Measure those
+  in the actual service before enabling `zerodecimal_strcache`.
+- A 1x smoke run includes benchmark-harness startup allocations, especially in
+  `RunParallel`; use timed multi-sample runs for allocation conclusions.
+- Exact, direct-round, and legacy truncating APIs have different semantics.
+  Their timings are not interchangeable unless the application's required
+  rounding and error policy is also the same.
+- Microbenchmark ns/op values do not establish safe capacity for a high-value
+  money-moving system. Validate representative request mixes, failure rates,
+  GC settings, target CPUs, and latency percentiles in an application-level
+  soak before setting production limits.

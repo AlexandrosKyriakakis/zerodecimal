@@ -15,7 +15,7 @@ func Example() {
 	}
 	qty := zerodecimal.NewFromInt(3)
 
-	total, err := price.Mul(qty)
+	total, err := price.MulRound(qty, 2, zerodecimal.ToNearestEven)
 	if err != nil {
 		panic(err)
 	}
@@ -76,18 +76,34 @@ func ExampleDecimal_Add() {
 }
 
 func ExampleDecimal_Div() {
+	// Div is the compatibility operation: it truncates at adaptive precision
+	// up to DefaultPrec.
 	third, err := zerodecimal.NewFromInt(1).Div(zerodecimal.NewFromInt(3))
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(third) // truncated at DefaultPrec fractional digits
+	fmt.Println(third.Prec() == zerodecimal.DefaultPrec)
 
-	fmt.Println(zerodecimal.NewFromInt(1).MustDiv(zerodecimal.NewFromInt(8)))
+	// Choose the scale and rounding mode directly when loss is intentional.
+	rounded, err := zerodecimal.NewFromInt(1).DivRound(
+		zerodecimal.NewFromInt(3), 3, zerodecimal.TowardZero,
+	)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(rounded)
 
-	_, err = zerodecimal.NewFromInt(1).Div(zerodecimal.Zero)
+	exact, err := zerodecimal.NewFromInt(1).DivExact(zerodecimal.NewFromInt(8))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(exact)
+
+	_, err = zerodecimal.NewFromInt(1).Div(zerodecimal.Decimal{})
 	fmt.Println(errors.Is(err, zerodecimal.ErrDivideByZero))
 	// Output:
-	// 0.3333333333333333333
+	// true
+	// 0.333
 	// 0.125
 	// true
 }
@@ -180,12 +196,25 @@ func ExampleDecimal_MarshalJSON() {
 
 func ExampleDecimal_UnmarshalJSON() {
 	var d zerodecimal.Decimal
-	// Bare JSON numbers decode exactly too, scientific notation included.
+	// Bare JSON numbers decode exactly, scientific notation included.
 	if err := json.Unmarshal([]byte(`1.5e-7`), &d); err != nil {
 		panic(err)
 	}
 	fmt.Println(d)
-	// Output: 0.00000015
+
+	// Quoted JSON is semantically unescaped before strict decimal parsing.
+	if err := json.Unmarshal([]byte(`"1\u002e5"`), &d); err != nil {
+		panic(err)
+	}
+	fmt.Println(d)
+
+	// A required Decimal rejects null rather than silently keeping d stale.
+	err := json.Unmarshal([]byte(`null`), &d)
+	fmt.Println(errors.Is(err, zerodecimal.ErrJSONNull), d)
+	// Output:
+	// 0.00000015
+	// 1.5
+	// true 1.5
 }
 
 func ExampleNullDecimal() {
@@ -213,4 +242,26 @@ func ExampleNullDecimal() {
 	// false
 	// true 123.45
 	// 123.45
+}
+
+func ExampleStrictNullDecimal() {
+	n := zerodecimal.NewStrictNullDecimal(zerodecimal.NewFromInt(7))
+
+	// Nullable exact SQL boundaries reject floats and clear stale state.
+	err := n.Scan(float64(0.5))
+	fmt.Println(errors.Is(err, zerodecimal.ErrScanFloat), n.Valid)
+
+	if err := n.Scan("123.45"); err != nil {
+		panic(err)
+	}
+	fmt.Println(n.Valid, n.Decimal)
+
+	if err := n.Scan(nil); err != nil {
+		panic(err)
+	}
+	fmt.Println(n.Valid)
+	// Output:
+	// true false
+	// true 123.45
+	// false
 }

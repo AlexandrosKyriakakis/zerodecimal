@@ -18,6 +18,7 @@ package zerodecimal
 // all build tags.
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
 	"math/big"
@@ -433,8 +434,9 @@ func FuzzQuoRem(f *testing.F) {
 }
 
 // FuzzMod cross-checks Mod standalone: ErrDivideByZero on zero divisors, the
-// divisor-alignment iff overflow oracle, shopspring's precision-0 remainder
-// on success, the dividend's sign, and the contracted remainder precision.
+// integer-quotient iff overflow oracle (a wide aligned divisor instead proves
+// a zero quotient), shopspring's precision-0 remainder on success, the
+// dividend's sign, and the contracted remainder precision.
 func FuzzMod(f *testing.F) {
 	fuzzPairs(f)
 	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8) {
@@ -447,7 +449,7 @@ func FuzzMod(f *testing.F) {
 		fp := max(a.prec, b.prec)
 		num := new(big.Int).Mul(u128ToBig(a.coef), bp10(int(fp-a.prec)))
 		den := new(big.Int).Mul(u128ToBig(b.coef), bp10(int(fp-b.prec)))
-		if den.Cmp(mod128big) >= 0 || new(big.Int).Quo(num, den).Cmp(mod128big) >= 0 {
+		if new(big.Int).Quo(num, den).Cmp(mod128big) >= 0 {
 			require.ErrorIsf(t, err, ErrOverflow, "mod overflow oracle: a=%+v b=%+v", a, b)
 			return
 		}
@@ -468,9 +470,10 @@ func FuzzCmp(f *testing.F) {
 	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8) {
 		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
 		checkCmp(t, newCrossVal(a), newCrossVal(b))
-		require.Zerof(t, a.Cmp(a), "cmp self must be zero: a=%+v", a)
-		require.Zerof(t, b.Cmp(b), "cmp self must be zero: b=%+v", b)
-		require.Truef(t, a.Equal(a), "equal self: a=%+v", a)
+		aCopy, bCopy := a, b
+		require.Zerof(t, a.Cmp(aCopy), "cmp self must be zero: a=%+v", a)
+		require.Zerof(t, b.Cmp(bCopy), "cmp self must be zero: b=%+v", b)
+		require.Truef(t, a.Equal(aCopy), "equal self must hold: a=%+v", a)
 	})
 }
 
@@ -923,13 +926,11 @@ func FuzzMustTwins(f *testing.F) {
 
 // FuzzAggregates cross-checks the variadic helpers over three operands.
 // Min/Max must return one of their inputs verbatim, bound every input, and
-// match shopspring's fold. Sum carries FuzzAdd's iff overflow oracle applied
-// stepwise to the left-to-right fold (Add stops at the first overflowing
-// partial sum), with shopspring value and contracted precision on success.
-// Avg is pinned to its documented identity Sum(xs).Div(NewFromInt(n)) — Div
-// itself is independently oracled by FuzzDiv — plus a shopspring bound: the
-// truncated mean is within 10^-p of the exact one. MustSum/MustAvg follow the
-// Must-twin contract.
+// match shopspring's fold. Sum uses one exact signed coefficient at the
+// greatest input precision: ErrOverflow is determined only by that final
+// coefficient, so arbitrary-width partial sums may cancel. Avg divides the
+// same wide total before narrowing and is checked at its adaptive precision.
+// MustSum/MustAvg follow the Must-twin contract.
 func FuzzAggregates(f *testing.F) {
 	fuzzTriples(f)
 	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8, cneg bool, chi, clo uint64, cprec uint8) {
@@ -947,24 +948,11 @@ func FuzzAggregates(f *testing.F) {
 		require.Truef(t, decimal.Min(ssOf(a), ssOf(b), ssOf(c)).Equal(ssOf(gotMin)), "min vs shopspring: xs=%+v", xs)
 		require.Truef(t, decimal.Max(ssOf(a), ssOf(b), ssOf(c)).Equal(ssOf(gotMax)), "max vs shopspring: xs=%+v", xs)
 
-		// Stepwise fold oracle: exact signed coefficient and contracted
-		// precision after each Add, overflow at the first step whose exact
-		// coefficient reaches 2^128, canonical zero resetting the precision.
-		sumBig, sumPrec := signedCoefAt(a, a.prec), a.prec
-		sumOverflow := false
-		for _, x := range xs[1:] {
-			fp := max(sumPrec, x.prec)
-			exact := new(big.Int).Mul(sumBig, bp10(int(fp-sumPrec)))
-			exact.Add(exact, signedCoefAt(x, fp))
-			if exact.CmpAbs(mod128big) >= 0 {
-				sumOverflow = true
-				break
-			}
-			sumBig, sumPrec = exact, fp
-			if exact.Sign() == 0 {
-				sumPrec = 0
-			}
-		}
+		// Final-result oracle: all operands align once to the greatest input
+		// precision and sum in arbitrary width. Only the final magnitude may
+		// trigger ErrOverflow.
+		sumBig, sumPrec := aggregateOracleTotal(xs)
+		sumOverflow := sumBig.BitLen() > 128
 		gotSum, sumErr := Sum(a, b, c)
 		var mustSum Decimal
 		pv := fuzzPanicValue(func() { mustSum = MustSum(a, b, c) })
@@ -982,18 +970,11 @@ func FuzzAggregates(f *testing.F) {
 		var mustAvg Decimal
 		pv = fuzzPanicValue(func() { mustAvg = MustAvg(a, b, c) })
 		requireTwin(t, "must_avg", avgErr, pv, xs)
-		if sumErr != nil {
-			require.ErrorIsf(t, avgErr, ErrOverflow, "avg propagates the sum overflow: xs=%+v", xs)
-			return
-		}
-		wantAvg, wantErr := gotSum.Div(NewFromInt(3))
-		require.NoErrorf(t, wantErr, "sum/3 always fits (quotient magnitude <= |sum|): xs=%+v", xs)
 		require.NoErrorf(t, avgErr, "avg: xs=%+v", xs)
-		require.Equalf(t, wantAvg, gotAvg, "avg identity Sum(xs).Div(3): xs=%+v", xs)
 		require.Equalf(t, gotAvg, mustAvg, "must_avg result: xs=%+v", xs)
-		exactAvg := ssOf(a).Add(ssOf(b)).Add(ssOf(c)).DivRound(decimal.NewFromInt(3), 45)
-		require.Truef(t, exactAvg.Sub(ssOf(gotAvg)).Abs().LessThan(decimal.New(1, -int32(gotAvg.Prec()))),
-			"avg within one unit in its last place of the exact mean: xs=%+v got=%s exact=%s", xs, gotAvg, exactAvg)
+		requireAggregateAvgOracle(t, xs)
+		wantAvg, _ := ssOf(a).Add(ssOf(b)).Add(ssOf(c)).QuoRem(decimal.NewFromInt(3), int32(gotAvg.prec))
+		require.Truef(t, wantAvg.Equal(ssOf(gotAvg)), "avg vs shopspring truncation: xs=%+v", xs)
 	})
 }
 
@@ -1100,7 +1081,7 @@ func FuzzConstructors(f *testing.F) {
 		for _, s := range []string{d.String(), d.String() + "!"} {
 			want, wantErr := NewFromString(s)
 			var gotS Decimal
-			pv := fuzzPanicValue(func() { gotS = RequireFromString(s) })
+			pv = fuzzPanicValue(func() { gotS = RequireFromString(s) })
 			requireTwin(t, "require_from_string", wantErr, pv, s)
 			if wantErr == nil {
 				require.Equalf(t, want, gotS, "require_from_string result: %q", s)
@@ -1151,14 +1132,15 @@ func FuzzTextCodec(f *testing.F) {
 }
 
 // FuzzCodecGarbage feeds arbitrary bytes to every text-shaped decoder. For
-// Decimal, a JSON null is a no-op and every rejection is a bare parse
-// sentinel leaving the receiver unchanged; for NullDecimal, null/empty clears
+// Decimal, a JSON null is an explicit ErrJSONNull rejection and every
+// rejection leaves the receiver unchanged; for NullDecimal, null/empty clears
 // to the invalid zero, decode errors leave it unchanged while Scan errors
 // clear it, and every acceptance marks it valid, round-trips through its own
 // marshaler, and agrees with shopspring.
 func FuzzCodecGarbage(f *testing.F) {
 	for _, s := range []string{
-		"null", `"null"`, `"1.5"`, "1.5", "", "x", `"1.5`, `"15x`, "-0.000", "1e40",
+		"null", `"null"`, `"1.5"`, `"1\u002e5"`, `"\u002d1\u0045\u002b2"`, `"1\uD800"`,
+		"1.5", "", "x", `"1.5`, `"15x`, "-0.000", "1e40",
 		"0.00000000000000000001", strings.Repeat("1", maxParseLen+1),
 	} {
 		f.Add([]byte(s))
@@ -1170,18 +1152,19 @@ func FuzzCodecGarbage(f *testing.F) {
 		err := d.UnmarshalJSON(raw)
 		switch {
 		case string(raw) == "null":
-			require.NoErrorf(t, err, "json null must be a no-op")
-			require.Equalf(t, marker, d, "json null must leave the receiver unchanged")
+			require.ErrorIsf(t, err, ErrJSONNull, "json null must fail closed")
+			require.Equalf(t, marker, d, "rejected json null must leave the receiver unchanged")
 		case err != nil:
 			requireParseSentinel(t, err, "unmarshal_json", raw)
 			require.Equalf(t, marker, d, "failed unmarshal_json must leave the receiver unchanged: %q", raw)
 		default:
-			// The documented decode strips exactly one balanced quote pair.
-			body := raw
-			if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
-				body = body[1 : len(body)-1]
+			// Quoted inputs parse their decoded JSON string, not the encoded
+			// source bytes. Unquoted successes use the strict decimal token as-is.
+			semantic := string(raw)
+			if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+				require.NoErrorf(t, json.Unmarshal(raw, &semantic), "accepted quoted JSON must be valid: %q", raw)
 			}
-			requireParsedValue(t, string(body), d, "unmarshal_json", raw)
+			requireParsedValue(t, semantic, d, "unmarshal_json", raw)
 		}
 
 		dt := marker

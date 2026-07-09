@@ -1,8 +1,14 @@
-.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart
+.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart production-smoke production-default production-strcache production-micro production-pipeline production-parallel production-parallel-strcache
+
+PRODUCTION_BENCHTIME ?= 2s
+PRODUCTION_COUNT ?= 10
+PRODUCTION_CPU ?= 1
+PRODUCTION_PARALLEL_CPU ?= 1,2,4,8
+COMPARATIVE_BENCH = ^Benchmark(Parse|String|Add|Sub|Mul|Div|QuoRem|Cmp|RoundBank|Truncate|MarshalJSON|UnmarshalJSON|MarshalBinary|UnmarshalBinary|AppendText|SQLValue|SQLScan|NewFromFloat)$$
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
-	go test -bench=. -benchmem -benchtime=0.1s -count=1 -run NONE .
+	go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=0.1s -count=1 -run NONE .
 
 # Per-library runs for benchstat: the lib segment is stripped from the
 # benchmark names (sed to stdout, never in-place — macOS portable) so the
@@ -52,3 +58,31 @@ pgo:
 	go test -bench=/zd/ -benchtime=0.2s -count=3 -timeout=2h -cpuprofile=zd.pprof -run NONE .
 	go test -bench=/zd/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -pgo=zd.pprof -run NONE . | sed "s|/zd/|/|g" > bench-zd-pgo.txt
 	benchstat default=bench-zd.txt pgo=bench-zd-pgo.txt > bench-pgo.txt
+
+# Production-oriented zerodecimal benchmarks are separate from the competitor
+# matrix above. Targets print raw Go benchmark output; redirect/tee it to a
+# host-specific scratch path rather than overwriting committed comparisons.
+production-smoke:
+	go test -run='^TestProductionBenchmarkFixtures$$' -count=1 .
+	go test -run='^$$' -bench='^BenchmarkProduction' -benchmem -benchtime=1x -count=1 .
+	go test -tags=zerodecimal_strcache -run='^$$' -bench='^BenchmarkProduction' -benchmem -benchtime=1x -count=1 .
+
+production-default:
+	go test -run='^$$' -bench='^BenchmarkProduction' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_CPU) -timeout=2h .
+
+production-strcache:
+	go test -tags=zerodecimal_strcache -run='^$$' -bench='^BenchmarkProduction' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_CPU) -timeout=2h .
+
+production-micro:
+	go test -run='^$$' -bench='^BenchmarkProductionMicro' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_CPU) -timeout=2h .
+
+production-pipeline:
+	go test -run='^$$' -bench='^BenchmarkProductionPipeline' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_CPU) -timeout=2h .
+
+# RunParallel rows are collected at several GOMAXPROCS settings. Cache modes
+# have separate targets so their raw outputs cannot be accidentally combined.
+production-parallel:
+	go test -run='^$$' -bench='^BenchmarkProductionParallel$$' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_PARALLEL_CPU) -timeout=2h .
+
+production-parallel-strcache:
+	go test -tags=zerodecimal_strcache -run='^$$' -bench='^BenchmarkProductionParallel$$' -benchmem -benchtime=$(PRODUCTION_BENCHTIME) -count=$(PRODUCTION_COUNT) -cpu=$(PRODUCTION_PARALLEL_CPU) -timeout=2h .

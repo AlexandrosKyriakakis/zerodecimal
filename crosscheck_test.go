@@ -7,8 +7,8 @@ package zerodecimal
 // zerodecimal returns ErrOverflow a big.Int computation must prove the exact
 // result coefficient at the contracted precision is ≥ 2^128 (an iff oracle,
 // so a spurious error fails just as loudly as a wrong value). Documented
-// semantic differences — Div's adaptive precision, QuoRem's divisor-alignment
-// overflow, rounding places as uint8 — are encoded in the oracles themselves.
+// semantic differences — Div's adaptive precision and rounding places as
+// uint8 — are encoded in the oracles themselves.
 
 import (
 	"encoding/binary"
@@ -235,8 +235,8 @@ func checkDiv(t *testing.T, a, b crossVal) {
 // checkQuoRem cross-checks QuoRem and Mod against shopspring's T-division at
 // precision 0 (identical convention: q truncated toward zero, r signed like
 // the dividend). ErrOverflow must occur precisely when the integer quotient
-// magnitude is ≥ 2^128 or the divisor aligned to max(aPrec, bPrec) is — the
-// documented divisor-alignment contract. Successful results must match
+// magnitude is ≥ 2^128. An aligned divisor wider than 128 bits proves the
+// quotient is zero; it is not an overflow. Successful results must match
 // shopspring's q and r and satisfy d = q·e + r in shopspring arithmetic.
 func checkQuoRem(t *testing.T, a, b crossVal) {
 	t.Helper()
@@ -250,7 +250,7 @@ func checkQuoRem(t *testing.T, a, b crossVal) {
 	f := max(a.zd.prec, b.zd.prec)
 	num := new(big.Int).Mul(u128ToBig(a.zd.coef), bp10(int(f-a.zd.prec)))
 	den := new(big.Int).Mul(u128ToBig(b.zd.coef), bp10(int(f-b.zd.prec)))
-	if den.Cmp(mod128big) >= 0 || new(big.Int).Quo(num, den).Cmp(mod128big) >= 0 {
+	if new(big.Int).Quo(num, den).Cmp(mod128big) >= 0 {
 		require.ErrorIsf(t, err, ErrOverflow, "quorem overflow oracle: a=%+v b=%+v", a.zd, b.zd)
 		require.ErrorIsf(t, merr, ErrOverflow, "mod overflow oracle: a=%+v b=%+v", a.zd, b.zd)
 		return
@@ -588,7 +588,7 @@ func TestCrossCheckRegressionPairs(t *testing.T) {
 		{name: "round_tie_below_one_at_max_prec", a: part{lo: pow10u64[19] - 5, prec: 19}, b: part{lo: 5, prec: 19}},
 		{name: "div_adaptive_precision_degrades", a: part{hi: maxUint64, lo: maxUint64}, b: part{lo: 3}},
 		{name: "div_integer_quotient_overflows", a: part{hi: maxUint64, lo: maxUint64}, b: part{lo: 1, prec: 19}},
-		{name: "quorem_divisor_alignment_overflows", a: part{lo: 1, prec: 19}, b: part{hi: maxUint64, lo: maxUint64}},
+		{name: "quorem_wide_aligned_divisor", a: part{lo: 1, prec: 19}, b: part{hi: maxUint64, lo: maxUint64}},
 		{name: "mul_truncates_beyond_default_prec", a: part{lo: pow10u64[19] - 1, prec: 19}, b: part{lo: pow10u64[19] - 1, prec: 19}},
 		{name: "add_carry_across_limb_boundary", a: part{lo: maxUint64}, b: part{lo: 1}},
 		{name: "sub_exact_cancellation_across_prec", a: part{lo: 15, prec: 1}, b: part{neg: true, lo: 150, prec: 2}},

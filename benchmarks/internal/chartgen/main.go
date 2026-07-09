@@ -127,6 +127,9 @@ func main() {
 	// element in the README so the chart matches GitHub's light/dark theme.
 	for _, t := range themes {
 		out := "comparison-" + t.name + ".svg"
+		// The generated SVGs are committed documentation assets and must remain
+		// readable by users other than the account that regenerated them.
+		//nolint:gosec // G306: 0644 is intentional for public repository assets.
 		if err := os.WriteFile(out, []byte(render(bars, t)), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, "chartgen:", err)
 			os.Exit(1)

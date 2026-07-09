@@ -1,6 +1,6 @@
 module github.com/AlexandrosKyriakakis/zerodecimal
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/quagmt/udecimal v1.9.0

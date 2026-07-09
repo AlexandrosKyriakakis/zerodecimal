@@ -116,7 +116,6 @@ func TestParseStrictErrors(t *testing.T) {
 		{"forty_digits", "1" + strings.Repeat("0", 39), ErrOverflow},
 		{"forty_significant_after_leading_zeros", "00" + strings.Repeat("9", 40), ErrOverflow},
 		{"twenty_fraction_digits", "0.12345678901234567891", ErrPrecOutOfRange},
-		{"twenty_fraction_zeros", "0.00000000000000000000", ErrPrecOutOfRange},
 		{"exponent_below_range", "1e-25", ErrPrecOutOfRange},
 		{"exponent_above_range", "1e39", ErrOverflow},
 		{"fraction_offset_still_overflows", "1.5e39", ErrOverflow},
