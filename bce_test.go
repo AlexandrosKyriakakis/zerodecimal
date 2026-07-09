@@ -18,6 +18,9 @@ import (
 // refactoring; parse.go, arith.go, and cache.go retain a handful of checks
 // the prove pass cannot discharge and are deliberately not pinned.
 func TestBoundsCheckFreeHotPaths(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("bounds-check shape is calibrated for 64-bit compiler targets")
+	}
 	// A unique build tag defeats the build cache: cached compilations replay
 	// no diagnostics, so a re-run against unchanged sources would otherwise
 	// pass vacuously even after a regression. The tag matches no build

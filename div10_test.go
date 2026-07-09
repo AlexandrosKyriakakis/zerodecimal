@@ -166,6 +166,9 @@ func buildInlineReport(t *testing.T) map[string]inlineReportEntry {
 }
 
 func TestDiv10InlineBudgets(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("inline budgets are calibrated for 64-bit compiler targets")
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
 	}
@@ -248,6 +251,9 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //     inline (Trim 67, Rescale 78 — Rescale has only ~2 points of headroom,
 //     hence no maxCost pin), trimCore/rescaleCore stay outlined.
 func TestArithRoundingInlineBudgets(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("inline budgets are calibrated for 64-bit compiler targets")
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
 	}
