@@ -45,7 +45,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.26.x', stable]
+        # setup-go may satisfy 1.26.x from an older hosted-toolcache patch
+        # even when a newer security patch exists. Pin the declared floor.
+        go: ['1.26.5', stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
