@@ -1,0 +1,101 @@
+name: comparative-benchmarks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+concurrency:
+  group: comparative-benchmarks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    name: controlled comparative benchmarks
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A result-only commit is cheap only when committed provenance already
+      # covers every benchmark-source change through HEAD. This also makes
+      # cancel-in-progress safe: if a docs push cancels a source collection,
+      # its stale/missing provenance causes the replacement run to recollect.
+      - name: Detect benchmark source changes
+        id: changes
+        shell: bash
+        run: |
+          source_paths=(
+            '*.go' .gitignore go.mod go.sum
+            benchmarks/go.mod benchmarks/go.sum benchmarks/Makefile
+            '.github/workflows/benchmarks.yaml'
+          )
+          provenance=benchmarks/benchmark-provenance.txt
+          run=true
+          if [[ -f "$provenance" ]]; then
+            source_sha=$(awk -F': ' '$1 == "source-commit" { print $2 }' "$provenance")
+            if [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] && \
+               git merge-base --is-ancestor "$source_sha" HEAD && \
+               git diff --quiet "$source_sha" HEAD -- "${source_paths[@]}"; then
+              run=false
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: benchmarks/go.mod
+
+      - name: Install pinned benchstat
+        if: steps.changes.outputs.run == 'true'
+        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260610192853-712aea8b4705
+
+      - name: Collect comparisons, PGO samples, provenance, and charts
+        if: steps.changes.outputs.run == 'true'
+        working-directory: benchmarks
+        run: make collect
+
+      - name: Verify published hashes regenerate the charts
+        if: steps.changes.outputs.run == 'true'
+        working-directory: benchmarks
+        run: make chart
+
+      - name: Verify committed benchmark evidence
+        if: steps.changes.outputs.run != 'true'
+        shell: bash
+        run: |
+          provenance=benchmarks/benchmark-provenance.txt
+          test -f "$provenance"
+          source_sha=$(awk -F': ' '$1 == "source-commit" { print $2 }' "$provenance")
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$source_sha" HEAD
+          git diff --quiet "$source_sha" HEAD -- \
+            '*.go' .gitignore go.mod go.sum \
+            benchmarks/go.mod benchmarks/go.sum benchmarks/Makefile \
+            '.github/workflows/benchmarks.yaml'
+          make -C benchmarks chart
+          git diff --exit-code -- \
+            benchmarks/comparison-light.svg \
+            benchmarks/comparison-dark.svg
+
+      - name: Upload raw and published benchmark evidence
+        if: success() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zerodecimal-benchmarks-${{ github.event.pull_request.head.sha }}
+          path: |
+            benchmarks/bench*.txt
+            benchmarks/benchmark-provenance.txt
+            benchmarks/comparison-*.svg
+            benchmarks/zd.pprof
+          if-no-files-found: error
+          retention-days: 30
