@@ -1,0 +1,257 @@
+package main
+
+import (
+	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestGeomeanRatioDataParsesSummary(t *testing.T) {
+	data := `goos: darwin
+goarch: arm64
+cpu: Apple M1 Pro
+                 │ baseline │ new         │
+                 │ sec/op   │ sec/op      │
+Shared-10          20.00n     6.316n        -68.42%
+geomean            20.00n     6.316n        -68.42%
+`
+	got, err := geomeanRatioData("test", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 0.3158
+	if math.Abs(got-want) > 1e-12 {
+		t.Fatalf("ratio = %v, want %v", got, want)
+	}
+}
+
+func TestGeomeanRatioDataTied(t *testing.T) {
+	data := "│ sec/op │ sec/op │\ngeomean 10.0n 10.0n ~\n"
+	got, err := geomeanRatioData("test", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 1 {
+		t.Fatalf("ratio = %v, want 1", got)
+	}
+}
+
+func TestGeomeanRatioDataRejectsInvalidSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+	}{
+		{name: "missing", data: "│ B/op │ B/op │\ngeomean 8.0 4.0 -50.00%\n"},
+		{name: "short", data: "│ sec/op │ sec/op │\ngeomean 8.0n 4.0n\n"},
+		{name: "unknown", data: "│ sec/op │ sec/op │\ngeomean 8.0n 4.0n ?\n"},
+		{name: "non_positive", data: "│ sec/op │ sec/op │\ngeomean 8.0n 0.0n -100.00%\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := geomeanRatioData(tc.name, tc.data); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestRenderDescribesNormalizationAndRatios(t *testing.T) {
+	metadata := collectionMetadata{
+		goos: "darwin", goarch: "arm64", cpu: "Test CPU", goVersion: "go1.99",
+		benchTime: "250ms", count: 12,
+	}
+	svg := render([]bar{
+		{name: "zerodecimal +PGO", ratio: 0.9, pgo: true},
+		{name: "zerodecimal", ratio: 1, self: true},
+		{name: "competitor", ratio: 2.25},
+	}, themes[0], metadata)
+	for _, want := range []string{
+		"pairwise native-API geomean latency",
+		"zerodecimal = 1.0×",
+		"Test CPU",
+		"darwin/arm64",
+		"go1.99",
+		"0.9×",
+		"1.0×",
+		"2.2×",
+		"native precision/rounding contracts may differ",
+		"250ms × 12",
+		"not an application PGO prediction",
+	} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("rendered SVG does not contain %q", want)
+		}
+	}
+}
+
+func TestLoadCollectionMetadata(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOFLAGS", "")
+	raw := filepath.Join(t.TempDir(), "bench-all.txt")
+	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\nBenchmarkX-1 10 1 ns/op\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	revision := strings.Repeat("a", 40)
+	m, err := loadCollectionMetadata(raw, "100ms", 10, revision, "clean", "make collect", "golang.org/x/perf v1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.goos != "darwin" || m.goarch != "arm64" || m.cpu != "Test CPU" || m.goVersion != runtime.Version() ||
+		m.benchTime != "100ms" || m.count != 10 || m.revision != revision || m.worktree != "clean" || m.benchstatVersion == "" ||
+		m.goexperiment == "" || m.gomaxprocs == "" || m.gogc == "" || m.gomemlimit == "" || m.godebug == "" {
+		t.Fatalf("unexpected metadata: %+v", m)
+	}
+	m.rawSHA256 = strings.Repeat("a", 64)
+	m.artifactSHA256 = make(map[string]string, len(publishedInputs))
+	for _, file := range publishedInputs {
+		m.artifactSHA256[file] = strings.Repeat("b", 64)
+	}
+	m.pgoSourceSHA256 = make(map[string]string, len(pgoSourceInputs))
+	for _, file := range pgoSourceInputs {
+		m.pgoSourceSHA256[file] = strings.Repeat("c", 64)
+	}
+	provenance := renderProvenance(m)
+	for _, want := range []string{revision, "source-worktree-at-collection-start: clean", "goenv: off (enforced)", "goflags: empty (enforced)", "build-tags: none", "string-cache: off", "fixed library order"} {
+		if !strings.Contains(provenance, want) {
+			t.Errorf("provenance missing %q", want)
+		}
+	}
+	parsed, err := parseProvenanceData(provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.revision != m.revision || parsed.rawSHA256 != m.rawSHA256 || parsed.artifactSHA256["bench-pgo.txt"] != m.artifactSHA256["bench-pgo.txt"] ||
+		parsed.pgoSourceSHA256["bench-zd-pgo-raw.txt"] != m.pgoSourceSHA256["bench-zd-pgo-raw.txt"] {
+		t.Fatalf("parsed provenance mismatch: %+v", parsed)
+	}
+}
+
+func TestLoadCollectionMetadataRejectsGOFLAGS(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOFLAGS", "-tags=zerodecimal_strcache")
+	raw := filepath.Join(t.TempDir(), "bench-all.txt")
+	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOFLAGS") {
+		t.Fatalf("error = %v, want GOFLAGS rejection", err)
+	}
+}
+
+func TestLoadCollectionMetadataRejectsGOENV(t *testing.T) {
+	t.Setenv("GOENV", filepath.Join(t.TempDir(), "goenv"))
+	t.Setenv("GOFLAGS", "")
+	raw := filepath.Join(t.TempDir(), "bench-all.txt")
+	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOENV") {
+		t.Fatalf("error = %v, want GOENV rejection", err)
+	}
+}
+
+func TestLoadCollectionMetadataRejectsInvalidInputs(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOFLAGS", "")
+	raw := filepath.Join(t.TempDir(), "bench-all.txt")
+	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, benchTime, revision, worktree, command string
+		count                                        int
+	}{
+		{name: "duration", benchTime: "bad", count: 10, revision: strings.Repeat("a", 40), worktree: "clean", command: "make collect"},
+		{name: "count", benchTime: "100ms", count: 1, revision: strings.Repeat("a", 40), worktree: "clean", command: "make collect"},
+		{name: "revision", benchTime: "100ms", count: 10, revision: "bad", worktree: "clean", command: "make collect"},
+		{name: "revision_hex", benchTime: "100ms", count: 10, revision: strings.Repeat("z", 40), worktree: "clean", command: "make collect"},
+		{name: "worktree", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "unknown", command: "make collect"},
+		{name: "dirty", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "dirty", command: "make collect"},
+		{name: "command", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "clean"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := loadCollectionMetadata(raw, tc.benchTime, tc.count, tc.revision, tc.worktree, tc.command, "golang.org/x/perf v1.2.3"); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestGOENVOffIgnoresPersistedGOFLAGS(t *testing.T) {
+	goenvFile := filepath.Join(t.TempDir(), "goenv")
+	if err := os.WriteFile(goenvFile, []byte("GOFLAGS=-tags=zerodecimal_strcache\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseEnv := make([]string, 0, len(os.Environ()))
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "GOENV=") && !strings.HasPrefix(value, "GOFLAGS=") {
+			baseEnv = append(baseEnv, value)
+		}
+	}
+	persisted := exec.Command("go", "env", "GOFLAGS")
+	persisted.Env = slices.Clone(baseEnv)
+	persisted.Env = append(persisted.Env, "GOENV="+goenvFile)
+	got, err := persisted.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "-tags=zerodecimal_strcache" {
+		t.Fatalf("persisted GOFLAGS = %q", got)
+	}
+	off := exec.Command("go", "env", "GOFLAGS")
+	off.Env = slices.Clone(baseEnv)
+	off.Env = append(off.Env, "GOENV=off", "GOFLAGS=")
+	got, err = off.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "" {
+		t.Fatalf("GOENV=off GOFLAGS = %q, want empty", got)
+	}
+}
+
+func TestPublishedInputHashes(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	}()
+	if err := os.WriteFile("raw.txt", []byte("raw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range publishedInputs {
+		if err := os.WriteFile(file, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range pgoSourceInputs {
+		if err := os.WriteFile(file, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var m collectionMetadata
+	if err := bindPublishedInputs(&m, "raw.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePublishedInputs(m); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(publishedInputs[0], []byte("mutated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePublishedInputs(m); err == nil {
+		t.Fatal("expected changed artifact hash to fail validation")
+	}
+}

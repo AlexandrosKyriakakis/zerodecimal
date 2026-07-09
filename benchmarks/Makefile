@@ -1,63 +1,127 @@
-.PHONY: bench bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart production-smoke production-default production-strcache production-micro production-pipeline production-parallel production-parallel-strcache
+.PHONY: require-clean verify bench bench-all bench-split bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart publish collect production-smoke production-default production-strcache production-micro production-pipeline production-parallel production-parallel-strcache
 
+COMPARATIVE_BENCHTIME ?= 100ms
+COMPARATIVE_COUNT ?= 10
+override GOENV := off
+override GOFLAGS :=
+export GOENV GOFLAGS
+BENCH_COLLECTION_COMMAND ?= GOENV=off GOFLAGS= make collect COMPARATIVE_BENCHTIME=$(COMPARATIVE_BENCHTIME) COMPARATIVE_COUNT=$(COMPARATIVE_COUNT)
+ifeq ($(MAKELEVEL),0)
+override BENCH_SOURCE_REVISION_CAPTURED := $(shell git rev-parse HEAD)
+override BENCH_SOURCE_WORKTREE_CAPTURED := $(shell test -z "$$(git status --porcelain)" && echo clean || echo dirty)
+override BENCH_COLLECTION_COMMAND_CAPTURED := $(BENCH_COLLECTION_COMMAND)
+else
+BENCH_SOURCE_REVISION_CAPTURED := $(BENCH_SOURCE_REVISION_CAPTURED)
+BENCH_SOURCE_WORKTREE_CAPTURED := $(BENCH_SOURCE_WORKTREE_CAPTURED)
+BENCH_COLLECTION_COMMAND_CAPTURED := $(BENCH_COLLECTION_COMMAND_CAPTURED)
+endif
+export BENCH_SOURCE_REVISION_CAPTURED BENCH_SOURCE_WORKTREE_CAPTURED BENCH_COLLECTION_COMMAND_CAPTURED
 PRODUCTION_BENCHTIME ?= 2s
 PRODUCTION_COUNT ?= 10
 PRODUCTION_CPU ?= 1
 PRODUCTION_PARALLEL_CPU ?= 1,2,4,8
 COMPARATIVE_BENCH = ^Benchmark(Parse|String|Add|Sub|Mul|Div|QuoRem|Cmp|RoundBank|Truncate|MarshalJSON|UnmarshalJSON|MarshalBinary|UnmarshalBinary|AppendText|SQLValue|SQLScan|NewFromFloat)$$
 
+require-clean:
+	@test "$(BENCH_SOURCE_WORKTREE_CAPTURED)" = clean || { echo "refusing benchmark publication from a dirty worktree" >&2; exit 1; }
+
+verify:
+	go test -run='^TestComparativeBenchmarkFixtures$$' -count=1 .
+	go test ./internal/benchfilter ./internal/chartgen
+
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
-	go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=0.1s -count=1 -run NONE .
+	GOFLAGS= go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=0.1s -count=1 -run NONE .
 
-# Per-library runs for benchstat: the lib segment is stripped from the
-# benchmark names (sed to stdout, never in-place — macOS portable) so the
-# same op/shape rows line up across files.
+# Single-process collection: all libraries use one binary and host session,
+# though Go still emits consecutive samples in fixed leaf/library order.
+# bench-split derives the per-library scratch files.
+bench-all:
+	GOFLAGS= go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-all.txt
+
+bench-split:
+	go run ./internal/benchfilter -input bench-all.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd.txt
+	go run ./internal/benchfilter -input bench-all.txt -library udec -count $(COMPARATIVE_COUNT) > bench-udec.txt
+	go run ./internal/benchfilter -input bench-all.txt -library alpaca -count $(COMPARATIVE_COUNT) > bench-alpaca.txt
+	go run ./internal/benchfilter -input bench-all.txt -library ss -count $(COMPARATIVE_COUNT) > bench-ss.txt
+	go run ./internal/benchfilter -input bench-all.txt -library eric -count $(COMPARATIVE_COUNT) > bench-eric.txt
+	go run ./internal/benchfilter -input bench-all.txt -library dec -count $(COMPARATIVE_COUNT) > bench-dec.txt
+	go run ./internal/benchfilter -input bench-all.txt -library gv -count $(COMPARATIVE_COUNT) > bench-gv.txt
+
+# Per-library convenience runs keep go test and filtering in separate recipes,
+# so a test failure cannot be hidden by a successful pipeline consumer.
 bench-zd:
-	go test -bench=/zd/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/zd/|/|g" > bench-zd.txt
+	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-zd-raw.txt
+	go run ./internal/benchfilter -input bench-zd-raw.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd.txt
 
 bench-udec:
-	go test -bench=/udec/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/udec/|/|g" > bench-udec.txt
+	GOFLAGS= go test -bench=/udec/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-udec-raw.txt
+	go run ./internal/benchfilter -input bench-udec-raw.txt -library udec -count $(COMPARATIVE_COUNT) > bench-udec.txt
 
 bench-alpaca:
-	go test -bench=/alpaca/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/alpaca/|/|g" > bench-alpaca.txt
+	GOFLAGS= go test -bench=/alpaca/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-alpaca-raw.txt
+	go run ./internal/benchfilter -input bench-alpaca-raw.txt -library alpaca -count $(COMPARATIVE_COUNT) > bench-alpaca.txt
 
 bench-ss:
-	go test -bench=/ss/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/ss/|/|g" > bench-ss.txt
+	GOFLAGS= go test -bench=/ss/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-ss-raw.txt
+	go run ./internal/benchfilter -input bench-ss-raw.txt -library ss -count $(COMPARATIVE_COUNT) > bench-ss.txt
 
 bench-eric:
-	go test -bench=/eric/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/eric/|/|g" > bench-eric.txt
+	GOFLAGS= go test -bench=/eric/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-eric-raw.txt
+	go run ./internal/benchfilter -input bench-eric-raw.txt -library eric -count $(COMPARATIVE_COUNT) > bench-eric.txt
 
 # dec is anchored because the unanchored regex would also match udec.
 bench-dec:
-	go test -bench=/^dec$$/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/dec/|/|g" > bench-dec.txt
+	GOFLAGS= go test -bench=/^dec$$/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-dec-raw.txt
+	go run ./internal/benchfilter -input bench-dec-raw.txt -library dec -count $(COMPARATIVE_COUNT) > bench-dec.txt
 
 # gv (govalues) only emits the three shapes it can represent (<=19 significant
 # digits); its large/near_max rows are absent by design.
 bench-gv:
-	go test -bench=/gv/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -run NONE . | sed "s|/gv/|/|g" > bench-gv.txt
+	GOFLAGS= go test -bench=/gv/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-gv-raw.txt
+	go run ./internal/benchfilter -input bench-gv-raw.txt -library gv -count $(COMPARATIVE_COUNT) > bench-gv.txt
 
 compare:
-	benchstat udecimal=bench-udec.txt zerodecimal=bench-zd.txt > bench-vs-udecimal.txt
-	benchstat alpacadecimal=bench-alpaca.txt zerodecimal=bench-zd.txt > bench-vs-alpacadecimal.txt
-	benchstat shopspring=bench-ss.txt zerodecimal=bench-zd.txt > bench-vs-shopspring.txt
-	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd.txt > bench-vs-ericlagergren.txt
-	benchstat dec128=bench-dec.txt zerodecimal=bench-zd.txt > bench-vs-dec128.txt
-	benchstat govalues=bench-gv.txt zerodecimal=bench-zd.txt > bench-vs-govalues.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-udec.txt > bench-zd-for-udec.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-alpaca.txt > bench-zd-for-alpaca.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-ss.txt > bench-zd-for-ss.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-eric.txt > bench-zd-for-eric.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-dec.txt > bench-zd-for-dec.txt
+	go run ./internal/benchfilter -input bench-zd.txt -reference bench-gv.txt > bench-zd-for-gv.txt
+	benchstat udecimal=bench-udec.txt zerodecimal=bench-zd-for-udec.txt > bench-vs-udecimal.txt
+	benchstat alpacadecimal=bench-alpaca.txt zerodecimal=bench-zd-for-alpaca.txt > bench-vs-alpacadecimal.txt
+	benchstat shopspring=bench-ss.txt zerodecimal=bench-zd-for-ss.txt > bench-vs-shopspring.txt
+	benchstat ericlagergren=bench-eric.txt zerodecimal=bench-zd-for-eric.txt > bench-vs-ericlagergren.txt
+	benchstat dec128=bench-dec.txt zerodecimal=bench-zd-for-dec.txt > bench-vs-dec128.txt
+	benchstat govalues=bench-gv.txt zerodecimal=bench-zd-for-gv.txt > bench-vs-govalues.txt
 
-# Render comparison.svg from the committed bench-vs-*.txt geomeans.
+# Deterministically regenerate charts only after verifying the committed
+# provenance hashes match the committed benchstat inputs.
 chart:
-	go run ./internal/chartgen
+	GOFLAGS= go run ./internal/chartgen
 
-# PGO delta: collect a CPU profile over the zd benchmarks, re-run them with
-# the benchmark binary rebuilt against that profile, and publish the
-# default-vs-PGO benchstat. Needs bench-zd.txt (run `make bench-zd` first).
-# zd.pprof and bench-zd-pgo.txt are scratch; bench-pgo.txt is the published
-# artifact.
+# Bind a just-finished collection to provenance, then render its charts.
+publish:
+	GOFLAGS= go run ./internal/chartgen -publish -raw bench-all.txt -benchtime $(COMPARATIVE_BENCHTIME) -count $(COMPARATIVE_COUNT) -revision $(BENCH_SOURCE_REVISION_CAPTURED) -worktree $(BENCH_SOURCE_WORKTREE_CAPTURED) -command '$(BENCH_COLLECTION_COMMAND_CAPTURED)'
+
+# PGO delta: collect a CPU profile over the zd benchmarks, then collect
+# standalone default and PGO populations with identical selection/timing
+# flags. The unified/interleaved bench-zd.txt remains exclusive to competitor
+# comparisons and is not a valid baseline for this standalone PGO run.
 pgo:
-	go test -bench=/zd/ -benchtime=0.2s -count=3 -timeout=2h -cpuprofile=zd.pprof -run NONE .
-	go test -bench=/zd/ -benchmem -benchtime=0.1s -count=10 -timeout=2h -pgo=zd.pprof -run NONE . | sed "s|/zd/|/|g" > bench-zd-pgo.txt
-	benchstat default=bench-zd.txt pgo=bench-zd-pgo.txt > bench-pgo.txt
+	GOFLAGS= go test -bench=/zd/ -benchtime=0.2s -count=3 -timeout=2h -cpuprofile=zd.pprof -run NONE .
+	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-zd-pgo-default-raw.txt
+	go run ./internal/benchfilter -input bench-zd-pgo-default-raw.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd-pgo-default.txt
+	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -pgo=zd.pprof -run NONE . > bench-zd-pgo-raw.txt
+	go run ./internal/benchfilter -input bench-zd-pgo-raw.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd-pgo.txt
+	benchstat default=bench-zd-pgo-default.txt pgo=bench-zd-pgo.txt > bench-pgo.txt
+
+collect: require-clean verify
+	$(MAKE) bench-all
+	$(MAKE) bench-split
+	$(MAKE) compare
+	$(MAKE) pgo
+	$(MAKE) publish
 
 # Production-oriented zerodecimal benchmarks are separate from the competitor
 # matrix above. Targets print raw Go benchmark output; redirect/tee it to a
