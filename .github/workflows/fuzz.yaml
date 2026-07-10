@@ -9,6 +9,11 @@ on:
       - 'scripts/**'
       - '.github/workflows/fuzz.yaml'
 
+concurrency:
+  # One active run per workflow + branch/PR.
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
