@@ -50,6 +50,9 @@ func TestGeomeanRatioDataRejectsInvalidSummary(t *testing.T) {
 		{name: "short", data: "│ sec/op │ sec/op │\ngeomean 8.0n 4.0n\n"},
 		{name: "unknown", data: "│ sec/op │ sec/op │\ngeomean 8.0n 4.0n ?\n"},
 		{name: "non_positive", data: "│ sec/op │ sec/op │\ngeomean 8.0n 0.0n -100.00%\n"},
+		{name: "nan", data: "│ sec/op │ sec/op │\ngeomean 8.0n NaN NaN%\n"},
+		{name: "positive_inf", data: "│ sec/op │ sec/op │\ngeomean 8.0n +Inf +Inf%\n"},
+		{name: "negative_inf", data: "│ sec/op │ sec/op │\ngeomean 8.0n -Inf -Inf%\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := geomeanRatioData(tc.name, tc.data); err == nil {
@@ -91,17 +94,19 @@ func TestRenderDescribesNormalizationAndRatios(t *testing.T) {
 func TestLoadCollectionMetadata(t *testing.T) {
 	t.Setenv("GOENV", "off")
 	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", "off")
 	raw := filepath.Join(t.TempDir(), "bench-all.txt")
-	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\nBenchmarkX-1 10 1 ns/op\n"), 0o600); err != nil {
+	sourceHash := strings.Repeat("d", 64)
+	if err := os.WriteFile(raw, []byte("benchmark-source-sha256: "+sourceHash+"\ngoos: darwin\ngoarch: arm64\ncpu: Test CPU\nBenchmarkX-1 10 1 ns/op\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	revision := strings.Repeat("a", 40)
-	m, err := loadCollectionMetadata(raw, "100ms", 10, revision, "clean", "make collect", "golang.org/x/perf v1.2.3")
+	m, err := loadCollectionMetadata(raw, "100ms", 10, revision, sourceHash, "clean", "make collect", "golang.org/x/perf v1.2.3")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.goos != "darwin" || m.goarch != "arm64" || m.cpu != "Test CPU" || m.goVersion != runtime.Version() ||
-		m.benchTime != "100ms" || m.count != 10 || m.revision != revision || m.worktree != "clean" || m.benchstatVersion == "" ||
+		m.benchTime != "100ms" || m.count != 10 || m.revision != revision || m.sourceHash != sourceHash || m.worktree != "clean" || m.benchstatVersion == "" || m.gowork != "off (enforced)" ||
 		m.goexperiment == "" || m.gomaxprocs == "" || m.gogc == "" || m.gomemlimit == "" || m.godebug == "" {
 		t.Fatalf("unexpected metadata: %+v", m)
 	}
@@ -110,12 +115,13 @@ func TestLoadCollectionMetadata(t *testing.T) {
 	for _, file := range publishedInputs {
 		m.artifactSHA256[file] = strings.Repeat("b", 64)
 	}
+	m.artifactSHA256["bench-all.txt"] = m.rawSHA256
 	m.pgoSourceSHA256 = make(map[string]string, len(pgoSourceInputs))
 	for _, file := range pgoSourceInputs {
 		m.pgoSourceSHA256[file] = strings.Repeat("c", 64)
 	}
 	provenance := renderProvenance(m)
-	for _, want := range []string{revision, "source-worktree-at-collection-start: clean", "goenv: off (enforced)", "goflags: empty (enforced)", "build-tags: none", "string-cache: off", "fixed library order"} {
+	for _, want := range []string{revision, "benchmark-source-sha256: " + sourceHash, "source-worktree-at-collection-start: clean", "goenv: off (enforced)", "gowork: off (enforced)", "goflags: empty (enforced)", "build-tags: none", "string-cache: off", "fixed library order"} {
 		if !strings.Contains(provenance, want) {
 			t.Errorf("provenance missing %q", want)
 		}
@@ -124,20 +130,39 @@ func TestLoadCollectionMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.revision != m.revision || parsed.rawSHA256 != m.rawSHA256 || parsed.artifactSHA256["bench-pgo.txt"] != m.artifactSHA256["bench-pgo.txt"] ||
+	if parsed.revision != m.revision || parsed.sourceHash != m.sourceHash || parsed.rawSHA256 != m.rawSHA256 || parsed.artifactSHA256["bench-pgo.txt"] != m.artifactSHA256["bench-pgo.txt"] ||
 		parsed.pgoSourceSHA256["bench-zd-pgo-raw.txt"] != m.pgoSourceSHA256["bench-zd-pgo-raw.txt"] {
 		t.Fatalf("parsed provenance mismatch: %+v", parsed)
+	}
+	contradictory := strings.Replace(provenance,
+		"artifact-sha256-bench-all.txt: "+m.rawSHA256,
+		"artifact-sha256-bench-all.txt: "+strings.Repeat("f", 64), 1)
+	if _, err := parseProvenanceData(contradictory); err == nil {
+		t.Fatal("contradictory raw and bench-all hashes were accepted")
+	}
+}
+
+func TestPublicationRequiresCollectionGuard(t *testing.T) {
+	t.Setenv(collectionGuardEnv, "")
+	if publicationAuthorized() {
+		t.Fatal("publication unexpectedly authorized without collection guard")
+	}
+	t.Setenv(collectionGuardEnv, "1")
+	if !publicationAuthorized() {
+		t.Fatal("publication guard was not recognized")
 	}
 }
 
 func TestLoadCollectionMetadataRejectsGOFLAGS(t *testing.T) {
 	t.Setenv("GOENV", "off")
 	t.Setenv("GOFLAGS", "-tags=zerodecimal_strcache")
+	t.Setenv("GOWORK", "off")
 	raw := filepath.Join(t.TempDir(), "bench-all.txt")
-	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+	sourceHash := strings.Repeat("b", 64)
+	if err := os.WriteFile(raw, []byte("benchmark-source-sha256: "+sourceHash+"\ngoos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOFLAGS") {
+	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), sourceHash, "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOFLAGS") {
 		t.Fatalf("error = %v, want GOFLAGS rejection", err)
 	}
 }
@@ -145,36 +170,57 @@ func TestLoadCollectionMetadataRejectsGOFLAGS(t *testing.T) {
 func TestLoadCollectionMetadataRejectsGOENV(t *testing.T) {
 	t.Setenv("GOENV", filepath.Join(t.TempDir(), "goenv"))
 	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", "off")
 	raw := filepath.Join(t.TempDir(), "bench-all.txt")
-	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+	sourceHash := strings.Repeat("b", 64)
+	if err := os.WriteFile(raw, []byte("benchmark-source-sha256: "+sourceHash+"\ngoos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOENV") {
+	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), sourceHash, "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOENV") {
 		t.Fatalf("error = %v, want GOENV rejection", err)
+	}
+}
+
+func TestLoadCollectionMetadataRejectsGOWORK(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", filepath.Join(t.TempDir(), "go.work"))
+	raw := filepath.Join(t.TempDir(), "bench-all.txt")
+	sourceHash := strings.Repeat("b", 64)
+	if err := os.WriteFile(raw, []byte("benchmark-source-sha256: "+sourceHash+"\ngoos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCollectionMetadata(raw, "100ms", 10, strings.Repeat("a", 40), sourceHash, "clean", "make collect", "golang.org/x/perf v1.2.3"); err == nil || !strings.Contains(err.Error(), "GOWORK") {
+		t.Fatalf("error = %v, want GOWORK rejection", err)
 	}
 }
 
 func TestLoadCollectionMetadataRejectsInvalidInputs(t *testing.T) {
 	t.Setenv("GOENV", "off")
 	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOWORK", "off")
 	raw := filepath.Join(t.TempDir(), "bench-all.txt")
-	if err := os.WriteFile(raw, []byte("goos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
+	validSourceHash := strings.Repeat("b", 64)
+	if err := os.WriteFile(raw, []byte("benchmark-source-sha256: "+validSourceHash+"\ngoos: darwin\ngoarch: arm64\ncpu: Test CPU\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name, benchTime, revision, worktree, command string
-		count                                        int
+		name, benchTime, revision, sourceHash, worktree, command string
+		count                                                    int
 	}{
-		{name: "duration", benchTime: "bad", count: 10, revision: strings.Repeat("a", 40), worktree: "clean", command: "make collect"},
-		{name: "count", benchTime: "100ms", count: 1, revision: strings.Repeat("a", 40), worktree: "clean", command: "make collect"},
-		{name: "revision", benchTime: "100ms", count: 10, revision: "bad", worktree: "clean", command: "make collect"},
-		{name: "revision_hex", benchTime: "100ms", count: 10, revision: strings.Repeat("z", 40), worktree: "clean", command: "make collect"},
-		{name: "worktree", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "unknown", command: "make collect"},
-		{name: "dirty", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "dirty", command: "make collect"},
-		{name: "command", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), worktree: "clean"},
+		{name: "duration", benchTime: "bad", count: 10, revision: strings.Repeat("a", 40), sourceHash: validSourceHash, worktree: "clean", command: "make collect"},
+		{name: "count", benchTime: "100ms", count: 1, revision: strings.Repeat("a", 40), sourceHash: validSourceHash, worktree: "clean", command: "make collect"},
+		{name: "revision", benchTime: "100ms", count: 10, revision: "bad", sourceHash: validSourceHash, worktree: "clean", command: "make collect"},
+		{name: "revision_hex", benchTime: "100ms", count: 10, revision: strings.Repeat("z", 40), sourceHash: validSourceHash, worktree: "clean", command: "make collect"},
+		{name: "source_hash", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: "bad", worktree: "clean", command: "make collect"},
+		{name: "source_hash_hex", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: strings.Repeat("z", 64), worktree: "clean", command: "make collect"},
+		{name: "source_binding", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: strings.Repeat("c", 64), worktree: "clean", command: "make collect"},
+		{name: "worktree", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: validSourceHash, worktree: "unknown", command: "make collect"},
+		{name: "dirty", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: validSourceHash, worktree: "dirty", command: "make collect"},
+		{name: "command", benchTime: "100ms", count: 10, revision: strings.Repeat("a", 40), sourceHash: validSourceHash, worktree: "clean"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := loadCollectionMetadata(raw, tc.benchTime, tc.count, tc.revision, tc.worktree, tc.command, "golang.org/x/perf v1.2.3"); err == nil {
+			if _, err := loadCollectionMetadata(raw, tc.benchTime, tc.count, tc.revision, tc.sourceHash, tc.worktree, tc.command, "golang.org/x/perf v1.2.3"); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -228,9 +274,6 @@ func TestPublishedInputHashes(t *testing.T) {
 			t.Errorf("restore working directory: %v", err)
 		}
 	}()
-	if err := os.WriteFile("raw.txt", []byte("raw"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	for _, file := range publishedInputs {
 		if err := os.WriteFile(file, []byte(file), 0o600); err != nil {
 			t.Fatal(err)
@@ -242,7 +285,7 @@ func TestPublishedInputHashes(t *testing.T) {
 		}
 	}
 	var m collectionMetadata
-	if err := bindPublishedInputs(&m, "raw.txt"); err != nil {
+	if err := bindPublishedInputs(&m, "bench-all.txt"); err != nil {
 		t.Fatal(err)
 	}
 	if err := validatePublishedInputs(m); err != nil {

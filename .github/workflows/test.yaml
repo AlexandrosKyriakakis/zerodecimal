@@ -6,9 +6,10 @@ on:
   pull_request:
 
 concurrency:
-  # One active run per workflow + branch/PR.
-  group: ${{ github.workflow }}-${{ github.ref_name }}
-  cancel-in-progress: true
+  # Superseded PR heads do not need duplicate work. Every main commit keeps
+  # its own group and verdict even when merges land close together.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26.5'
       # Pinned to the version developers run locally: linter releases move
       # which findings exist, and nolintlint turns a newly-unused directive
       # into an error. Bump local and CI together.
@@ -39,7 +40,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26.5'
       - name: Scan library module
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Scan benchmark module
@@ -50,8 +51,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # setup-go may satisfy 1.26.x from an older hosted-toolcache patch
-        # even when a newer security patch exists. Pin the declared floor.
+        # Keep the secure production patch explicit while also exercising the
+        # current stable release; the module language directive stays at 1.26.
         go: ['1.26.5', stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -108,9 +109,20 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26.5'
       - name: Full suite
         run: go test -tags="${{ matrix.tags }}" -count=1 ./...
+
+  test-strcache-race:
+    name: cache-on race
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26.5'
+      - name: Full cache-enabled suite (race)
+        run: go test -race -tags=zerodecimal_strcache -count=1 ./...
 
   test-386:
     name: linux/386
@@ -122,7 +134,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26.5'
       - name: Full 32-bit suite
         run: go test -count=1 ./...
       - name: Vet 32-bit build

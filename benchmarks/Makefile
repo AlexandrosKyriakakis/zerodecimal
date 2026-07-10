@@ -1,11 +1,12 @@
-.PHONY: require-clean verify bench bench-all bench-split bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart publish collect production-smoke production-default production-strcache production-micro production-pipeline production-parallel production-parallel-strcache
+.PHONY: require-clean verify bench bench-all bench-split bench-zd bench-udec bench-alpaca bench-ss bench-eric bench-dec bench-gv compare pgo chart publish collect _collect production-smoke production-default production-strcache production-micro production-pipeline production-parallel production-parallel-strcache
 
 COMPARATIVE_BENCHTIME ?= 100ms
 COMPARATIVE_COUNT ?= 10
 override GOENV := off
 override GOFLAGS :=
-export GOENV GOFLAGS
-BENCH_COLLECTION_COMMAND ?= GOENV=off GOFLAGS= make collect COMPARATIVE_BENCHTIME=$(COMPARATIVE_BENCHTIME) COMPARATIVE_COUNT=$(COMPARATIVE_COUNT)
+override GOWORK := off
+export GOENV GOFLAGS GOWORK
+BENCH_COLLECTION_COMMAND ?= GOENV=off GOFLAGS= GOWORK=off make collect COMPARATIVE_BENCHTIME=$(COMPARATIVE_BENCHTIME) COMPARATIVE_COUNT=$(COMPARATIVE_COUNT)
 ifeq ($(MAKELEVEL),0)
 override BENCH_SOURCE_REVISION_CAPTURED := $(shell git rev-parse HEAD)
 override BENCH_SOURCE_WORKTREE_CAPTURED := $(shell test -z "$$(git status --porcelain)" && echo clean || echo dirty)
@@ -26,8 +27,8 @@ require-clean:
 	@test "$(BENCH_SOURCE_WORKTREE_CAPTURED)" = clean || { echo "refusing benchmark publication from a dirty worktree" >&2; exit 1; }
 
 verify:
-	go test -run='^TestComparativeBenchmarkFixtures$$' -count=1 .
-	go test ./internal/benchfilter ./internal/chartgen
+	go test -run='^Test(ComparativeBenchmarkFixtures|PublishCannotRunStandaloneOrRebindExistingArtifacts|PrivateCollect.*)$$' -count=1 .
+	go test ./internal/benchfilter ./internal/chartgen ./internal/provenance
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.
 bench:
@@ -37,7 +38,10 @@ bench:
 # though Go still emits consecutive samples in fixed leaf/library order.
 # bench-split derives the per-library scratch files.
 bench-all:
-	GOFLAGS= go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-all.txt
+	@source_hash='$(BENCH_SOURCE_HASH_CAPTURED)'; \
+	if test -z "$$source_hash"; then source_hash=$$(GOENV=off GOFLAGS= go run ./internal/sourcehash -repo ..); fi; \
+	printf 'benchmark-source-sha256: %s\n' "$$source_hash" > bench-all.txt; \
+	GOFLAGS= go test -bench='$(COMPARATIVE_BENCH)' -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . >> bench-all.txt
 
 bench-split:
 	go run ./internal/benchfilter -input bench-all.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd.txt
@@ -100,9 +104,13 @@ compare:
 chart:
 	GOFLAGS= go run ./internal/chartgen
 
-# Bind a just-finished collection to provenance, then render its charts.
+# Publication is intentionally not a standalone operation: binding arbitrary
+# existing artifacts to the current source would make stale measurements look
+# current. `collect` captures the source identity before measuring and invokes
+# the private continuation only after regenerating every input.
 publish:
-	GOFLAGS= go run ./internal/chartgen -publish -raw bench-all.txt -benchtime $(COMPARATIVE_BENCHTIME) -count $(COMPARATIVE_COUNT) -revision $(BENCH_SOURCE_REVISION_CAPTURED) -worktree $(BENCH_SOURCE_WORKTREE_CAPTURED) -command '$(BENCH_COLLECTION_COMMAND_CAPTURED)'
+	@echo "make publish is disabled; use make collect to regenerate and bind all benchmark artifacts" >&2
+	@exit 1
 
 # PGO delta: collect a CPU profile over the zd benchmarks, then collect
 # standalone default and PGO populations with identical selection/timing
@@ -110,18 +118,30 @@ publish:
 # comparisons and is not a valid baseline for this standalone PGO run.
 pgo:
 	GOFLAGS= go test -bench=/zd/ -benchtime=0.2s -count=3 -timeout=2h -cpuprofile=zd.pprof -run NONE .
-	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . > bench-zd-pgo-default-raw.txt
+	@source_hash='$(BENCH_SOURCE_HASH_CAPTURED)'; \
+	if test -z "$$source_hash"; then source_hash=$$(GOENV=off GOFLAGS= GOWORK=off go run ./internal/sourcehash -repo ..); fi; \
+	printf 'benchmark-source-sha256: %s\n' "$$source_hash" > bench-zd-pgo-default-raw.txt
+	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -run NONE . >> bench-zd-pgo-default-raw.txt
 	go run ./internal/benchfilter -input bench-zd-pgo-default-raw.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd-pgo-default.txt
-	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -pgo=zd.pprof -run NONE . > bench-zd-pgo-raw.txt
+	@source_hash='$(BENCH_SOURCE_HASH_CAPTURED)'; \
+	if test -z "$$source_hash"; then source_hash=$$(GOENV=off GOFLAGS= GOWORK=off go run ./internal/sourcehash -repo ..); fi; \
+	printf 'benchmark-source-sha256: %s\n' "$$source_hash" > bench-zd-pgo-raw.txt
+	GOFLAGS= go test -bench=/zd/ -benchmem -benchtime=$(COMPARATIVE_BENCHTIME) -count=$(COMPARATIVE_COUNT) -timeout=2h -pgo=zd.pprof -run NONE . >> bench-zd-pgo-raw.txt
 	go run ./internal/benchfilter -input bench-zd-pgo-raw.txt -library zd -count $(COMPARATIVE_COUNT) > bench-zd-pgo.txt
 	benchstat default=bench-zd-pgo-default.txt pgo=bench-zd-pgo.txt > bench-pgo.txt
 
 collect: require-clean verify
-	$(MAKE) bench-all
-	$(MAKE) bench-split
-	$(MAKE) compare
-	$(MAKE) pgo
-	$(MAKE) publish
+	make --no-print-directory _collect BENCH_COLLECTION_ACTIVE=1 BENCH_SOURCE_HASH_CAPTURED="$$(GOENV=off GOFLAGS= GOWORK=off go run ./internal/sourcehash -repo ..)"
+
+_collect:
+	@test "$(BENCH_COLLECTION_ACTIVE)" = 1 || { echo "_collect is internal; use make collect" >&2; exit 1; }
+	@case "$(BENCH_SOURCE_HASH_CAPTURED)" in ''|*[!0-9a-f]*) echo "invalid captured benchmark source hash" >&2; exit 1;; esac
+	@test "$${#BENCH_SOURCE_HASH_CAPTURED}" -eq 64 || { echo "invalid captured benchmark source hash length" >&2; exit 1; }
+	make --no-print-directory bench-all
+	make --no-print-directory bench-split
+	make --no-print-directory compare
+	make --no-print-directory pgo
+	ZERODECIMAL_BENCH_COLLECTION_ACTIVE=1 GOFLAGS= go run ./internal/chartgen -publish -raw bench-all.txt -benchtime $(COMPARATIVE_BENCHTIME) -count $(COMPARATIVE_COUNT) -revision $(BENCH_SOURCE_REVISION_CAPTURED) -source-hash $(BENCH_SOURCE_HASH_CAPTURED) -worktree $(BENCH_SOURCE_WORKTREE_CAPTURED) -command '$(BENCH_COLLECTION_COMMAND_CAPTURED)'
 
 # Production-oriented zerodecimal benchmarks are separate from the competitor
 # matrix above. Targets print raw Go benchmark output; redirect/tee it to a

@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -32,6 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/AlexandrosKyriakakis/zerodecimal/benchmarks/internal/provenance"
 )
 
 // lib pairs a short display name with its bench-vs file. Order here is only
@@ -69,6 +72,8 @@ var pgoSourceInputs = []string{
 	"bench-zd-pgo-raw.txt",
 }
 
+const collectionGuardEnv = "ZERODECIMAL_BENCH_COLLECTION_ACTIVE"
+
 // geomeanRatio returns new/base from the first sec/op geomean line in a
 // benchstat comparison. Comparison generation guarantees the two columns have
 // identical row sets; the displayed summary percentage is therefore their
@@ -104,7 +109,13 @@ func geomeanRatioData(name, data string) (float64, error) {
 			if err != nil {
 				return 0, fmt.Errorf("%s: parse geomean change %q: %w", name, change, err)
 			}
+			if math.IsNaN(pct) || math.IsInf(pct, 0) {
+				return 0, fmt.Errorf("%s: non-finite geomean change %q", name, change)
+			}
 			ratio := 1 + pct/100
+			if math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+				return 0, fmt.Errorf("%s: non-finite geomean ratio from %q", name, change)
+			}
 			if ratio <= 0 {
 				return 0, fmt.Errorf("%s: non-positive geomean ratio from %q", name, change)
 			}
@@ -126,6 +137,7 @@ type collectionMetadata struct {
 	goVersion         string
 	benchstatVersion  string
 	goenv             string
+	gowork            string
 	goexperiment      string
 	gomaxprocs        string
 	gogc              string
@@ -134,6 +146,7 @@ type collectionMetadata struct {
 	benchTime         string
 	count             int
 	revision          string
+	sourceHash        string
 	worktree          string
 	command           string
 	rawSHA256         string
@@ -147,6 +160,8 @@ func main() {
 	benchTime := flag.String("benchtime", "", "per-sample benchmark duration")
 	count := flag.Int("count", 0, "samples per benchmark row")
 	revision := flag.String("revision", "", "source commit used for collection")
+	sourceHash := flag.String("source-hash", "", "benchmark source SHA-256 captured before collection")
+	sourceRoot := flag.String("source-root", "..", "repository root used to validate benchmark source")
 	worktree := flag.String("worktree", "", "source worktree state at collection start (clean or dirty)")
 	command := flag.String("command", "", "exact top-level collection command")
 	flag.Parse()
@@ -154,12 +169,18 @@ func main() {
 	var metadata collectionMetadata
 	var err error
 	if *publish {
+		if !publicationAuthorized() {
+			fail(fmt.Errorf("benchmark publication is internal to make collect"))
+		}
 		benchstatVersion, versionErr := installedBenchstatVersion()
 		if versionErr != nil {
 			fail(versionErr)
 		}
-		metadata, err = loadCollectionMetadata(*rawFile, *benchTime, *count, *revision, *worktree, *command, benchstatVersion)
+		metadata, err = loadCollectionMetadata(*rawFile, *benchTime, *count, *revision, *sourceHash, *worktree, *command, benchstatVersion)
 		if err != nil {
+			fail(err)
+		}
+		if err = validateBenchmarkSource(metadata, *sourceRoot); err != nil {
 			fail(err)
 		}
 		if err = bindPublishedInputs(&metadata, *rawFile); err != nil {
@@ -176,6 +197,9 @@ func main() {
 			fail(err)
 		}
 		if err = validatePublishedInputs(metadata); err != nil {
+			fail(err)
+		}
+		if err = validateBenchmarkSource(metadata, *sourceRoot); err != nil {
 			fail(err)
 		}
 	}
@@ -223,8 +247,13 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-func loadCollectionMetadata(rawFile, benchTime string, count int, revision, worktree, command, benchstatVersion string) (collectionMetadata, error) {
+func publicationAuthorized() bool {
+	return os.Getenv(collectionGuardEnv) == "1"
+}
+
+func loadCollectionMetadata(rawFile, benchTime string, count int, revision, sourceHash, worktree, command, benchstatVersion string) (collectionMetadata, error) {
 	var m collectionMetadata
+	var rawSourceHash string
 	data, err := os.ReadFile(rawFile)
 	if err != nil {
 		return m, err
@@ -235,6 +264,8 @@ func loadCollectionMetadata(rawFile, benchTime string, count int, revision, work
 			continue
 		}
 		switch key {
+		case "benchmark-source-sha256":
+			rawSourceHash = value
 		case "goos":
 			m.goos = value
 		case "goarch":
@@ -259,6 +290,12 @@ func loadCollectionMetadata(rawFile, benchTime string, count int, revision, work
 	if _, err := hex.DecodeString(revision); err != nil {
 		return m, fmt.Errorf("revision must be hexadecimal: %w", err)
 	}
+	if err := validateSHA256("benchmark source", sourceHash); err != nil {
+		return m, err
+	}
+	if rawSourceHash != sourceHash {
+		return m, fmt.Errorf("%s: embedded benchmark source hash %q does not match collection hash %q", rawFile, rawSourceHash, sourceHash)
+	}
 	if worktree != "clean" {
 		return m, fmt.Errorf("benchmark publication requires a clean worktree, got %q", worktree)
 	}
@@ -274,9 +311,13 @@ func loadCollectionMetadata(rawFile, benchTime string, count int, revision, work
 	if os.Getenv("GOENV") != "off" {
 		return m, fmt.Errorf("GOENV must be off for benchmark publication")
 	}
+	if os.Getenv("GOWORK") != "off" {
+		return m, fmt.Errorf("GOWORK must be off for benchmark publication")
+	}
 	m.goVersion = runtime.Version()
 	m.benchstatVersion = benchstatVersion
 	m.goenv = "off (enforced)"
+	m.gowork = "off (enforced)"
 	m.goexperiment = envOrUnset("GOEXPERIMENT")
 	m.gomaxprocs = envOrUnset("GOMAXPROCS")
 	m.gogc = envOrUnset("GOGC")
@@ -285,6 +326,7 @@ func loadCollectionMetadata(rawFile, benchTime string, count int, revision, work
 	m.benchTime = d.String()
 	m.count = count
 	m.revision = revision
+	m.sourceHash = sourceHash
 	m.worktree = worktree
 	m.command = command
 	return m, nil
@@ -346,6 +388,9 @@ func bindPublishedInputs(m *collectionMetadata, rawFile string) error {
 }
 
 func validatePublishedInputs(m collectionMetadata) error {
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return fmt.Errorf("raw collection hash %s does not match bench-all artifact hash %s", m.rawSHA256, m.artifactSHA256["bench-all.txt"])
+	}
 	for _, file := range publishedInputs {
 		want, ok := m.artifactSHA256[file]
 		if !ok {
@@ -358,6 +403,17 @@ func validatePublishedInputs(m collectionMetadata) error {
 		if got != want {
 			return fmt.Errorf("%s hash %s does not match provenance %s", file, got, want)
 		}
+	}
+	return nil
+}
+
+func validateBenchmarkSource(m collectionMetadata, repoRoot string) error {
+	got, err := provenance.SourceHash(repoRoot)
+	if err != nil {
+		return fmt.Errorf("hash current benchmark source: %w", err)
+	}
+	if got != m.sourceHash {
+		return fmt.Errorf("benchmark source hash %s does not match provenance %s; run make collect", got, m.sourceHash)
 	}
 	return nil
 }
@@ -380,6 +436,7 @@ func parseProvenanceData(data string) (collectionMetadata, error) {
 		}
 	}
 	m.revision = values["source-commit"]
+	m.sourceHash = values["benchmark-source-sha256"]
 	m.worktree = values["source-worktree-at-collection-start"]
 	m.goVersion = values["go-version"]
 	m.goos = values["goos"]
@@ -387,6 +444,7 @@ func parseProvenanceData(data string) (collectionMetadata, error) {
 	m.cpu = values["cpu"]
 	m.benchstatVersion = values["benchstat"]
 	m.goenv = values["goenv"]
+	m.gowork = values["gowork"]
 	m.goexperiment = values["goexperiment"]
 	m.gomaxprocs = values["gomaxprocs"]
 	m.gogc = values["gogc"]
@@ -405,13 +463,16 @@ func parseProvenanceData(data string) (collectionMetadata, error) {
 		m.pgoSourceSHA256[file] = values["pgo-source-sha256-"+file]
 	}
 	if len(m.revision) != 40 || m.goVersion == "" || m.goos == "" || m.goarch == "" || m.cpu == "" ||
-		m.benchstatVersion == "" || m.goenv != "off (enforced)" || m.goexperiment == "" || m.gomaxprocs == "" || m.gogc == "" || m.gomemlimit == "" || m.godebug == "" ||
+		m.benchstatVersion == "" || m.goenv != "off (enforced)" || m.gowork != "off (enforced)" || m.goexperiment == "" || m.gomaxprocs == "" || m.gogc == "" || m.gomemlimit == "" || m.godebug == "" ||
 		m.command == "" || m.count < 2 || values["goflags"] != "empty (enforced)" || values["build-tags"] != "none" ||
 		!strings.HasPrefix(values["string-cache"], "off") {
 		return collectionMetadata{}, fmt.Errorf("incomplete or invalid benchmark provenance")
 	}
 	if _, err := hex.DecodeString(m.revision); err != nil {
 		return collectionMetadata{}, fmt.Errorf("invalid provenance revision: %w", err)
+	}
+	if err := validateSHA256("benchmark source", m.sourceHash); err != nil {
+		return collectionMetadata{}, err
 	}
 	if m.worktree != "clean" {
 		return collectionMetadata{}, fmt.Errorf("invalid provenance worktree %q", m.worktree)
@@ -426,6 +487,9 @@ func parseProvenanceData(data string) (collectionMetadata, error) {
 		if err := validateSHA256(file, m.artifactSHA256[file]); err != nil {
 			return collectionMetadata{}, err
 		}
+	}
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return collectionMetadata{}, fmt.Errorf("raw collection hash does not match bench-all artifact hash")
 	}
 	for _, file := range pgoSourceInputs {
 		if err := validateSHA256(file, m.pgoSourceSHA256[file]); err != nil {
@@ -525,13 +589,15 @@ func renderProvenance(m collectionMetadata) string {
 	fmt.Fprintf(&sb, `zerodecimal comparative benchmark provenance
 
 source-commit: %s
+benchmark-source-sha256: %s
 source-worktree-at-collection-start: %s
 go-version: %s
 goos: %s
 goarch: %s
 cpu: %s
 benchstat: %s
-goenv: off (enforced)
+goenv: %s
+gowork: %s
 goflags: empty (enforced)
 goexperiment: %s
 gomaxprocs: %s
@@ -546,8 +612,8 @@ collection-command: %s
 collection-order: fixed library order; samples for each leaf are consecutive
 pgo-profile: synthetic in-sample benchmark-binary profile; not a production application profile
 raw-collection-sha256: %s
-`, m.revision, m.worktree, m.goVersion, m.goos, m.goarch, m.cpu,
-		m.benchstatVersion, m.goexperiment, m.gomaxprocs, m.gogc, m.gomemlimit, m.godebug,
+`, m.revision, m.sourceHash, m.worktree, m.goVersion, m.goos, m.goarch, m.cpu,
+		m.benchstatVersion, m.goenv, m.gowork, m.goexperiment, m.gomaxprocs, m.gogc, m.gomemlimit, m.godebug,
 		m.benchTime, m.count, m.command, m.rawSHA256)
 	for _, file := range publishedInputs {
 		fmt.Fprintf(&sb, "artifact-sha256-%s: %s\n", file, m.artifactSHA256[file])

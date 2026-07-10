@@ -4,15 +4,15 @@ This module benchmarks [zerodecimal](..) against the other Go decimal
 libraries on one shared operation × shape matrix. Published runs use the
 current untagged cache-off default.
 
-| key      | library                                                                  |
-| -------- | ------------------------------------------------------------------------ |
-| `zd`     | github.com/AlexandrosKyriakakis/zerodecimal                              |
-| `udec`   | github.com/quagmt/udecimal                                                |
-| `alpaca` | github.com/alpacahq/alpacadecimal                                         |
-| `ss`     | github.com/shopspring/decimal                                             |
-| `eric`   | github.com/ericlagergren/decimal                                          |
-| `dec`    | github.com/jokruger/dec128                                                |
-| `gv`     | github.com/govalues/decimal                                               |
+| key      | library                                                                  | current harness pin |
+| -------- | ------------------------------------------------------------------------ | ------------------- |
+| `zd`     | github.com/AlexandrosKyriakakis/zerodecimal                              | local checkout      |
+| `udec`   | github.com/quagmt/udecimal                                                | v1.10.1             |
+| `alpaca` | github.com/alpacahq/alpacadecimal                                         | v0.0.9              |
+| `ss`     | github.com/shopspring/decimal                                             | v1.4.0              |
+| `eric`   | github.com/ericlagergren/decimal                                          | 00de7ca16731        |
+| `dec`    | github.com/jokruger/dec128                                                | v1.0.20             |
+| `gv`     | github.com/govalues/decimal                                               | v0.1.36             |
 
 It is a separate Go module (`replace`d onto the parent directory) so the
 competitor dependencies never touch the library's own `go.mod`.
@@ -152,7 +152,6 @@ make bench-gv       # govalues; only the three shapes it can represent
 make compare        # intersect supported rows, then write benchstat reports
 make pgo            # profile the zd benchmarks, re-run with -pgo, benchstat into bench-pgo.txt
 make chart          # verify committed hashes, then deterministically re-render charts
-make publish        # bind a just-finished collection to provenance and charts
 make production-smoke    # every production row once, default and strcache
 make production-default  # production suite, current cache-off default
 make production-strcache # same suite with the opt-in cache
@@ -162,8 +161,8 @@ make production-parallel          # RunParallel at 1,2,4,8 CPUs, cache off
 make production-parallel-strcache # same RunParallel rows, cache on
 ```
 
-`compare` and `pgo` need `benchstat`
-(`go install golang.org/x/perf/cmd/benchstat@latest`).
+`compare` and `pgo` need the benchmark pipeline's pinned `benchstat`
+(`go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260610192853-712aea8b4705`).
 Per-library/intersection files, raw-with-library-segment PGO files, and
 `zd.pprof` are scratch output (gitignored). The unified `bench-all.txt`, exact
 filtered `bench-zd-pgo-default.txt` and `bench-zd-pgo.txt` populations,
@@ -178,30 +177,48 @@ explicitly a pairwise native-API comparison: shared benchmark names do not
 erase the precision, rounding, float-conversion, or fallback differences
 listed under semantic asymmetries.
 
-At the end of `collect`, `publish` records the source state, tool versions,
-raw-collection SHA-256, and SHA-256 of every published benchstat input before
-rendering. Ordinary `make chart` reads that committed provenance, verifies the
-current published input hashes (including the tracked raw populations), and
-only then re-renders; it never relabels older results using the current
-worktree or toolchain.
+The committed comparative run uses a GitHub-hosted `macos-15` Apple M1
+(Virtual) runner. The workflow fixes the source identity, toolchain, build
+environment, process shape, duration, and sample count, but hosted virtualized
+hardware is neither exclusive nor guaranteed idle. Inspect confidence
+intervals and raw samples; do not treat a noisy individual row as a production
+latency guarantee.
+
+At the end of `collect`, its private publication phase records the source
+state, tool versions, raw-collection SHA-256, and SHA-256 of every published
+benchstat input before rendering. Standalone `make publish` is deliberately
+disabled: an old raw collection cannot be rebound to the current source.
+Ordinary `make chart` reads committed provenance, verifies the current source
+identity and every published input hash (including the tracked raw
+populations), and only then re-renders.
 
 `collect` refuses to publish unless the source worktree was clean when make
-started, so the recorded commit identifies the benchmark source exactly. The
-provenance also binds the synthetic profile plus both raw-with-segment and
-filtered standalone default/PGO populations that feed `bench-pgo.txt`. The
-filtered populations are tracked so the published statistical inputs remain
-directly inspectable.
+started. It embeds a deterministic benchmark-source SHA-256 in the raw output
+before measurement and verifies the same identity again before publication.
+That content identity survives rebases and squash merges; the commit ID remains
+additional traceability rather than the validity key. Provenance also binds
+the synthetic profile plus both raw-with-segment and filtered standalone
+default/PGO populations that feed `bench-pgo.txt`. The filtered populations are
+tracked so the published statistical inputs remain directly inspectable.
 
-The Makefile exports `GOENV=off` and an empty `GOFLAGS` for every command, and
-every comparative/PGO `go test` also spells out `GOFLAGS=`. This prevents both
-process-environment flags and persisted `go env -w GOFLAGS=...` settings from
-injecting `zerodecimal_strcache`, precision tags, or `-pgo` into the claimed
-untagged cache-off population. Provenance records that enforcement together
-with `GOEXPERIMENT`, `GOMAXPROCS`, `GOGC`, `GOMEMLIMIT`, and `GODEBUG`.
+When CI detects a changed source identity on a same-repository PR, it
+recollects and uploads the whole evidence bundle, then intentionally fails if
+those refreshed tracked files are not in the PR. Download the bundle, replace
+the tracked artifacts unchanged, and commit them. The next run verifies the
+source and artifact hashes without recollecting. Fork PRs run cheap Linux
+detection/verification only; changed benchmark source must be reproduced on a
+maintainer-controlled branch before merge.
 
-The PGO comparison is separately controlled: after profile collection it
-runs standalone default and PGO zerodecimal populations with identical
-benchmark selection, benchtime, count, and process shape. The unified
+The Makefile exports `GOENV=off`, `GOWORK=off`, and an empty `GOFLAGS` for every
+command, and every comparative/PGO `go test` also spells out `GOFLAGS=`. This
+prevents process/persisted flags and an ignored parent `go.work` from injecting
+module replacements, `zerodecimal_strcache`, precision tags, or `-pgo` into the
+claimed untagged cache-off population. Provenance records that enforcement
+together with `GOEXPERIMENT`, `GOMAXPROCS`, `GOGC`, `GOMEMLIMIT`, and `GODEBUG`.
+
+The PGO comparison is separately configured and isolated: after profile
+collection it runs standalone default and PGO zerodecimal populations with
+identical benchmark selection, benchtime, count, and process shape. The unified
 competitor baseline is never reused for PGO because its interleaved library
 order is a different measurement context.
 
@@ -218,7 +235,8 @@ competitor matrix. Names make the measurement boundary explicit:
 
 - `BenchmarkProductionMicro*` measures one API family at a time: canonical,
   scientific, and rescue parsing; exact/direct-round multiplication and
-  division; mixed-sign/mixed-scale and cancellation-heavy aggregates; the
+  division; same-precision 2/10/4096-item aggregates, their late-mismatch
+  fallback, and mixed-sign/mixed-scale and cancellation-heavy aggregates; the
   wide-scaled-divisor QuoRem path; escaped JSON and JSON-null rejection;
   `StrictSQLDecimal`; narrow and very wide `StringFixed`; cache-eligible versus
   ineligible String/Value; and representative sentinel error paths.

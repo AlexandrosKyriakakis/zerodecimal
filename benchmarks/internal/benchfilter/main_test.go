@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-const raw = `goos: darwin
+const raw = `benchmark-source-sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+goos: darwin
 goarch: arm64
 cpu: Apple M1 Pro
 BenchmarkAdd/zd/small-10          1000000  2.0 ns/op  0 B/op  0 allocs/op
@@ -26,7 +27,7 @@ func TestFilterLibrary(t *testing.T) {
 	if !strings.Contains(got, "BenchmarkAdd/small-10") || !strings.Contains(got, "BenchmarkMul/unsupported-10") {
 		t.Fatalf("zerodecimal rows missing:\n%s", got)
 	}
-	if !strings.Contains(got, "goos: darwin") || !strings.Contains(got, "PASS") {
+	if !strings.Contains(got, "benchmark-source-sha256: ") || !strings.Contains(got, "goos: darwin") || !strings.Contains(got, "PASS") {
 		t.Fatalf("benchmark metadata missing:\n%s", got)
 	}
 }
