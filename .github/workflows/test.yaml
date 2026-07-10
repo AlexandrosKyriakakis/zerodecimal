@@ -24,7 +24,7 @@ jobs:
       # Pinned to the version developers run locally: linter releases move
       # which findings exist, and nolintlint turns a newly-unused directive
       # into an error. Bump local and CI together.
-      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.11.3
 
@@ -61,7 +61,7 @@ jobs:
         run: go test -run '^Test.*Alloc' -count=1 .
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.out
 
