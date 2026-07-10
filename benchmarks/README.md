@@ -103,15 +103,15 @@ These are part of the story the numbers tell, not benchmark bugs:
 - **gv 19-digit cap**: govalues stores at most 19 significant digits, so the
   `large` and `near_max` operands do not fit and those rows are skipped
   entirely (not approximated), and the comparison geomean is restricted to
-  the three shapes both libraries can represent. It maps cleanly onto every op for those
-  three shapes: `Quo` for Div, `Round` for RoundBank (half-even, the same
-  mode), `Trunc` for Truncate, and the full `(Decimal, error)` codec/SQL
-  surface. Where an exact result needs more than 19 digits it takes govalues's
-  internal big-integer path rather than overflowing — `Add`/`Mul` on `max_prec`
-  and every `Quo` run there (≈107/132/280 ns/op vs zerodecimal's single-digit
-  ns) — but that path is allocation-free in steady state, so govalues stays 0
-  B/op throughout, matching zerodecimal on allocations and differing only in
-  time.
+  the three shapes both libraries can represent. It maps cleanly onto every
+  op for those three shapes: `Quo` for Div, `Round` for RoundBank (half-even,
+  the same mode), `Trunc` for Truncate, and the full `(Decimal, error)`
+  codec/SQL surface. Where an exact result needs more than 19 digits it takes
+  govalues's internal big-integer path rather than overflowing — `Add`/`Mul`
+  on `max_prec` and every `Quo` run (about 103/127/275–290 ns/op versus
+  zerodecimal's single-digit ns) — but that path is allocation-free in steady
+  state, so govalues stays 0 B/op throughout, matching zerodecimal on
+  allocations and differing only in time.
 
 ## Known trade-offs
 

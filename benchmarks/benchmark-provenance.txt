@@ -1,0 +1,37 @@
+zerodecimal comparative benchmark provenance
+
+source-commit: 0d0b1cfd6f349666f759f22692966c02ea26cdfd
+source-worktree-at-collection-start: clean
+go-version: go1.26.5
+goos: darwin
+goarch: arm64
+cpu: Apple M1 (Virtual)
+benchstat: golang.org/x/perf v0.0.0-20260610192853-712aea8b4705 h1:KIE5hxNodGiMfsx0txchv5+0n+w/m9YcGqtpv/+3hYU=
+goenv: off (enforced)
+goflags: empty (enforced)
+goexperiment: <unset>
+gomaxprocs: <unset>
+gogc: <unset>
+gomemlimit: <unset>
+godebug: <unset>
+build-tags: none
+string-cache: off (zerodecimal_strcache not set)
+benchtime-per-sample: 100ms
+samples-per-row: 10
+collection-command: GOENV=off GOFLAGS= make collect COMPARATIVE_BENCHTIME=100ms COMPARATIVE_COUNT=10
+collection-order: fixed library order; samples for each leaf are consecutive
+pgo-profile: synthetic in-sample benchmark-binary profile; not a production application profile
+raw-collection-sha256: 90b0725e084a278460dac7ec2cc9519dd285f1e19afb185d56b0d7d0183c7288
+artifact-sha256-bench-vs-dec128.txt: 30d74a11ba8f79560b804a4312986c8722e2ac6a2335aa981ca439ee3d9c6914
+artifact-sha256-bench-vs-udecimal.txt: 52db00db3a39e8d3626c310620b8ec594fcfe357adf86aa3b9a576bd612b3a14
+artifact-sha256-bench-vs-govalues.txt: 536dda5f18c2e78f0dea1af530daaa718075b0dcf3f76dcba9ea6d7fa23f973a
+artifact-sha256-bench-vs-ericlagergren.txt: c88d5bb93df4e1cf21e77936e7c48a6d6e559be0d3e42b0b29e98dab07df90ef
+artifact-sha256-bench-vs-alpacadecimal.txt: 73567f1dfdcc169a0fd135f41a0f38d5f08fdcf4212d3d1ced8d83cddf3fbeb3
+artifact-sha256-bench-vs-shopspring.txt: 6f895952b27095578059b00126d47e4799fd3ad0185125e8ee1736c47dd5fa39
+artifact-sha256-bench-pgo.txt: 6be4426b3fe7fdd4c68bcb398a79276fa2c828b5a25479be46d8cf464a68896a
+artifact-sha256-bench-all.txt: 90b0725e084a278460dac7ec2cc9519dd285f1e19afb185d56b0d7d0183c7288
+artifact-sha256-bench-zd-pgo-default.txt: 5214dbf6a9d81b55ba2e5b7457c204c0f9f0f8deaea89f46e82ae7b352f0c577
+artifact-sha256-bench-zd-pgo.txt: 00f92c52b7878885ee7addce534723ff1d99b158f64cae957982734be106397d
+pgo-source-sha256-zd.pprof: 598ef59e7ccb689f8a7e255bf1be39340ec04ae5bc3a7c2a556c8b77cd91ceec
+pgo-source-sha256-bench-zd-pgo-default-raw.txt: dd1cbb6db9b1445413898db76565a9aecc91305667355ddb8d5456a7af40b387
+pgo-source-sha256-bench-zd-pgo-raw.txt: 485901b9a5808840f8dc6a44d1c88d475060e4c11adae99dcd0389395733b055
