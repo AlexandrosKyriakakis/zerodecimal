@@ -124,6 +124,44 @@ func TestUnescapeJSONStringUnicodeValidation(t *testing.T) {
 	assert.Equal(t, "1é😀", string(dst[:n]))
 }
 
+func TestUnescapeJSONStringOnlyAppendsUnicodeScalars(t *testing.T) {
+	valid := []struct {
+		name    string
+		escaped string
+		want    rune
+	}{
+		{name: "one_byte_min", escaped: `\u0000`, want: 0},
+		{name: "one_byte_max", escaped: `\u007F`, want: 0x7F},
+		{name: "two_byte_min", escaped: `\u0080`, want: 0x80},
+		{name: "two_byte_max", escaped: `\u07FF`, want: 0x7FF},
+		{name: "three_byte_min", escaped: `\u0800`, want: 0x800},
+		{name: "before_surrogates", escaped: `\uD7FF`, want: 0xD7FF},
+		{name: "after_surrogates", escaped: `\uE000`, want: 0xE000},
+		{name: "bmp_max", escaped: `\uFFFF`, want: 0xFFFF},
+		{name: "surrogate_pair_min", escaped: `\uD800\uDC00`, want: 0x10000},
+		{name: "surrogate_pair_max", escaped: `\uDBFF\uDFFF`, want: utf8.MaxRune},
+	}
+	for _, tc := range valid {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst [maxParseLen]byte
+			n, err := unescapeJSONString([]byte(tc.escaped), &dst)
+			require.NoError(t, err)
+			r, size := utf8.DecodeRune(dst[:n])
+			assert.True(t, utf8.ValidRune(r))
+			assert.Equal(t, tc.want, r)
+			assert.Equal(t, n, size, "escape must decode to exactly one scalar")
+		})
+	}
+
+	for _, escaped := range []string{`\uD800`, `\uDBFF`, `\uDC00`, `\uDFFF`} {
+		t.Run("reject_"+escaped[2:], func(t *testing.T) {
+			var dst [maxParseLen]byte
+			_, err := unescapeJSONString([]byte(escaped), &dst)
+			require.ErrorIs(t, err, ErrInvalidFormat)
+		})
+	}
+}
+
 func TestUnmarshalJSONValidSurrogatePairThroughPublicDecoder(t *testing.T) {
 	marker := RequireFromString("987.65")
 

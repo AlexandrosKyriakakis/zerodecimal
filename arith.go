@@ -572,7 +572,27 @@ func accumulateAggregateAdaptive(first Decimal, rest []Decimal) (pos, neg u128, 
 func aggregateFinishWide(a *aggregateAccum, prefixPos, prefixNeg u128, prec uint8, suffix []Decimal) {
 	aggregatePromote128(a, prefixPos, prefixNeg, prec)
 	for _, d := range suffix {
-		aggregateAddDynamic(a, d)
+		if d.coef.isZero() {
+			continue
+		}
+		if d.prec > a.prec {
+			// After alignment both exact same-sign subtotals are prefixes of
+			// the <2^255 totals proved by aggregateAccum's bound, so neither
+			// multiplication can overflow.
+			scale := pow10u64[(d.prec-a.prec)&31]
+			a.pos = aggregateMul256by64(a.pos, scale)
+			a.neg = aggregateMul256by64(a.neg, scale)
+			a.prec = d.prec
+		}
+		// Keep the aligned add local to this suffix loop. aggregateAddDecimal
+		// remains shared by the from-scratch path, but a helper call per suffix
+		// element measurably regresses early handoffs.
+		d2, d1, d0 := mul128by64to192(d.coef, pow10u64[(a.prec-d.prec)&31])
+		if d.neg {
+			a.neg = aggregateAdd192(a.neg, d2, d1, d0)
+		} else {
+			a.pos = aggregateAdd192(a.pos, d2, d1, d0)
+		}
 	}
 }
 
@@ -582,22 +602,6 @@ func aggregatePromote128(a *aggregateAccum, pos, neg u128, prec uint8) {
 		neg:  u256{d0: neg.lo, d1: neg.hi},
 		prec: prec,
 	}
-}
-
-// aggregateAddDynamic adds d while allowing the greatest precision to rise.
-// Rescaling both exact same-sign subtotals cannot overflow: after alignment
-// they are prefixes of the <2^255 totals proved by aggregateAccum's bound.
-func aggregateAddDynamic(a *aggregateAccum, d Decimal) {
-	if d.coef.isZero() {
-		return
-	}
-	if d.prec > a.prec {
-		scale := pow10u64[(d.prec-a.prec)&31]
-		a.pos = aggregateMul256by64(a.pos, scale)
-		a.neg = aggregateMul256by64(a.neg, scale)
-		a.prec = d.prec
-	}
-	aggregateAddDecimal(a, d)
 }
 
 // accumulateAggregate aligns and accumulates first and rest exactly. It scans

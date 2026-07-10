@@ -383,6 +383,17 @@ func embeddedBenchmarkSourceHash(name string, data []byte) (string, error) {
 	return sourceHash, nil
 }
 
+func validateEmbeddedBenchmarkSourceHash(name string, data []byte, want string) error {
+	got, err := embeddedBenchmarkSourceHash(name, data)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("%s embedded benchmark source hash %s does not match provenance %s", name, got, want)
+	}
+	return nil
+}
+
 func bindPublishedInputs(m *collectionMetadata, rawFile string) error {
 	var err error
 	m.rawSHA256, err = fileSHA256(rawFile)
@@ -391,10 +402,17 @@ func bindPublishedInputs(m *collectionMetadata, rawFile string) error {
 	}
 	m.artifactSHA256 = make(map[string]string, len(publishedInputs))
 	for _, file := range publishedInputs {
-		m.artifactSHA256[file], err = fileSHA256(file)
-		if err != nil {
-			return fmt.Errorf("hash %s: %w", file, err)
+		data, readErr := os.ReadFile(file)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", file, readErr)
 		}
+		if sourceErr := validateEmbeddedBenchmarkSourceHash(file, data, m.sourceHash); sourceErr != nil {
+			return sourceErr
+		}
+		m.artifactSHA256[file] = dataSHA256(data)
+	}
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return fmt.Errorf("raw collection hash %s does not match bench-all artifact hash %s", m.rawSHA256, m.artifactSHA256["bench-all.txt"])
 	}
 	m.pgoSourceSHA256 = make(map[string]string, len(pgoSourceInputs))
 	for _, file := range pgoSourceInputs {
@@ -423,14 +441,8 @@ func validatePublishedInputs(m collectionMetadata) error {
 		if got != want {
 			return fmt.Errorf("%s hash %s does not match provenance %s", file, got, want)
 		}
-		if file == "bench-all.txt" {
-			embeddedSourceHash, err := embeddedBenchmarkSourceHash(file, data)
-			if err != nil {
-				return err
-			}
-			if embeddedSourceHash != m.sourceHash {
-				return fmt.Errorf("%s embedded benchmark source hash %s does not match provenance %s", file, embeddedSourceHash, m.sourceHash)
-			}
+		if err := validateEmbeddedBenchmarkSourceHash(file, data, m.sourceHash); err != nil {
+			return err
 		}
 	}
 	return nil

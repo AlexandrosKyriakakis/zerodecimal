@@ -276,10 +276,7 @@ func TestPublishedInputHashes(t *testing.T) {
 	}()
 	sourceHash := strings.Repeat("d", 64)
 	for _, file := range publishedInputs {
-		data := []byte(file)
-		if file == "bench-all.txt" {
-			data = []byte("benchmark-source-sha256: " + sourceHash + "\n" + file)
-		}
+		data := []byte("benchmark-source-sha256: " + sourceHash + "\n" + file)
 		if err := os.WriteFile(file, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -302,25 +299,44 @@ func TestPublishedInputHashes(t *testing.T) {
 	if err := validatePublishedInputs(m); err == nil {
 		t.Fatal("expected changed artifact hash to fail validation")
 	}
-	if err := os.WriteFile(publishedInputs[0], []byte(publishedInputs[0]), 0o600); err != nil {
+	if err := os.WriteFile(publishedInputs[0], []byte("benchmark-source-sha256: "+sourceHash+"\n"+publishedInputs[0]), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Simulate internally consistent artifact hashes around a bench-all file
-	// whose embedded source identity disagrees with the provenance identity.
 	otherSourceHash := strings.Repeat("e", 64)
-	if err := os.WriteFile("bench-all.txt", []byte("benchmark-source-sha256: "+otherSourceHash+"\nbench-all.txt"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	benchAllHash, err := fileSHA256("bench-all.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.rawSHA256 = benchAllHash
-	m.artifactSHA256["bench-all.txt"] = benchAllHash
-	err = validatePublishedInputs(m)
-	if err == nil || !strings.Contains(err.Error(), "embedded benchmark source hash") {
-		t.Fatalf("error = %v, want embedded source/provenance mismatch", err)
+	for _, file := range publishedInputs {
+		t.Run("source_binding/"+file, func(t *testing.T) {
+			originalData := []byte("benchmark-source-sha256: " + sourceHash + "\n" + file)
+			mutatedData := []byte("benchmark-source-sha256: " + otherSourceHash + "\n" + file)
+			originalArtifactHash := m.artifactSHA256[file]
+			originalRawHash := m.rawSHA256
+			defer func() {
+				m.artifactSHA256[file] = originalArtifactHash
+				m.rawSHA256 = originalRawHash
+				if err := os.WriteFile(file, originalData, 0o600); err != nil {
+					t.Errorf("restore %s: %v", file, err)
+				}
+			}()
+
+			if err := os.WriteFile(file, mutatedData, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			mutatedHash := dataSHA256(mutatedData)
+			m.artifactSHA256[file] = mutatedHash
+			if file == "bench-all.txt" {
+				m.rawSHA256 = mutatedHash
+			}
+
+			bound := collectionMetadata{sourceHash: sourceHash}
+			if err := bindPublishedInputs(&bound, "bench-all.txt"); err == nil || !strings.Contains(err.Error(), file+" embedded benchmark source hash") {
+				t.Fatalf("bind error = %v, want %s source/provenance mismatch", err, file)
+			}
+
+			err := validatePublishedInputs(m)
+			if err == nil || !strings.Contains(err.Error(), file+" embedded benchmark source hash") {
+				t.Fatalf("validation error = %v, want %s source/provenance mismatch", err, file)
+			}
+		})
 	}
 }
 

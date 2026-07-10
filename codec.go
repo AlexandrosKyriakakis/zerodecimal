@@ -310,14 +310,13 @@ func jsonHexRune(src []byte, off int) (rune, bool) {
 	return r, true
 }
 
-// appendJSONRune writes r's UTF-8 encoding to dst. jsonHexRune and the
-// surrogate checks guarantee r is a Unicode scalar value; RuneLen retains a
-// defensive invalid-rune check so this helper remains total for future callers.
+// appendJSONRune writes r's UTF-8 encoding to dst.
+//
+// PRECONDITION: r is a Unicode scalar value. The sole caller obtains one
+// UTF-16 code unit from jsonHexRune, rejects lone surrogates, and combines a
+// validated surrogate pair into U+10000..U+10FFFF before calling here.
 func appendJSONRune(dst *[maxParseLen]byte, n int, r rune) (int, bool) {
 	size := utf8.RuneLen(r)
-	if size < 0 {
-		return n, false
-	}
 	if size > len(dst)-n {
 		return n, false
 	}

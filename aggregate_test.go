@@ -444,6 +444,52 @@ func TestAggregateLateMismatchRandomDifferential(t *testing.T) {
 	}
 }
 
+func TestAggregateEarlyHandoffRandomDifferential(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(0x2575_52da_7b2c_a9d1, 0xdd1a_4795_2f61_b8e3))
+	for iter := 0; iter < 1_000; iter++ {
+		prec := uint8(rng.Uint64N(uint64(MaxPrec) + 1))
+		n := 4 + int(rng.Uint64N(29))
+		xs := make([]Decimal, n)
+		start := 0
+		if iter&1 == 0 {
+			// The second equal-sign maximum carries immediately, so the wide
+			// suffix begins at rest[0].
+			maxValue, err := NewFromHiLo(rng.Uint64()&1 != 0, ^uint64(0), ^uint64(0), prec)
+			require.NoError(t, err)
+			xs[0], xs[1], start = maxValue, maxValue, 2
+		} else {
+			// Alternate mismatches at rest[0] and rest[1]. The bounded prefix
+			// stays narrow while the arbitrary suffix exercises precision raises,
+			// lower-precision alignment, and both signs after handoff.
+			prefixLen := 1 + ((iter >> 1) & 1)
+			for i := 0; i < prefixLen; i++ {
+				d, err := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64N(1<<32), rng.Uint64()|1, prec)
+				require.NoError(t, err)
+				xs[i] = d
+			}
+			mismatchPrec := (prec + 1) % (MaxPrec + 1)
+			d, err := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64(), rng.Uint64()|1, mismatchPrec)
+			require.NoError(t, err)
+			xs[prefixLen], start = d, prefixLen+1
+		}
+		for i := start; i < n; i++ {
+			d, err := NewFromHiLo(
+				rng.Uint64()&1 != 0,
+				rng.Uint64(),
+				rng.Uint64(),
+				uint8(rng.Uint64N(uint64(MaxPrec)+1)),
+			)
+			require.NoError(t, err)
+			xs[i] = d
+		}
+
+		requireAdaptiveAggregateMatchesWide(t, xs, false)
+		requireAggregateSumOracle(t, xs)
+		requireAggregateAvgOracle(t, xs)
+	}
+}
+
 func TestSumPairMatchesAdd(t *testing.T) {
 	t.Parallel()
 	maxValue, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 0)
