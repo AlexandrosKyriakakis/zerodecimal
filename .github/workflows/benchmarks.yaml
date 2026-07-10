@@ -85,7 +85,9 @@ jobs:
             benchmarks/comparison-dark.svg
 
       - name: Upload raw and published benchmark evidence
-        if: always() && steps.changes.outputs.run == 'true' && steps.collection.outcome == 'success' && steps.verification.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+        # Preserve a successful collection for diagnosis/recovery even when
+        # the independent chart/provenance verification step fails.
+        if: always() && steps.changes.outputs.run == 'true' && steps.collection.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: zerodecimal-benchmarks-${{ github.event.pull_request.head.sha }}

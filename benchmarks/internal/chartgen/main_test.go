@@ -274,8 +274,13 @@ func TestPublishedInputHashes(t *testing.T) {
 			t.Errorf("restore working directory: %v", err)
 		}
 	}()
+	sourceHash := strings.Repeat("d", 64)
 	for _, file := range publishedInputs {
-		if err := os.WriteFile(file, []byte(file), 0o600); err != nil {
+		data := []byte(file)
+		if file == "bench-all.txt" {
+			data = []byte("benchmark-source-sha256: " + sourceHash + "\n" + file)
+		}
+		if err := os.WriteFile(file, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -284,7 +289,7 @@ func TestPublishedInputHashes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var m collectionMetadata
+	m := collectionMetadata{sourceHash: sourceHash}
 	if err := bindPublishedInputs(&m, "bench-all.txt"); err != nil {
 		t.Fatal(err)
 	}
@@ -296,5 +301,56 @@ func TestPublishedInputHashes(t *testing.T) {
 	}
 	if err := validatePublishedInputs(m); err == nil {
 		t.Fatal("expected changed artifact hash to fail validation")
+	}
+	if err := os.WriteFile(publishedInputs[0], []byte(publishedInputs[0]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate internally consistent artifact hashes around a bench-all file
+	// whose embedded source identity disagrees with the provenance identity.
+	otherSourceHash := strings.Repeat("e", 64)
+	if err := os.WriteFile("bench-all.txt", []byte("benchmark-source-sha256: "+otherSourceHash+"\nbench-all.txt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	benchAllHash, err := fileSHA256("bench-all.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.rawSHA256 = benchAllHash
+	m.artifactSHA256["bench-all.txt"] = benchAllHash
+	err = validatePublishedInputs(m)
+	if err == nil || !strings.Contains(err.Error(), "embedded benchmark source hash") {
+		t.Fatalf("error = %v, want embedded source/provenance mismatch", err)
+	}
+}
+
+func TestEmbeddedBenchmarkSourceHashRequiresFirstLine(t *testing.T) {
+	want := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name    string
+		data    string
+		wantErr bool
+	}{
+		{name: "valid", data: "benchmark-source-sha256: " + want + "\ngoos: darwin\n"},
+		{name: "valid_crlf", data: "benchmark-source-sha256: " + want + "\r\ngoos: windows\r\n"},
+		{name: "missing", data: "goos: darwin\n", wantErr: true},
+		{name: "not_first", data: "goos: darwin\nbenchmark-source-sha256: " + want + "\n", wantErr: true},
+		{name: "invalid", data: "benchmark-source-sha256: bad\n", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := embeddedBenchmarkSourceHash("bench-all.txt", []byte(tc.data))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("hash = %q, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("hash = %q, want %q", got, want)
+			}
+		})
 	}
 }

@@ -253,8 +253,11 @@ func publicationAuthorized() bool {
 
 func loadCollectionMetadata(rawFile, benchTime string, count int, revision, sourceHash, worktree, command, benchstatVersion string) (collectionMetadata, error) {
 	var m collectionMetadata
-	var rawSourceHash string
 	data, err := os.ReadFile(rawFile)
+	if err != nil {
+		return m, err
+	}
+	rawSourceHash, err := embeddedBenchmarkSourceHash(rawFile, data)
 	if err != nil {
 		return m, err
 	}
@@ -264,8 +267,6 @@ func loadCollectionMetadata(rawFile, benchTime string, count int, revision, sour
 			continue
 		}
 		switch key {
-		case "benchmark-source-sha256":
-			rawSourceHash = value
 		case "goos":
 			m.goos = value
 		case "goarch":
@@ -360,8 +361,26 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return dataSHA256(data), nil
+}
+
+func dataSHA256(data []byte) string {
 	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
+}
+
+func embeddedBenchmarkSourceHash(name string, data []byte) (string, error) {
+	firstLine, _, _ := strings.Cut(string(data), "\n")
+	firstLine = strings.TrimSuffix(firstLine, "\r")
+	const prefix = "benchmark-source-sha256: "
+	if !strings.HasPrefix(firstLine, prefix) {
+		return "", fmt.Errorf("%s: first line does not contain benchmark source hash", name)
+	}
+	sourceHash := strings.TrimPrefix(firstLine, prefix)
+	if err := validateSHA256("embedded benchmark source", sourceHash); err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	return sourceHash, nil
 }
 
 func bindPublishedInputs(m *collectionMetadata, rawFile string) error {
@@ -396,12 +415,22 @@ func validatePublishedInputs(m collectionMetadata) error {
 		if !ok {
 			return fmt.Errorf("provenance has no hash for %s", file)
 		}
-		got, err := fileSHA256(file)
+		data, err := os.ReadFile(file)
 		if err != nil {
 			return err
 		}
+		got := dataSHA256(data)
 		if got != want {
 			return fmt.Errorf("%s hash %s does not match provenance %s", file, got, want)
+		}
+		if file == "bench-all.txt" {
+			embeddedSourceHash, err := embeddedBenchmarkSourceHash(file, data)
+			if err != nil {
+				return err
+			}
+			if embeddedSourceHash != m.sourceHash {
+				return fmt.Errorf("%s embedded benchmark source hash %s does not match provenance %s", file, embeddedSourceHash, m.sourceHash)
+			}
 		}
 	}
 	return nil

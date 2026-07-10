@@ -138,6 +138,11 @@ func TestParseCanonicalRescueBoundaries(t *testing.T) {
 			wantErr: ErrOverflow,
 		},
 		{
+			name:    "scale_up_exact_first_peel_overflow",
+			in:      "35000000000000000001e38",
+			wantErr: ErrOverflow,
+		},
+		{
 			name:    "canonical_precision_twenty_after_trim",
 			in:      "1." + strings.Repeat("0", 19) + "10",
 			wantErr: ErrPrecOutOfRange,
@@ -173,6 +178,29 @@ func TestParseCanonicalRescueBoundaries(t *testing.T) {
 				t.Fatalf("ParseBytes(%q) error = %v, want %v", tc.in, err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestScaleUpExactPeelOverflow pins the first checked multiplication in
+// scaleUpExact's two-step 10^38 scaling path. The coefficient fits u128, but
+// multiplying it by the peeled 10^MaxPrec factor already exceeds 2^128-1;
+// the public parser must expose the same ErrOverflow classification.
+func TestScaleUpExactPeelOverflow(t *testing.T) {
+	base := RequireFromString("35000000000000000001")
+	got, err := scaleUpExact(base.coef, 2*int(MaxPrec))
+	if !errors.Is(err, ErrOverflow) {
+		t.Fatalf("scaleUpExact error = %v, want %v", err, ErrOverflow)
+	}
+	if !got.isZero() {
+		t.Fatalf("scaleUpExact result = %+v, want zero on error", got)
+	}
+
+	const literal = "35000000000000000001e38"
+	if gotDecimal, parseErr := NewFromString(literal); !errors.Is(parseErr, ErrOverflow) || gotDecimal != (Decimal{}) {
+		t.Fatalf("NewFromString(%q) = (%+v, %v), want (zero, %v)", literal, gotDecimal, parseErr, ErrOverflow)
+	}
+	if gotDecimal, parseErr := ParseBytes([]byte(literal)); !errors.Is(parseErr, ErrOverflow) || gotDecimal != (Decimal{}) {
+		t.Fatalf("ParseBytes(%q) = (%+v, %v), want (zero, %v)", literal, gotDecimal, parseErr, ErrOverflow)
 	}
 }
 

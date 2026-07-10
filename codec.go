@@ -311,39 +311,17 @@ func jsonHexRune(src []byte, off int) (rune, bool) {
 }
 
 // appendJSONRune writes r's UTF-8 encoding to dst. jsonHexRune and the
-// surrogate checks guarantee r is a Unicode scalar value.
+// surrogate checks guarantee r is a Unicode scalar value; RuneLen retains a
+// defensive invalid-rune check so this helper remains total for future callers.
 func appendJSONRune(dst *[maxParseLen]byte, n int, r rune) (int, bool) {
-	size := 1
-	switch {
-	case r > 0xFFFF:
-		size = 4
-	case r > 0x7FF:
-		size = 3
-	case r > 0x7F:
-		size = 2
+	size := utf8.RuneLen(r)
+	if size < 0 {
+		return n, false
 	}
 	if size > len(dst)-n {
 		return n, false
 	}
-	// Each arm's size classification proves that every narrowed rune chunk is
-	// within one byte; the masks retain exactly the UTF-8 payload bits.
-	//nolint:gosec // G115 cannot infer the size switch's narrowing invariants
-	switch size {
-	case 1:
-		dst[n] = byte(r)
-	case 2:
-		dst[n] = 0xC0 | byte(r>>6)
-		dst[n+1] = 0x80 | byte(r)&0x3F
-	case 3:
-		dst[n] = 0xE0 | byte(r>>12)
-		dst[n+1] = 0x80 | byte(r>>6)&0x3F
-		dst[n+2] = 0x80 | byte(r)&0x3F
-	case 4:
-		dst[n] = 0xF0 | byte(r>>18)
-		dst[n+1] = 0x80 | byte(r>>12)&0x3F
-		dst[n+2] = 0x80 | byte(r>>6)&0x3F
-		dst[n+3] = 0x80 | byte(r)&0x3F
-	}
+	utf8.EncodeRune(dst[n:n+size], r)
 	return n + size, true
 }
 

@@ -56,17 +56,19 @@ func TestSourceHashSurvivesHistoryRewrite(t *testing.T) {
 	}
 }
 
-func TestSourceHashIncludesPathAndMode(t *testing.T) {
+func TestSourceHashIncludesPathAndIndexModeWithFilemodeDisabled(t *testing.T) {
 	repo := t.TempDir()
 	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "config", "core.filemode", "false")
 	writeFile(t, repo, "one.go", "package one\n")
 	runGit(t, repo, "add", "one.go")
 	original := mustSourceHash(t, repo)
 
-	if err := os.Chmod(filepath.Join(repo, "one.go"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, repo, "add", "one.go")
+	// Change the tracked mode explicitly instead of relying on chmod detection.
+	// Git ignores worktree executable-bit changes when core.filemode=false, as
+	// it does on common Windows-like checkouts, but the index mode remains part
+	// of the portable source identity.
+	runGit(t, repo, "update-index", "--chmod=+x", "one.go")
 	modeChanged := mustSourceHash(t, repo)
 	if modeChanged == original {
 		t.Fatal("tracked executable mode change did not change source hash")

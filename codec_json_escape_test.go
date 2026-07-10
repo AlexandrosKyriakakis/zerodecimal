@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,12 +134,38 @@ func TestUnmarshalJSONValidSurrogatePairThroughPublicDecoder(t *testing.T) {
 	require.ErrorIs(t, d.UnmarshalJSON([]byte(`"1\uD83D\uDE00"`)), ErrInvalidFormat)
 	assert.Equal(t, marker, d)
 
-	// Leave only three bytes in the semantic-input buffer before the pair. The
-	// ErrMaxStrLen result is observable proof through the public API that the
-	// pair was accepted as one four-byte scalar before decimal parsing.
+	// Leave only three bytes in the semantic-input buffer before the pair. This
+	// proves the decoder accepts the surrogate pair and then rejects it at the
+	// capacity boundary; the exact-fit test below separately proves its decoded
+	// width and bytes.
 	tooLong := []byte(`"` + strings.Repeat("0", maxParseLen-3) + `\uD83D\uDE00"`)
 	d = marker
 	require.ErrorIs(t, d.UnmarshalJSON(tooLong), ErrMaxStrLen)
+	assert.Equal(t, marker, d)
+}
+
+func TestUnmarshalJSONSurrogatePairExactDecodedFit(t *testing.T) {
+	// Leave exactly UTFMax bytes in the semantic-input buffer. This catches an
+	// off-by-one capacity rejection at the boundary and, unlike an error-only
+	// public assertion, verifies that the surrogate pair becomes the exact
+	// four-byte UTF-8 encoding rather than a shorter replacement or truncation.
+	body := []byte(strings.Repeat("0", maxParseLen-utf8.UTFMax) + `\uD83D\uDE00`)
+	var decoded [maxParseLen]byte
+	n, err := unescapeJSONString(body, &decoded)
+	require.NoError(t, err)
+	require.Equal(t, maxParseLen, n)
+	assert.Equal(t, []byte{0xf0, 0x9f, 0x98, 0x80}, decoded[n-utf8.UTFMax:n])
+
+	// The exact-fit decode must reach decimal grammar validation. Returning
+	// ErrMaxStrLen here would mean the valid four-byte scalar was rejected at
+	// the buffer boundary instead.
+	data := make([]byte, 0, len(body)+2)
+	data = append(data, '"')
+	data = append(data, body...)
+	data = append(data, '"')
+	marker := RequireFromString("987.65")
+	d := marker
+	require.ErrorIs(t, d.UnmarshalJSON(data), ErrInvalidFormat)
 	assert.Equal(t, marker, d)
 }
 

@@ -27,7 +27,7 @@ require-clean:
 	@test "$(BENCH_SOURCE_WORKTREE_CAPTURED)" = clean || { echo "refusing benchmark publication from a dirty worktree" >&2; exit 1; }
 
 verify:
-	go test -run='^Test(ComparativeBenchmarkFixtures|PublishCannotRunStandaloneOrRebindExistingArtifacts|PrivateCollect.*)$$' -count=1 .
+	go test -run='^Test(ComparativeBenchmarkFixtures|PublishCannotRunStandaloneOrRebindExistingArtifacts|PrivateCollect.*|FuzzWorkflow.*|BenchmarkWorkflow.*)$$' -count=1 .
 	go test ./internal/benchfilter ./internal/chartgen ./internal/provenance
 
 # Quick full sweep: every lib/op/shape once, mainly to smoke out API misuse.

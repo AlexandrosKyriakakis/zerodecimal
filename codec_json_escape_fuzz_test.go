@@ -5,6 +5,7 @@ package zerodecimal
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -89,6 +90,7 @@ func FuzzJSONQuotedGarbage(f *testing.F) {
 		[]byte(`"\u002d1\u0045\u002b2"`),
 		[]byte(`"1\uD800"`),
 		[]byte(`"1\uD83D\uDE00"`),
+		[]byte(`"` + strings.Repeat("0", maxParseLen-utf8.UTFMax) + `\uD83D\uDE00"`),
 		[]byte(`"1\x32"`),
 		[]byte(`"1\`),
 		[]byte("\"1\n2\""),

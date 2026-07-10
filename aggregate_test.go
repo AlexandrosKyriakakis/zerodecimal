@@ -160,6 +160,27 @@ func aggregatePermutations(xs []Decimal, visit func([]Decimal)) {
 	permute(0)
 }
 
+func requireAdaptiveAggregateMatchesWide(t *testing.T, xs []Decimal, wantNarrow bool) {
+	t.Helper()
+	first, rest := xs[0], xs[1:]
+	for first.coef.isZero() && len(rest) > 0 {
+		first, rest = rest[0], rest[1:]
+	}
+	pos, neg, state := accumulateAggregateAdaptive(first, rest)
+	narrow := state < 0
+	require.Equal(t, wantNarrow, narrow)
+	var gotWide aggregateAccum
+	wantWide := accumulateAggregate(xs[0], xs[1:])
+	if !narrow {
+		aggregateFinishWide(&gotWide, pos, neg, first.prec, rest[state:])
+		require.Equal(t, wantWide, gotWide, "promoted accumulator must equal a from-scratch wide accumulation")
+		return
+	}
+	coef, wantNeg := wantWide.signedMagnitude()
+	require.True(t, coef.isZeroUpper())
+	require.Equal(t, newDecimal(coef.lo128(), wantNeg, wantWide.prec), newDecimal(pos, state == -2, first.prec))
+}
+
 func TestAggregatePermutationAndBoundaries(t *testing.T) {
 	t.Parallel()
 	maxValue, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 0)
@@ -293,53 +314,76 @@ func TestAggregateSamePrecisionFastPathDifferential(t *testing.T) {
 	maxScale2, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 2)
 	require.NoError(t, err)
 	maxScale2Neg := maxScale2.Neg()
+	maxValue, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 0)
+	require.NoError(t, err)
+	minQuantum, err := NewFromHiLo(false, 0, 1, MaxPrec)
+	require.NoError(t, err)
 
 	cases := []struct {
-		name string
-		xs   []Decimal
-		fast bool
+		name   string
+		xs     []Decimal
+		narrow bool
 	}{
 		{
-			name: "positive_money",
-			xs:   []Decimal{MustNew(123456, -2), MustNew(654321, -2)},
-			fast: true,
+			name:   "positive_money",
+			xs:     []Decimal{MustNew(123456, -2), MustNew(654321, -2)},
+			narrow: true,
 		},
 		{
-			name: "mixed_sign_with_canonical_zero",
-			xs:   []Decimal{Zero, MustNew(50025, -2), MustNew(-12525, -2), Zero},
-			fast: true,
+			name:   "mixed_sign_with_canonical_zero",
+			xs:     []Decimal{Zero, MustNew(50025, -2), MustNew(-12525, -2), Zero},
+			narrow: true,
 		},
 		{
-			name: "negative_total",
-			xs:   []Decimal{MustNew(-50025, -2), MustNew(12525, -2)},
-			fast: true,
+			name:   "all_canonical_zero",
+			xs:     []Decimal{Zero, Zero, Zero},
+			narrow: true,
 		},
 		{
-			name: "positive_subtotal_overflow_falls_back",
-			xs:   []Decimal{maxScale2, maxScale2, maxScale2Neg},
-			fast: false,
+			name:   "negative_total",
+			xs:     []Decimal{MustNew(-50025, -2), MustNew(12525, -2)},
+			narrow: true,
 		},
 		{
-			name: "negative_subtotal_overflow_falls_back",
-			xs:   []Decimal{maxScale2Neg, maxScale2Neg, maxScale2},
-			fast: false,
+			name:   "positive_subtotal_overflow_promotes",
+			xs:     []Decimal{maxScale2, maxScale2, maxScale2Neg},
+			narrow: false,
 		},
 		{
-			name: "final_overflow_falls_back",
-			xs:   []Decimal{maxScale2, maxScale2},
-			fast: false,
+			name:   "negative_subtotal_overflow_promotes",
+			xs:     []Decimal{maxScale2Neg, maxScale2Neg, maxScale2},
+			narrow: false,
 		},
 		{
-			name: "mixed_precision_falls_back",
-			xs:   []Decimal{MustNew(100, -2), MustNew(20, -1)},
-			fast: false,
+			name:   "final_overflow_promotes",
+			xs:     []Decimal{maxScale2, maxScale2},
+			narrow: false,
+		},
+		{
+			name:   "lower_precision_mismatch_promotes",
+			xs:     []Decimal{MustNew(100, -2), MustNew(20, -1)},
+			narrow: false,
+		},
+		{
+			name:   "late_higher_precision_promotes",
+			xs:     []Decimal{MustNew(100, -2), MustNew(-25, -2), MustNew(5000, -4)},
+			narrow: false,
+		},
+		{
+			name:   "multiple_precision_raises_after_promotion",
+			xs:     []Decimal{MustNew(100, -1), MustNew(200, -2), MustNew(-300, -3), MustNew(4, -int32(MaxPrec))},
+			narrow: false,
+		},
+		{
+			name:   "zero_then_carry_precision_raise_and_cancellation",
+			xs:     []Decimal{Zero, maxValue, maxValue, maxValue.Neg(), minQuantum, maxValue.Neg()},
+			narrow: false,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ok := aggregateSamePrecision128(tc.xs[0], tc.xs[1:])
-			require.Equal(t, tc.fast, ok)
+			requireAdaptiveAggregateMatchesWide(t, tc.xs, tc.narrow)
 			requireAggregateSumOracle(t, tc.xs)
 			requireAggregateAvgOracle(t, tc.xs)
 			requireAggregateExactOracle(t, tc.xs)
@@ -364,14 +408,73 @@ func TestAggregateSamePrecisionRandomDifferential(t *testing.T) {
 			require.NoError(t, err)
 			xs[i] = d
 		}
-		_, ok := aggregateSamePrecision128(xs[0], xs[1:])
-		require.True(t, ok, "bounded same-precision subtotals must take the fast path")
+		requireAdaptiveAggregateMatchesWide(t, xs, true)
 		requireAggregateSumOracle(t, xs)
 		requireAggregateAvgOracle(t, xs)
 		requireAggregateExactOracle(t, xs)
 		places := uint8(rng.Uint64N(uint64(MaxPrec) + 1))
 		mode := RoundingMode(rng.Uint64N(uint64(TowardNegative) + 1))
 		requireAggregateRoundOracle(t, xs, places, mode)
+	}
+}
+
+func TestAggregateLateMismatchRandomDifferential(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(0x0db8_dbd3_9b6b_5401, 0x431d_beef_19ac_8072))
+	for iter := 0; iter < 1_000; iter++ {
+		prec := uint8(rng.Uint64N(uint64(MaxPrec) + 1))
+		n := 3 + int(rng.Uint64N(30))
+		xs := make([]Decimal, n)
+		for i := range xs[:n-1] {
+			d, err := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64N(1<<40), rng.Uint64()|1, prec)
+			require.NoError(t, err)
+			xs[i] = d
+		}
+		mismatchPrec := prec + 1
+		if prec == MaxPrec {
+			mismatchPrec = prec - 1
+		}
+		last, err := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64(), rng.Uint64()|1, mismatchPrec)
+		require.NoError(t, err)
+		xs[n-1] = last
+
+		requireAdaptiveAggregateMatchesWide(t, xs, false)
+		requireAggregateSumOracle(t, xs)
+		requireAggregateAvgOracle(t, xs)
+	}
+}
+
+func TestSumPairMatchesAdd(t *testing.T) {
+	t.Parallel()
+	maxValue, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 0)
+	require.NoError(t, err)
+	cases := [][2]Decimal{
+		{MustNew(123456, -2), MustNew(654321, -2)},
+		{MustNew(123456, -2), MustNew(-123456, -2)},
+		{MustNew(100, -2), MustNew(20, -1)},
+		{maxValue, maxValue},
+		{maxValue, maxValue.Neg()},
+		{Decimal{}, MustNew(-1, -int32(MaxPrec))},
+	}
+	for _, pair := range cases {
+		want, wantErr := pair[0].Add(pair[1])
+		got, gotErr := Sum(pair[0], pair[1])
+		require.Equal(t, wantErr, gotErr)
+		require.Equal(t, want, got)
+		requireAggregateSumOracle(t, pair[:])
+		requireAggregateAvgOracle(t, pair[:])
+	}
+
+	rng := rand.New(rand.NewPCG(0xe89f_b24a_3724_f80d, 0x9a26_1de7_c041_55b3))
+	for iter := 0; iter < 10_000; iter++ {
+		a, newErr := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64(), rng.Uint64(), uint8(rng.Uint64N(uint64(MaxPrec)+1)))
+		require.NoError(t, newErr)
+		b, newErr := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64(), rng.Uint64(), uint8(rng.Uint64N(uint64(MaxPrec)+1)))
+		require.NoError(t, newErr)
+		want, wantErr := a.Add(b)
+		got, gotErr := Sum(a, b)
+		require.Equal(t, wantErr, gotErr)
+		require.Equal(t, want, got)
 	}
 }
 
