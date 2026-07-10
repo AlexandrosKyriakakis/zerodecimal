@@ -11,8 +11,8 @@ latency-critical Go.
   `testing.AllocsPerRun` gates in the default test suite
   ([alloc_test.go](alloc_test.go)).
 - **Lower pairwise geomean latency in the committed suite.** The reproducibly
-  configured hosted-runner cache-off comparison reports 36.35% lower sec/op
-  than jokruger/dec128, 46.87% lower than quagmt/udecimal, and 92.48% lower than
+  configured hosted-runner cache-off comparison reports 36.12% lower sec/op
+  than jokruger/dec128, 46.59% lower than quagmt/udecimal, and 92.43% lower than
   shopspring/decimal across each pair's common successful native-API rows
   ([benchmarks/bench-vs-\*.txt](benchmarks/)). These are microbenchmark-suite
   results, not production-throughput guarantees.
@@ -266,7 +266,7 @@ NULL without invoking `Value`.
   <img alt="Pairwise native-API geomean latency normalized to zerodecimal at 1.0x; shorter is faster" src="benchmarks/comparison-light.svg">
 </picture>
 
-> Collected from clean source commit `e716219775fa5a5c01110cafb75653081d806943`
+> Collected from clean source commit `999387fef7bfd9880167e0220cc1fb21b1fb39c6`
 > on darwin/arm64, Apple M1 (Virtual), Go 1.26.5, cache off, 100 ms × 10
 > samples. Libraries ran in a fixed order, so treat this as a transparent
 > microbenchmark snapshot rather than production-performance proof.
@@ -287,53 +287,54 @@ from those files with `make -C benchmarks chart`; its ratios compare each
 competitor only with the rows that both libraries successfully implement.
 
 Against jokruger/dec128 — the nearest pairwise geomean competitor in this run
-and also a 128-bit fixed-point design — the artifact reports 80 faster rows,
-7 statistical ties, and 1 slower row across 88 common op × shape rows. The
-slower row is `AppendText/small_int` at +3.93%:
+and also a 128-bit fixed-point design — the artifact reports 77 faster rows,
+8 statistical ties, and 3 slower rows across 88 common op × shape rows. The
+slower rows are `Mul/large` at +0.45%, `UnmarshalJSON/typical_price` at
++27.09%, and `SQLValue/small_int` at +20.36%:
 
 ```
                                 │    dec128     │             zerodecimal              │
                                 │    sec/op     │    sec/op     vs base                │
-Add/typical_price-3                6.285n ± 17%   2.439n ±  5%  -61.19% (p=0.000 n=10)
-Mul/typical_price-3                3.842n ±  4%   2.395n ±  4%  -37.66% (p=0.000 n=10)
-Div/typical_price-3                9.114n ±  1%   6.995n ±  1%  -23.25% (p=0.000 n=10)
-QuoRem/typical_price-3             7.560n ±  6%   3.194n ±  5%  -57.75% (p=0.000 n=10)
-Cmp/typical_price-3                4.108n ±  2%   2.113n ±  7%  -48.56% (p=0.000 n=10)
-Parse/typical_price-3             11.000n ±  2%   9.562n ±  3%  -13.07% (p=0.000 n=10)
-String/typical_price-3             29.49n ±  2%   24.14n ±  0%  -18.16% (p=0.000 n=10)
-geomean                            12.64n         8.047n        -36.35%
+Add/typical_price-3                6.172n ±  1%   2.389n ±  3%  -61.30% (p=0.000 n=10)
+Mul/typical_price-3                4.264n ± 12%   2.559n ±  2%  -39.99% (p=0.000 n=10)
+Div/typical_price-3               10.040n ±  2%   7.906n ± 11%  -21.25% (p=0.001 n=10)
+QuoRem/typical_price-3             8.260n ±  2%   3.475n ±  2%  -57.93% (p=0.000 n=10)
+Cmp/typical_price-3                4.414n ±  2%   2.341n ±  3%  -46.98% (p=0.000 n=10)
+Parse/typical_price-3             10.910n ±  1%   9.319n ±  3%  -14.59% (p=0.000 n=10)
+String/typical_price-3             28.50n ±  5%   23.40n ±  2%  -17.91% (p=0.000 n=10)
+geomean                            14.30n         9.136n        -36.12%
 ```
 
-Against quagmt/udecimal, the artifact reports 90 faster rows across 90 common
-rows:
+Against quagmt/udecimal, the artifact reports 87 faster rows, 3 statistical
+ties, and no slower rows across 90 common rows:
 
 ```
                                 │   udecimal    │             zerodecimal              │
                                 │    sec/op     │    sec/op     vs base                │
-Add/typical_price-3                5.222n ±  3%   2.439n ±  5%  -53.29% (p=0.000 n=10)
-Mul/typical_price-3                6.311n ±  1%   2.395n ±  4%  -62.05% (p=0.000 n=10)
-Div/typical_price-3               13.065n ±  1%   6.995n ±  1%  -46.46% (p=0.000 n=10)
-QuoRem/typical_price-3            13.500n ±  2%   3.194n ±  5%  -76.34% (p=0.000 n=10)
-Cmp/typical_price-3                5.348n ±  0%   2.113n ±  7%  -60.49% (p=0.000 n=10)
-Parse/typical_price-3             16.160n ±  1%   9.562n ±  3%  -40.83% (p=0.000 n=10)
-String/typical_price-3             36.79n ±  7%   24.14n ±  0%  -34.39% (p=0.000 n=10)
-geomean                            15.14n         8.041n        -46.87%
+Add/typical_price-3                5.132n ±  1%   2.389n ±  3%  -53.46% (p=0.000 n=10)
+Mul/typical_price-3                7.016n ± 25%   2.559n ±  2%  -63.53% (p=0.000 n=10)
+Div/typical_price-3               14.460n ±  2%   7.906n ± 11%  -45.33% (p=0.000 n=10)
+QuoRem/typical_price-3            15.440n ±  6%   3.475n ±  2%  -77.49% (p=0.000 n=10)
+Cmp/typical_price-3                5.893n ±  1%   2.341n ±  3%  -60.28% (p=0.000 n=10)
+Parse/typical_price-3             15.765n ±  2%   9.319n ±  3%  -40.89% (p=0.000 n=10)
+String/typical_price-3             35.82n ±  5%   23.40n ±  2%  -34.69% (p=0.000 n=10)
+geomean                            17.09n         9.126n        -46.59%
 ```
 
-Against shopspring/decimal, the artifact reports 85 faster rows across 85
-common rows:
+Against shopspring/decimal, the artifact reports 84 faster rows, 1 statistical
+tie, and no slower rows across 85 common rows:
 
 ```
                                 │   shopspring   │             zerodecimal              │
                                 │     sec/op     │    sec/op     vs base                │
-Add/typical_price-3                50.430n ±  6%   2.439n ±  5%  -95.16% (p=0.000 n=10)
-Mul/typical_price-3                46.020n ±  1%   2.395n ±  4%  -94.80% (p=0.000 n=10)
-Div/typical_price-3               229.900n ±  8%   6.995n ±  1%  -96.96% (p=0.000 n=10)
-QuoRem/typical_price-3            121.200n ±  1%   3.194n ±  5%  -97.36% (p=0.000 n=10)
-Cmp/typical_price-3                 4.431n ±  1%   2.113n ±  7%  -52.31% (p=0.000 n=10)
-Parse/typical_price-3              88.040n ±  9%   9.562n ±  3%  -89.14% (p=0.000 n=10)
-String/typical_price-3             121.85n ±  3%   24.14n ±  0%  -80.19% (p=0.000 n=10)
-geomean                             102.3n         7.695n        -92.48%
+Add/typical_price-3                51.370n ±  5%   2.389n ±  3%  -95.35% (p=0.000 n=10)
+Mul/typical_price-3                51.385n ±  2%   2.559n ±  2%  -95.02% (p=0.000 n=10)
+Div/typical_price-3               249.700n ±  2%   7.906n ± 11%  -96.83% (p=0.000 n=10)
+QuoRem/typical_price-3            135.450n ±  1%   3.475n ±  2%  -97.43% (p=0.000 n=10)
+Cmp/typical_price-3                 4.742n ±  1%   2.341n ±  3%  -50.64% (p=0.000 n=10)
+Parse/typical_price-3              83.925n ±  3%   9.319n ±  3%  -88.90% (p=0.000 n=10)
+String/typical_price-3             115.80n ±  4%   23.40n ±  2%  -79.80% (p=0.000 n=10)
+geomean                             113.8n         8.614n        -92.43%
 ```
 
 The full reports include B/op and allocs/op for every row. Do not infer a
@@ -373,22 +374,23 @@ inlining budget.
 The committed [benchmarks/bench-pgo.txt](benchmarks/bench-pgo.txt) is a
 reproducibly configured hosted-runner experiment, but deliberately in-sample:
 the synthetic benchmark binary is rebuilt against its own profile. It reports
-a 7.80% lower sec/op geomean, with 79 faster rows, 10 statistical ties, and 1
-slower row (`Parse/typical_price` at +1.08%).
+a 1.84% lower sec/op geomean, with 32 faster rows, 40 statistical ties, and 18
+slower rows. The slower rows are concentrated in parser, string, and binary
+codec shapes; the largest is `MarshalBinary/near_max` at +17.29%.
 This illustrates compiler opportunity in the harness; it does not predict the
 benefit of an application profile:
 
 ```
-                                │    default    │                 pgo                  │
-                                │    sec/op     │    sec/op     vs base                │
-Add/typical_price-3                2.276n ±  3%   2.053n ±  0%   -9.80% (p=0.000 n=10)
-Sub/typical_price-3                2.693n ±  6%   2.203n ±  1%  -18.21% (p=0.000 n=10)
-Mul/large-3                        4.507n ±  4%   3.681n ±  6%  -18.34% (p=0.000 n=10)
-Div/typical_price-3                6.974n ±  0%   5.344n ±  0%  -23.38% (p=0.000 n=10)
-QuoRem/typical_price-3             3.181n ±  2%   2.767n ±  6%  -13.01% (p=0.000 n=10)
-RoundBank/typical_price-3          3.154n ±  5%   2.855n ±  3%   -9.48% (p=0.000 n=10)
-Cmp/typical_price-3                2.224n ±  1%   2.050n ±  0%   -7.78% (p=0.000 n=10)
-geomean                            7.964n         7.343n         -7.80%
+                                │    default    │                  pgo                  │
+                                │    sec/op     │    sec/op      vs base                │
+Add/typical_price-3                2.328n ±  4%    2.408n ± 12%        ~ (p=0.618 n=10)
+Sub/typical_price-3                2.917n ±  4%    2.619n ±  5%  -10.23% (p=0.000 n=10)
+Mul/large-3                        4.713n ±  5%    4.121n ±  5%  -12.56% (p=0.000 n=10)
+Div/typical_price-3                7.836n ±  9%    6.110n ±  8%  -22.03% (p=0.000 n=10)
+QuoRem/typical_price-3             3.599n ± 13%    3.404n ±  6%   -5.42% (p=0.009 n=10)
+RoundBank/typical_price-3          3.544n ±  8%    3.053n ±  2%  -13.87% (p=0.000 n=10)
+Cmp/typical_price-3                2.277n ±  4%    2.290n ±  5%        ~ (p=0.853 n=10)
+geomean                            8.765n          8.603n         -1.84%
 ```
 
 On amd64 deployments also consider `GOAMD64=v3`: the BMI2/ADX instructions
