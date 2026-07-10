@@ -30,5 +30,7 @@ jobs:
           go-version: '1.26.5'
       - name: Fuzz-tag regression tests
         run: go test -tags=fuzz -run '^Test' -count=1 ./...
+      - name: Fuzz runner regression tests
+        run: sh scripts/fuzz-all_test.sh
       - name: Fuzz targets
         run: make fuzz-all 20
