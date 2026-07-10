@@ -349,6 +349,9 @@ func TestExactRandomAgainstBigRat(t *testing.T) {
 }
 
 func TestExactArithmeticAllocs(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
 	// Keep these serial: AllocsPerRun temporarily changes GOMAXPROCS.
 	a := RequireFromString("123456789.123456789")
 	b := RequireFromString("7.000000001")
@@ -434,6 +437,8 @@ func checkDirectRoundOracle(
 	if wantCoef.BitLen() > 128 {
 		require.ErrorIsf(t, err, ErrOverflow,
 			"%s overflow a=%+v b=%+v places=%d mode=%d want=%s", op, a, b, places, mode, wantCoef)
+		require.Equalf(t, Decimal{}, got,
+			"%s overflow must return the zero Decimal: a=%+v b=%+v places=%d mode=%d", op, a, b, places, mode)
 		return
 	}
 	require.NoErrorf(t, err, "%s a=%+v b=%+v places=%d mode=%d", op, a, b, places, mode)

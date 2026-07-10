@@ -213,21 +213,31 @@ func forcedGeneral(s string, trunc bool) (Decimal, error) {
 // parseGeneral, all-zero long fractions, and dots straight after a
 // leading-zero run.
 var parseAgreeSeeds = []string{
-	"1234567890123456",                            // 16 digits: shortest run-path input
-	"1234567890123456789",                         // 19 digits: the one-limb edge
-	"0.1234567890123456789",                       // zero integer limb, 19-digit fraction
-	"0.0000000000000001",                          // zero limb behind a near-zero fraction
-	"0.000000000000000000",                        // all-zero window collapses to canonical zero
-	".0000000000000005",                           // dot with no digit before it, in the window
-	"1.50000000000000000",                         // one-limb trim chain down to "1.5"
-	"1234567890123456e2",                          // exponent behind a 16-digit run
-	"12345678901234567.",                          // trailing dot in the window
-	"123456789012345..5",                          // second dot stops the window's fraction run
-	"0001234567890123456.7",                       // zero skip into the run path
-	"12345678901234567890.",                       // trailing dot past the one-limb window
-	"12345678901234567890",                        // 20 digits: the long path's two-limb fold
-	"123456789012345678901",                       // 21 digits: shortest long-path integer
-	"12345678901234567890123456789012345678",      // 38 digits
+	"1e2",                                    // shortest scientific fast-path success
+	"2.5E8",                                  // fractional mantissa, positive exponent
+	"1.5e-7",                                 // fractional mantissa, negative exponent
+	"1.000e-17",                              // trailing mantissa zeros rescue precision
+	"-000.500e+2",                            // sign, leading zeros, and canonical trim
+	"000e999999999",                          // zero validates a saturated exponent
+	"1.e2",                                   // dot requires a fractional digit
+	"e5",                                     // exponent requires a mantissa
+	"1e+",                                    // exponent sign requires digits
+	"1e2x",                                   // exponent validates its complete tail
+	"1234567890123456",                       // 16 digits: shortest run-path input
+	"1234567890123456789",                    // 19 digits: the one-limb edge
+	"0.1234567890123456789",                  // zero integer limb, 19-digit fraction
+	"0.0000000000000001",                     // zero limb behind a near-zero fraction
+	"0.000000000000000000",                   // all-zero window collapses to canonical zero
+	".0000000000000005",                      // dot with no digit before it, in the window
+	"1.50000000000000000",                    // one-limb trim chain down to "1.5"
+	"1234567890123456e2",                     // exponent behind a 16-digit run
+	"12345678901234567.",                     // trailing dot in the window
+	"123456789012345..5",                     // second dot stops the window's fraction run
+	"0001234567890123456.7",                  // zero skip into the run path
+	"12345678901234567890.",                  // trailing dot past the one-limb window
+	"12345678901234567890",                   // 20 digits: the long path's two-limb fold
+	"123456789012345678901",                  // 21 digits: shortest long-path integer
+	"12345678901234567890123456789012345678", // 38 digits
 	"123456789012345678901234567890123456789",     // 39 digits, in range
 	"340282366920938463463374607431768211455",     // 2^128-1 exactly
 	"340282366920938463463374607431768211455.0",   // fold overflow that must still trim and parse
@@ -265,6 +275,36 @@ func TestParsePathsAgreeWithGeneral(t *testing.T) {
 			require.Equal(t, wantErr, gotBErr, "[]byte error vs parseGeneral: %q trunc=%v", in, trunc)
 			require.Equal(t, want, gotB, "[]byte value vs parseGeneral: %q trunc=%v", in, trunc)
 		}
+	}
+}
+
+var (
+	shortScientificParseSink Decimal
+	errShortScientificParse  error
+)
+
+func TestParseShortScientificAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are not stable under -race")
+	}
+	inputs := []string{"1e2", "2.5E8", "1.5e-7", "1.000e-17", "1e+", "1e2x"}
+	for _, in := range inputs {
+		in := in
+		data := []byte(in)
+		t.Run(in+"/string", func(t *testing.T) {
+			if got := testing.AllocsPerRun(1000, func() {
+				shortScientificParseSink, errShortScientificParse = NewFromString(in)
+			}); got != 0 {
+				t.Fatalf("NewFromString allocations = %v, want 0", got)
+			}
+		})
+		t.Run(in+"/bytes", func(t *testing.T) {
+			if got := testing.AllocsPerRun(1000, func() {
+				shortScientificParseSink, errShortScientificParse = ParseBytes(data)
+			}); got != 0 {
+				t.Fatalf("ParseBytes allocations = %v, want 0", got)
+			}
+		})
 	}
 }
 

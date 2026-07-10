@@ -7,6 +7,7 @@ func BenchmarkExactArithmetic(b *testing.B) {
 	mulB := RequireFromString("7.000000001")
 	divA := RequireFromString("5000000000000000001")
 	divB := RequireFromString("1000000000000000000000")
+	fixedOne := newDecimal(u128{lo: pow10u64[MaxPrec]}, false, MaxPrec)
 
 	b.Run("Mul/legacy_then_bank", func(b *testing.B) {
 		b.ReportAllocs()
@@ -28,6 +29,12 @@ func BenchmarkExactArithmetic(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			exactResultSink, errExactSink = mulA.MulExact(One)
+		}
+	})
+	b.Run("Mul/exact_wide_rescale", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			exactResultSink, errExactSink = fixedOne.MulExact(fixedOne)
 		}
 	})
 	b.Run("Div/legacy_then_bank", func(b *testing.B) {

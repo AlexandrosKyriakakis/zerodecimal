@@ -60,7 +60,7 @@ func (d Decimal) MulExact(e Decimal) (Decimal, error) {
 	work := prod
 	if prec > MaxPrec {
 		var rem uint64
-		work, rem = div256byPow10Wide(work, prec-MaxPrec)
+		work, rem = divmodU256Pow10Wide(work, prec-MaxPrec)
 		if rem != 0 {
 			return mulExactRangeError(prod, naturalPrec, work)
 		}
@@ -72,7 +72,7 @@ func (d Decimal) MulExact(e Decimal) (Decimal, error) {
 			return Decimal{}, ErrOverflow
 		}
 		var rem uint64
-		work, rem = div256byPow10Wide(work, 1)
+		work, rem = divmodU256Pow10Wide(work, 1)
 		if rem != 0 {
 			return mulExactRangeError(prod, naturalPrec, work)
 		}
@@ -203,6 +203,8 @@ func (d Decimal) MulRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 	var halfCmp int
 	var fits bool
 	if k <= MaxPrec {
+		// The values match pow10u128, but the one-limb table avoids loading an
+		// unnecessary high word on the common <=19-digit path (benchmarked).
 		q, rem, halfCmp, fits = divRoundWide(prod, u128{lo: pow10u64[k&31]})
 	} else {
 		q, rem, halfCmp, fits = divRoundWide(prod, pow10u128[k&63])
@@ -308,6 +310,8 @@ func roundQuotient(q u128, rem bool, halfCmp int, neg bool, mode RoundingMode) (
 	case TowardNegative:
 		up = rem && neg
 	default:
+		// Public callers validate first, but keep the helper total so a future
+		// internal caller cannot silently turn an invalid mode into TowardZero.
 		return u128{}, ErrInvalidRoundingMode
 	}
 	if !up {
@@ -335,17 +339,6 @@ func cmpDouble128Wide(r u128, den u256) int {
 	hi, carry := bits.Add64(r.hi, r.hi, carry)
 	twice := u256{d0: lo, d1: hi, d2: carry}
 	return cmp256(twice, den)
-}
-
-// div256byPow10Wide divides a full-width value by 10^k and retains the exact
-// remainder. k is at most MaxPrec, so the divisor is one limb.
-func div256byPow10Wide(u u256, k uint8) (u256, uint64) {
-	d := pow10u64[k&31]
-	q3, r := bits.Div64(0, u.d3, d)
-	q2, r := bits.Div64(r, u.d2, d)
-	q1, r := bits.Div64(r, u.d1, d)
-	q0, r := bits.Div64(r, u.d0, d)
-	return u256{d0: q0, d1: q1, d2: q2, d3: q3}, r
 }
 
 func mulMagnitudeOverflows(prod u256, prec uint8) bool {

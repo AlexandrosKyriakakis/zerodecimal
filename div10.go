@@ -167,7 +167,7 @@ func divU256Pow10(u u256, k uint8) (u128, error) {
 	// The intermediate quotient may itself exceed 128 bits, hence the
 	// full-width helper.
 	if k > MaxPrec {
-		u = divU256Pow10Wide(u, MaxPrec)
+		u, _ = divmodU256Pow10Wide(u, MaxPrec)
 		k -= MaxPrec
 	}
 
@@ -191,12 +191,15 @@ func divU256Pow10(u u256, k uint8) (u128, error) {
 	return u128{hi: q1, lo: q0}, nil
 }
 
-// divU256Pow10Wide returns the full-width truncating quotient ⌊u / 10^k⌋.
+// divmodU256Pow10Wide returns the full-width quotient and exact remainder of
+// u / 10^k.
 // It serves the k > MaxPrec passes of divU256Pow10, whose intermediate
-// quotient can exceed 128 bits, so no overflow check applies here.
+// quotient can exceed 128 bits, exact-product rescaling, and aggregate scale
+// reduction. The reciprocal kernel is shared instead of maintaining separate
+// four-limb hardware-division copies in those callers.
 //
 // PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec.
-func divU256Pow10Wide(u u256, k uint8) u256 {
+func divmodU256Pow10Wide(u u256, k uint8) (u256, uint64) {
 	e := &pow10Tab[k&31] // &-address: load referenced fields, no 40-byte copy
 	s := uint(e.s)
 	// u<<s spans five limbs; the top one n4 < 2^s ≤ dn keeps every div2by1
@@ -209,8 +212,8 @@ func divU256Pow10Wide(u u256, k uint8) u256 {
 	q3, r := div2by1(n4, n3, e.dn, e.v)
 	q2, r := div2by1(r, n2, e.dn, e.v)
 	q1, r := div2by1(r, n1, e.dn, e.v)
-	q0, _ := div2by1(r, n0, e.dn, e.v)
-	return u256{d0: q0, d1: q1, d2: q2, d3: q3}
+	q0, r := div2by1(r, n0, e.dn, e.v)
+	return u256{d0: q0, d1: q1, d2: q2, d3: q3}, r >> s
 }
 
 // div256by64 returns q = ⌊u/v⌋ and r = u mod v for an ARBITRARY 64-bit

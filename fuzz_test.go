@@ -1356,7 +1356,7 @@ func FuzzSQLScan(f *testing.F) {
 // FuzzDivInternals differentially tests the outlined division cores against
 // math/big: divU256Pow10 with its iff 2^128 overflow contract across all
 // three k regimes (k == 0, table range, and the wide 10^19 peel), the
-// full-width divU256Pow10Wide limb for limb, div256by64 with the zero-divisor
+// full-width divmodU256Pow10Wide quotient and remainder, div256by64 with the zero-divisor
 // and quotient-overflow contracts plus the exact remainder, div256by128 on
 // precondition-satisfying operands (seed rows land on the trial-digit clamp
 // and the double-overshoot correction of div3by2), and divCoefAt —
@@ -1394,9 +1394,12 @@ func FuzzDivInternals(f *testing.F) {
 		}
 
 		kw := 1 + k%19
-		w := divU256Pow10Wide(u, kw)
-		require.Zerof(t, u256ToBig(w).Cmp(new(big.Int).Quo(ub, bp10(int(kw)))),
-			"divU256Pow10Wide vs big.Int: u=%+v k=%d got=%+v", u, kw, w)
+		w, wr := divmodU256Pow10Wide(u, kw)
+		wantWideQ, wantWideR := new(big.Int).QuoRem(ub, bp10(int(kw)), new(big.Int))
+		require.Zerof(t, u256ToBig(w).Cmp(wantWideQ),
+			"divmodU256Pow10Wide quotient vs big.Int: u=%+v k=%d got=%+v", u, kw, w)
+		require.Equalf(t, wantWideR.Uint64(), wr,
+			"divmodU256Pow10Wide remainder vs big.Int: u=%+v k=%d", u, kw)
 
 		q64, r64, err := div256by64(u, v)
 		if v == 0 {

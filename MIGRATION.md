@@ -40,8 +40,17 @@ strict; this is an acceptance expansion, not relaxed syntax.
 Strict general parsing also validates the complete grammar before reporting a
 range failure. Malformed input whose prefix is already wider than the 128-bit
 coefficient can therefore return the more specific `ErrInvalidFormat` where an
-older release returned `ErrOverflow`. Update callers that branch on the exact
-sentinel; `errors.Is` remains the supported matching mechanism.
+older release returned `ErrOverflow`.
+
+There is a second range-sentinel change for grammatically valid input. When a
+raw mantissa is wider than 128 bits but canonicalization reduces its
+coefficient into range while leaving more than `MaxPrec` fractional places,
+strict parsing now returns `ErrPrecOutOfRange` instead of the earlier
+`ErrOverflow`. For example,
+`100000000000000000000.00000000000000000000e-40` denotes `1e-20`: its
+canonical coefficient fits, but its precision does not. Update callers that
+branch on exact sentinels; `errors.Is` remains the supported matching
+mechanism.
 
 ## JSON
 
@@ -66,6 +75,14 @@ handles pointer nulls itself.
 database fields should use `StrictSQLDecimal`, which rejects float32/float64
 with `ErrScanFloat` and SQL NULL with `ErrScanNil`.
 
+This float rejection is a Go-side source-type policy, not proof of database
+provenance. A driver that returns a floating column as decimal text is
+indistinguishable from an exact text value. The end-to-end guarantee therefore
+requires `NUMERIC`/`DECIMAL` columns plus integration tests against the actual
+driver, protocol, casts, and schema. Also reject nil `*StrictSQLDecimal` bind
+parameters in application validation: `database/sql` converts such a pointer
+to SQL NULL without calling `Value`.
+
 Use `StrictNullDecimal` for nullable exact values. SQL NULL clears it; every
 non-null source follows `StrictSQLDecimal` policy; and every failed Scan clears
 stale nullable state. `NullDecimal` remains available for compatibility and
@@ -79,17 +96,24 @@ input-specific validation and replaces prior nil-pointer panics.
 
 ## String cache and layout
 
-The eager string/`driver.Value` cache is off by default. Enable it with
-`zerodecimal_strcache` only after measuring its hit rate against its startup,
-memory, heap-object, and GC-root cost. `zerodecimal_nostrcache` overrides the
-enable tag.
+The eager string/`driver.Value` cache is off by default. This changes an
+untagged upgrade from the earlier cache-on default: an eligible multi-byte
+`String` call moves from zero allocations to normally one, and the gated
+ordinary `Value` case moves from zero to exactly two. Latency can rise by an
+order of magnitude on those paths; an illustrative Apple M1 / Go 1.26.5 review
+run measured `String` at about 2.2 ns to 18.3 ns and `Value` at about 2.3 ns to
+33 ns. These are not portable capacity figures, so remeasure the application's
+actual value distribution. Enable `zerodecimal_strcache` only after weighing
+the recovered hit latency against its startup, resident-memory, heap-object,
+and GC-root cost. `zerodecimal_nostrcache` overrides the enable tag.
 
 `Decimal` is 24 bytes on max-align-8 targets and 20 bytes on gc's max-align-4
 32-bit targets. Do not bake a universal 24-byte size into unsafe interop.
 
-The minimum supported toolchain is Go 1.26.5. Earlier Go 1.26 patch releases
-contain standard-library vulnerabilities fixed in 1.26.5; production build
-and runtime images must use the same or a newer patched toolchain.
+The module declares the Go 1.26 language floor; a `go 1.26` directive cannot
+enforce a patch release. Earlier Go 1.26 patch releases contain
+standard-library vulnerabilities fixed in 1.26.5, so production build and
+runtime images must use Go 1.26.5 or a newer patched toolchain.
 
 ## Deprecated variables
 

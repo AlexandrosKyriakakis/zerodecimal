@@ -148,6 +148,11 @@ func TestParseCanonicalRescueBoundaries(t *testing.T) {
 			wantErr: ErrPrecOutOfRange,
 		},
 		{
+			name:    "raw_overflow_canonical_precision_twenty",
+			in:      "100000000000000000000.00000000000000000000e-40",
+			wantErr: ErrPrecOutOfRange,
+		},
+		{
 			name:    "invalid_tail_after_rescue_shape",
 			in:      maxCoefficientText + ".0x",
 			wantErr: ErrInvalidFormat,
@@ -238,6 +243,9 @@ var (
 )
 
 func TestParseCanonicalRescueAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
 	rescue := maxCoefficientText + "0e-1"
 	rescueBytes := []byte(rescue)
 	overflow := "3402823669209384634633746074317682114560e-1"

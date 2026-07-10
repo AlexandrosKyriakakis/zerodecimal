@@ -507,6 +507,56 @@ type aggregateAccum struct {
 	prec     uint8
 }
 
+// aggregateSamePrecision128 accumulates same-precision inputs into separate
+// positive and negative 128-bit subtotals. Keeping the signs separate retains
+// Sum's order-independent cancellation semantics. A precision mismatch or a
+// carry out of either subtotal returns ok=false, and the caller recomputes the
+// aggregate through the exact u256 path below. Canonical zeros are ignored
+// when selecting the common precision.
+func aggregateSamePrecision128(first Decimal, rest []Decimal) (total Decimal, ok bool) {
+	prec := first.prec
+	havePrec := !first.coef.isZero()
+	var pos, neg u128
+	if first.neg {
+		neg = first.coef
+	} else {
+		pos = first.coef
+	}
+
+	for _, d := range rest {
+		if d.coef.isZero() {
+			continue
+		}
+		if !havePrec {
+			prec, havePrec = d.prec, true
+		} else if d.prec != prec {
+			return Decimal{}, false
+		}
+		var carry uint64
+		if d.neg {
+			neg, carry = add128(neg, d.coef)
+		} else {
+			pos, carry = add128(pos, d.coef)
+		}
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+
+	if neg.isZero() {
+		return newDecimal(pos, false, prec), true
+	}
+	if pos.isZero() {
+		return newDecimal(neg, true, prec), true
+	}
+	if cmp128(pos, neg) >= 0 {
+		coef, _ := sub128(pos, neg)
+		return newDecimal(coef, false, prec), true
+	}
+	coef, _ := sub128(neg, pos)
+	return newDecimal(coef, true, prec), true
+}
+
 // accumulateAggregate aligns and accumulates first and rest exactly. It scans
 // precision separately so every term is scaled only once, by a single-limb
 // power of ten, and it never allocates.
@@ -572,6 +622,9 @@ func aggregateSub256(a, b u256) u256 {
 // still returns ErrOverflow when its coefficient does not fit at the
 // contracted greatest input precision.
 func Sum(first Decimal, rest ...Decimal) (Decimal, error) {
+	if total, ok := aggregateSamePrecision128(first, rest); ok {
+		return total, nil
+	}
 	a := accumulateAggregate(first, rest)
 	coef, neg := a.signedMagnitude()
 	if !coef.isZeroUpper() {
@@ -638,8 +691,9 @@ func aggregateAverageAt(base u256, baseRem, count uint64, sourcePrec, places uin
 		return aggregateAdd128(q, correction), u128{lo: rem}, u128{lo: count}
 	}
 
-	scale := pow10u64[(sourcePrec-places)&31]
-	q, qRem := aggregateDiv256by64(base, scale)
+	drop := sourcePrec - places
+	scale := pow10u64[drop&31]
+	q, qRem := divmodU256Pow10Wide(base, drop)
 	hi, lo := bits.Mul64(count, qRem)
 	lo, carry := bits.Add64(lo, baseRem, 0)
 	hi += carry // count*qRem+baseRem < count*scale < 2^127
@@ -699,10 +753,16 @@ func aggregateGreatestFit(base u256, baseRem, count uint64, sourcePrec, limit ui
 // reported. Use AvgExact when loss must be an error or AvgRound to round once
 // from the exact wide aggregate to an explicit scale.
 func Avg(first Decimal, rest ...Decimal) (Decimal, error) {
-	a := accumulateAggregate(first, rest)
 	// Convert before adding: len(rest) <= MaxInt, hence this remains exact even
 	// when len(rest)+1 would overflow a signed int on a 64-bit architecture.
 	count := uint64(len(rest)) + 1
+	if total, ok := aggregateSamePrecision128(first, rest); ok {
+		// Div implements the same greatest-fitting-precision contract as Avg.
+		// The direct route is valid because the exact same-precision total and
+		// the unsigned count are both representable Decimals.
+		return total.Div(NewFromUint64(count))
+	}
+	a := accumulateAggregate(first, rest)
 	base, baseRem, neg := aggregateBase(a, count)
 	q, _, places, ok := aggregateGreatestFit(base, baseRem, count, a.prec, DefaultPrec)
 	if !ok {
@@ -725,6 +785,8 @@ func AvgExact(first Decimal, rest ...Decimal) (Decimal, error) {
 	base, baseRem, neg := aggregateBase(a, count)
 	q, rem, places, ok := aggregateGreatestFit(base, baseRem, count, a.prec, MaxPrec)
 	if !ok {
+		// The mean lies between its Decimal inputs, so its integer coefficient
+		// must fit. Keep the guard as a defensive invariant check.
 		return Decimal{}, ErrOverflow
 	}
 	if rem.isZero() {
@@ -740,7 +802,8 @@ func AvgExact(first Decimal, rest ...Decimal) (Decimal, error) {
 // fractional digits. It retains the exact aggregate quotient and remainder
 // through the rounding decision, so it cannot double-round. A nonzero result
 // carries precision places; zero remains canonical Decimal{}. Validation
-// checks places before mode, matching MulRound and DivRound.
+// checks places before mode, matching MulRound and DivRound. ErrOverflow means
+// the rounded coefficient at the requested precision does not fit 128 bits.
 func AvgRound(first Decimal, places uint8, mode RoundingMode, rest ...Decimal) (Decimal, error) {
 	if places > MaxPrec {
 		return Decimal{}, ErrPrecOutOfRange

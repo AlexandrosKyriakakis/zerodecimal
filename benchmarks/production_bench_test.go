@@ -51,12 +51,41 @@ var (
 		zd.RequireFromString("-" + productionMax),
 		zd.RequireFromString("0.01"),
 	}
+	productionAggregateSamePrecision2 = []zd.Decimal{
+		zd.MustNew(123456, -2),
+		zd.MustNew(654321, -2),
+	}
+	productionAggregateSamePrecision10 = func() []zd.Decimal {
+		xs := make([]zd.Decimal, 10)
+		for i := range xs {
+			xs[i] = zd.MustNew(100000+int64(i)*17, -2)
+		}
+		return xs
+	}()
+	productionAggregateSamePrecision4096 = func() []zd.Decimal {
+		xs := make([]zd.Decimal, 4096)
+		for i := range xs {
+			xs[i] = zd.MustNew(100000+int64(i%17), -2)
+		}
+		return xs
+	}()
+	productionAggregateLateMismatch4096 = func() []zd.Decimal {
+		xs := make([]zd.Decimal, len(productionAggregateSamePrecision4096))
+		copy(xs, productionAggregateSamePrecision4096)
+		xs[len(xs)-1] = zd.MustNew(1000000, -3)
+		return xs
+	}()
 	productionAggregateCases = []struct {
-		name string
-		xs   []zd.Decimal
+		name  string
+		xs    []zd.Decimal
+		round bool
 	}{
-		{name: "mixed_sign_scale", xs: productionAggregateMixed},
-		{name: "cancellation", xs: productionAggregateCancellation},
+		{name: "mixed_sign_scale", xs: productionAggregateMixed, round: true},
+		{name: "cancellation", xs: productionAggregateCancellation, round: true},
+		{name: "same_precision_2", xs: productionAggregateSamePrecision2},
+		{name: "same_precision_10", xs: productionAggregateSamePrecision10},
+		{name: "same_precision_4096", xs: productionAggregateSamePrecision4096},
+		{name: "late_mismatch_4096", xs: productionAggregateLateMismatch4096},
 	}
 
 	productionQuoRemDividend = zd.RequireFromString("0.0000000000000000001")
@@ -249,15 +278,17 @@ func BenchmarkProductionMicroAggregates(b *testing.B) {
 			}
 		})
 
-		b.Run("AvgRound/"+tc.name, func(b *testing.B) {
-			_, err := zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
-			productionRequireSuccess(b, err)
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				productionDecimalSink, errProductionSink[0] = zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
-			}
-		})
+		if tc.round {
+			b.Run("AvgRound/"+tc.name, func(b *testing.B) {
+				_, err := zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
+				productionRequireSuccess(b, err)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					productionDecimalSink, errProductionSink[0] = zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
+				}
+			})
+		}
 	}
 }
 
@@ -634,8 +665,10 @@ func TestProductionBenchmarkFixtures(t *testing.T) {
 		requireSuccess("Sum/"+tc.name, err)
 		_, err = zd.Avg(tc.xs[0], tc.xs[1:]...)
 		requireSuccess("Avg/"+tc.name, err)
-		_, err = zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
-		requireSuccess("AvgRound/"+tc.name, err)
+		if tc.round {
+			_, err = zd.AvgRound(tc.xs[0], 8, zd.ToNearestEven, tc.xs[1:]...)
+			requireSuccess("AvgRound/"+tc.name, err)
+		}
 	}
 
 	q, r, err := productionQuoRemDividend.QuoRem(productionQuoRemDivisor)

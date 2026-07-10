@@ -100,13 +100,22 @@ func FuzzExactArithmetic(f *testing.F) {
 }
 
 func exactFuzzDecimal(hi, lo uint64, meta uint8) Decimal {
-	prec := meta % (MaxPrec + 1)
+	// The high bit carries sign independently of the seven precision bits.
+	// Mask it before reducing so a seed such as 0x80|MaxPrec really exercises
+	// the intended negative-at-MaxPrec boundary instead of precision 7.
+	prec := (meta & 0x7f) % (MaxPrec + 1)
 	neg := meta&0x80 != 0
 	d, err := NewFromHiLo(neg, hi, lo, prec)
 	if err != nil {
 		panic(err)
 	}
 	return d
+}
+
+func TestExactFuzzDecimalMetadata(t *testing.T) {
+	d := exactFuzzDecimal(0, 1, 0x80|MaxPrec)
+	require.True(t, d.neg)
+	require.Equal(t, MaxPrec, d.prec)
 }
 
 func exactShopspring(d Decimal) shopspring.Decimal {

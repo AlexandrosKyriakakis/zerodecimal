@@ -122,6 +122,25 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 				frac = n - 1 - i
 				continue
 			}
+			if !trunc && (c == 'e' || c == 'E') {
+				// The short-literal loop already accumulated and validated the
+				// mantissa. Reuse that work for strict scientific notation rather
+				// than restarting in parseGeneralExact. frac was recorded as the
+				// number of bytes after the dot under the plain-literal assumption;
+				// subtract the exponent suffix to recover the actual fractional
+				// digit count without keeping a dot index in the hot loop.
+				if i == start {
+					return Decimal{}, ErrInvalidFormat // "e5": no mantissa digit
+				}
+				fracDigits := 0
+				if frac >= 0 {
+					fracDigits = frac - (n - i)
+					if fracDigits == 0 {
+						return Decimal{}, ErrInvalidFormat // "1.e5": no fractional digit
+					}
+				}
+				return parseShortScientific(s, i+1, u128{lo: lo}, fracDigits, neg)
+			}
 			goto general // exponent, second dot, or invalid byte
 		}
 		if frac < 0 {
@@ -144,6 +163,84 @@ func parseCore[T string | []byte](s T, trunc bool) (Decimal, error) {
 
 general:
 	return parseGeneral(s, start, neg, trunc)
+}
+
+// parseShortScientific completes strict parsing after parseCore's short
+// mantissa loop encounters e/E. The mantissa is already validated and fits a
+// uint64; this helper validates the complete exponent, removes mantissa zeros
+// before checking the canonical precision, and scales exact integers with the
+// same overflow helper as the general text paths. It is deliberately not used
+// by truncating parsing, whose excess-precision semantics remain in parseGeneral.
+func parseShortScientific[T string | []byte](s T, i int, coef u128, frac int, neg bool) (Decimal, error) {
+	n := len(s)
+	expNeg := false
+	if i < n && (s[i] == '+' || s[i] == '-') {
+		expNeg = s[i] == '-'
+		i++
+	}
+	if i == n {
+		return Decimal{}, ErrInvalidFormat // "1e", "1e+", "1e-"
+	}
+
+	exp := 0
+	for ; i < n; i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return Decimal{}, ErrInvalidFormat
+		}
+		if exp <= expCap {
+			exp = exp*10 + int(c-'0')
+		}
+	}
+	if expNeg {
+		exp = -exp
+	}
+
+	if coef.isZero() {
+		return Decimal{}, nil
+	}
+	trail := 0
+	for coef.lo%10 == 0 { // coef.hi is zero on the short path
+		coef.lo /= 10
+		trail++
+	}
+
+	effPrec := frac - exp - trail
+	if effPrec > int(MaxPrec) {
+		return Decimal{}, ErrPrecOutOfRange
+	}
+	if effPrec >= 0 {
+		return newDecimal(coef, neg, uint8(effPrec)), nil
+	}
+
+	coef, err := scaleUpExact(coef, -effPrec)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return newDecimal(coef, neg, 0), nil
+}
+
+// scaleUpExact returns coef*10^up or ErrOverflow. Decimal scale adjustments
+// need at most 10^(2*MaxPrec); splitting at MaxPrec keeps both factors in one
+// limb and gives the strict general and short-scientific paths one checked
+// implementation.
+func scaleUpExact(coef u128, up int) (u128, error) {
+	if up > 2*int(MaxPrec) {
+		return u128{}, ErrOverflow
+	}
+	if up > int(MaxPrec) {
+		var over uint64
+		coef, over = mul128by64(coef, pow10u64[MaxPrec])
+		if over != 0 {
+			return u128{}, ErrOverflow
+		}
+		up -= int(MaxPrec)
+	}
+	coef, over := mul128by64(coef, pow10u64[up&31])
+	if over != 0 {
+		return u128{}, ErrOverflow
+	}
+	return coef, nil
 }
 
 // parseLongPlain parses the plain literals the fast path bails on for length
@@ -463,12 +560,13 @@ func swarVal4(w uint64) uint64 {
 // multiply-add — coef·10^len + chunk — instead of one per digit.
 //
 // A fold that would cross 2^128 replays its chunk digit by digit to find the
-// exact boundary: ErrOverflow when trunc is false, otherwise the remaining
-// digits are dropped — dropped counts them and dropNZ records the 1-based
-// position of the first nonzero one — exactly matching parseGeneral's
-// documented truncation semantics. dropped and dropNZ thread through calls so
-// a fraction run continues dropping where the integer run stopped.
-func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int, trunc bool) (int, u128, int, int, error) {
+// exact boundary, then drops the remaining digits. dropped counts them and
+// dropNZ records the 1-based position of the first nonzero one — exactly
+// matching parseGeneral's truncation semantics. Strict parsing never calls
+// this helper; it validates and canonicalizes through parseGeneralExact.
+// dropped and dropNZ thread through calls so a fraction run continues dropping
+// where the integer run stopped.
+func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int) (int, u128, int, int) {
 	n := len(s)
 	for i < n {
 		if dropped > 0 {
@@ -483,7 +581,7 @@ func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int, tru
 					dropNZ = dropped
 				}
 			}
-			return i, coef, dropped, dropNZ, nil
+			return i, coef, dropped, dropNZ
 		}
 
 		var lo uint64
@@ -518,9 +616,6 @@ func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int, tru
 				g, ov := mul128by64(coef, 10)
 				g, cy := add128(g, u128{lo: uint64(c)})
 				if ov|cy != 0 {
-					if !trunc {
-						return i, coef, 0, 0, ErrOverflow
-					}
 					dropped = 1
 					if c != 0 {
 						dropNZ = 1
@@ -536,7 +631,7 @@ func accumRun[T string | []byte](s T, i int, coef u128, dropped, dropNZ int, tru
 			break // a non-digit (or the end) stopped the chunk early
 		}
 	}
-	return i, coef, dropped, dropNZ, nil
+	return i, coef, dropped, dropNZ
 }
 
 // parseGeneral dispatches the full-grammar paths behind parseCore's
@@ -556,14 +651,10 @@ func parseGeneral[T string | []byte](s T, i int, neg, trunc bool) (Decimal, erro
 		coef    u128
 		dropped int // mantissa digits past the accumulator (trunc mode only)
 		dropNZ  int // 1-based index of the first nonzero dropped digit; 0 = all zero
-		err     error
 	)
 
 	intStart := i
-	i, coef, dropped, dropNZ, err = accumRun(s, i, coef, 0, 0, trunc)
-	if err != nil {
-		return Decimal{}, err
-	}
+	i, coef, dropped, dropNZ = accumRun(s, i, coef, 0, 0)
 	if i == intStart {
 		return Decimal{}, ErrInvalidFormat // no digit starts the mantissa: ".5", "e5", "x"
 	}
@@ -571,10 +662,7 @@ func parseGeneral[T string | []byte](s T, i int, neg, trunc bool) (Decimal, erro
 	frac := 0
 	if i < n && s[i] == '.' {
 		fracStart := i + 1
-		i, coef, dropped, dropNZ, err = accumRun(s, fracStart, coef, dropped, dropNZ, trunc)
-		if err != nil {
-			return Decimal{}, err
-		}
+		i, coef, dropped, dropNZ = accumRun(s, fracStart, coef, dropped, dropNZ)
 		// frac counts every digit position after the dot — dropped digits
 		// included, mirroring the dropped-tail fold below — and must be
 		// non-empty: "1." and "1.e5" are ErrInvalidFormat.
@@ -639,7 +727,9 @@ func parseGeneral[T string | []byte](s T, i int, neg, trunc bool) (Decimal, erro
 	switch effPrec := frac - exp; {
 	case effPrec < 0:
 		// The value is an integer with up trailing zeros: scale the
-		// coefficient up and settle at precision 0.
+		// coefficient up and settle at precision 0. Keep this compatibility
+		// parser path inline: the shared strict helper added measurable overhead
+		// to short NewFromStringTrunc exponent inputs.
 		if coef.isZero() {
 			return Decimal{}, nil // 0·10^anything is zero
 		}
@@ -662,8 +752,6 @@ func parseGeneral[T string | []byte](s T, i int, neg, trunc bool) (Decimal, erro
 		}
 	case effPrec <= int(MaxPrec):
 		prec = uint8(effPrec) // 0 ≤ effPrec ≤ MaxPrec ≤ 19: the conversion is exact
-	case !trunc:
-		return Decimal{}, ErrPrecOutOfRange
 	default:
 		// Truncate the excess fractional digits toward zero at prec MaxPrec.
 		// Two chained passes cover every nonzero outcome: ⌊⌊u/a⌋/b⌋ == ⌊u/ab⌋.
@@ -816,22 +904,9 @@ func parseGeneralExact[T string | []byte](s T, i int, neg bool) (Decimal, error)
 	// A negative effective precision moves exact zeros into the integer
 	// coefficient. 10^38 is the largest possible power that can still fit
 	// for some nonzero u128 coefficient; split it into uint64-sized factors.
-	up := -effPrec
-	if up > 2*int(MaxPrec) {
-		return Decimal{}, ErrOverflow
-	}
-	if up > int(MaxPrec) {
-		var over uint64
-		coef, over = mul128by64(coef, pow10u64[MaxPrec])
-		if over != 0 {
-			return Decimal{}, ErrOverflow
-		}
-		up -= int(MaxPrec)
-	}
-	var over uint64
-	coef, over = mul128by64(coef, pow10u64[up&31])
-	if over != 0 {
-		return Decimal{}, ErrOverflow
+	coef, err = scaleUpExact(coef, -effPrec)
+	if err != nil {
+		return Decimal{}, err
 	}
 	return newDecimal(coef, neg, 0), nil
 }
@@ -1009,6 +1084,10 @@ func assembleFloat(digits uint64, e10 int, neg bool) (Decimal, error) {
 		}
 		return newDecimal(u128{lo: digits}, neg, uint8(p)), nil
 	}
+	// Keep this guarded hot path inline. Unlike text parsing, the float domain
+	// checks above already bound e10 and prove the mathematical result is in
+	// range; spelling out the two limb-sized multiplies avoids a measurable
+	// call penalty on large and near-maximum float conversions.
 	var coef u128
 	var carry uint64
 	if e10 <= int(MaxPrec) {

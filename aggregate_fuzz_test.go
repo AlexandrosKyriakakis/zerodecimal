@@ -38,7 +38,7 @@ func aggregateFuzzDecode(data []byte) []Decimal {
 		start := i * 17
 		end := min(start+17, len(data))
 		copy(raw[:], data[start:end])
-		prec := raw[0] % (MaxPrec + 1)
+		prec := (raw[0] & 0x7f) % (MaxPrec + 1)
 		d, err := NewFromHiLo(raw[0]&0x80 != 0, binary.LittleEndian.Uint64(raw[1:]), binary.LittleEndian.Uint64(raw[9:]), prec)
 		if err != nil {
 			panic(err)
@@ -46,6 +46,11 @@ func aggregateFuzzDecode(data []byte) []Decimal {
 		xs[i] = d
 	}
 	return xs
+}
+
+func TestAggregateFuzzMetadataRoundTrip(t *testing.T) {
+	xs := []Decimal{MustNew(50025, -2), MustNew(-12525, -2), MustNew(-1, -int32(MaxPrec))}
+	require.Equal(t, xs, aggregateFuzzDecode(aggregateFuzzEncode(xs...)))
 }
 
 // FuzzWideAggregates checks Sum, Avg, AvgExact, and AvgRound against exact
@@ -66,6 +71,8 @@ func FuzzWideAggregates(f *testing.F) {
 	f.Add(aggregateFuzzEncode(maxValue, maxValue, maxValue.Neg(), One), uint8(0), uint8(AwayFromZero))
 	f.Add(aggregateFuzzEncode(minQuantum, Zero), uint8(19), uint8(TowardNegative))
 	f.Add(aggregateFuzzEncode(One, NewFromInt(2), NewFromInt(4)), uint8(2), uint8(ToNearestEven))
+	f.Add(aggregateFuzzEncode(Zero, MustNew(50025, -2), MustNew(-12525, -2), Zero), uint8(2), uint8(ToNearestEven))
+	f.Add(aggregateFuzzEncode(maxValue.Neg(), maxValue.Neg(), maxValue), uint8(0), uint8(TowardZero))
 
 	f.Fuzz(func(t *testing.T, data []byte, pc, mc uint8) {
 		xs := aggregateFuzzDecode(data)

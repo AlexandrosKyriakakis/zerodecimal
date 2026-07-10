@@ -48,6 +48,30 @@ var (
 		}
 		return xs
 	}()
+	aggregateBenchSamePrecision2 = []Decimal{
+		MustNew(123456, -2),
+		MustNew(654321, -2),
+	}
+	aggregateBenchSamePrecision10 = func() []Decimal {
+		xs := make([]Decimal, 10)
+		for i := range xs {
+			xs[i] = MustNew(100000+int64(i)*17, -2)
+		}
+		return xs
+	}()
+	aggregateBenchSamePrecision4096 = func() []Decimal {
+		xs := make([]Decimal, 4096)
+		for i := range xs {
+			xs[i] = MustNew(100000+int64(i%17), -2)
+		}
+		return xs
+	}()
+	aggregateBenchLateMismatch4096 = func() []Decimal {
+		xs := make([]Decimal, len(aggregateBenchSamePrecision4096))
+		copy(xs, aggregateBenchSamePrecision4096)
+		xs[len(xs)-1] = MustNew(1000000, -3)
+		return xs
+	}()
 )
 
 func aggregateBenchOutcome(wantErr error) string {
@@ -122,6 +146,41 @@ func BenchmarkAggregates(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				aggregateBenchResult, errAggregateBench = AvgExact(shape.xs[0], shape.xs[1:]...)
+			}
+		})
+	}
+}
+
+// BenchmarkAggregateCommonPrecision keeps the dominant money-aggregation
+// shape and its worst-case late-mismatch fallback visible independently of
+// the deliberately wide and mixed-precision correctness cases above.
+func BenchmarkAggregateCommonPrecision(b *testing.B) {
+	shapes := []struct {
+		name string
+		xs   []Decimal
+	}{
+		{name: "small_2", xs: aggregateBenchSamePrecision2},
+		{name: "medium_10", xs: aggregateBenchSamePrecision10},
+		{name: "long_4096", xs: aggregateBenchSamePrecision4096},
+		{name: "late_mismatch_4096", xs: aggregateBenchLateMismatch4096},
+	}
+	for _, shape := range shapes {
+		b.Run("Sum/"+shape.name, func(b *testing.B) {
+			_, err := Sum(shape.xs[0], shape.xs[1:]...)
+			requireAggregateBenchError(b, err, nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				aggregateBenchResult, errAggregateBench = Sum(shape.xs[0], shape.xs[1:]...)
+			}
+		})
+		b.Run("Avg/"+shape.name, func(b *testing.B) {
+			_, err := Avg(shape.xs[0], shape.xs[1:]...)
+			requireAggregateBenchError(b, err, nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				aggregateBenchResult, errAggregateBench = Avg(shape.xs[0], shape.xs[1:]...)
 			}
 		})
 	}

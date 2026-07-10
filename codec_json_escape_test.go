@@ -64,9 +64,12 @@ func TestUnmarshalJSONEscapeErrorsAreAtomic(t *testing.T) {
 		{name: "high_surrogate_with_high_surrogate", data: `"1\uD800\uDBFF"`},
 		{name: "lone_low_surrogate", data: `"1\uDC00"`},
 		{name: "low_then_high_surrogate", data: `"1\uDC00\uD800"`},
-		{name: "trailing_backslash", data: `"1\`},
-		{name: "unescaped_inner_quote", data: "\"1\"2\""},
-		{name: "unescaped_control", data: "\"1\n2\""},
+		// Include balanced outer quotes and, where needed, an earlier valid
+		// escape so these cases enter unescapeJSONString and exercise the branch
+		// named by the test rather than failing in the outer/zero-copy dispatch.
+		{name: "trailing_backslash", data: "\"1\\\""},
+		{name: "unescaped_inner_quote", data: `"\u0031"2"`},
+		{name: "unescaped_control", data: "\"\\u0031\n2\""},
 		{name: "invalid_utf8", data: invalidUTF8},
 	}
 
@@ -118,6 +121,25 @@ func TestUnescapeJSONStringUnicodeValidation(t *testing.T) {
 	n, err := unescapeJSONString([]byte(`\u0031\u00e9\uD83D\uDE00`), &dst)
 	require.NoError(t, err)
 	assert.Equal(t, "1é😀", string(dst[:n]))
+}
+
+func TestUnmarshalJSONValidSurrogatePairThroughPublicDecoder(t *testing.T) {
+	marker := RequireFromString("987.65")
+
+	// A valid pair decodes to one four-byte scalar. It is valid JSON string
+	// content but not decimal grammar, so the public decoder must reject it
+	// atomically at the decimal layer rather than as a malformed surrogate.
+	d := marker
+	require.ErrorIs(t, d.UnmarshalJSON([]byte(`"1\uD83D\uDE00"`)), ErrInvalidFormat)
+	assert.Equal(t, marker, d)
+
+	// Leave only three bytes in the semantic-input buffer before the pair. The
+	// ErrMaxStrLen result is observable proof through the public API that the
+	// pair was accepted as one four-byte scalar before decimal parsing.
+	tooLong := []byte(`"` + strings.Repeat("0", maxParseLen-3) + `\uD83D\uDE00"`)
+	d = marker
+	require.ErrorIs(t, d.UnmarshalJSON(tooLong), ErrMaxStrLen)
+	assert.Equal(t, marker, d)
 }
 
 func TestUnescapeJSONStringShortEscapes(t *testing.T) {

@@ -136,6 +136,7 @@ func requireAggregateRoundOracle(t *testing.T, xs []Decimal, places uint8, mode 
 	got, err := AvgRound(xs[0], places, mode, xs[1:]...)
 	if q.BitLen() > 128 {
 		require.ErrorIs(t, err, ErrOverflow)
+		require.Equal(t, Decimal{}, got)
 		return
 	}
 	require.NoError(t, err)
@@ -180,6 +181,7 @@ func TestAggregatePermutationAndBoundaries(t *testing.T) {
 		{name: "negative_partial_overflow_cancels", xs: []Decimal{maxNegative, maxNegative, maxValue}},
 		{name: "192_bit_alignment_cancels", xs: []Decimal{maxValue, maxNegative, minQuantum}},
 		{name: "cancellation_retains_max_input_precision", xs: []Decimal{onePoint20, minusOnePoint20, onePoint2}},
+		{name: "same_precision_fast_mixed_sign", xs: []Decimal{MustNew(50025, -2), MustNew(-12525, -2), MustNew(25, -2), MustNew(-100, -2)}},
 		{name: "final_overflow_is_order_independent", xs: []Decimal{maxValue, maxValue, maxNegative, One}},
 	}
 	for _, tc := range cases {
@@ -273,8 +275,9 @@ func TestAggregateWideAverageAndDirectAPIs(t *testing.T) {
 	})
 
 	t.Run("requested_precision_overflow", func(t *testing.T) {
-		_, err := AvgRound(maxValue, 1, TowardZero, maxValue)
+		got, err := AvgRound(maxValue, 1, TowardZero, maxValue)
 		require.ErrorIs(t, err, ErrOverflow)
+		require.Equal(t, Decimal{}, got)
 	})
 
 	t.Run("validation_precedence", func(t *testing.T) {
@@ -283,6 +286,93 @@ func TestAggregateWideAverageAndDirectAPIs(t *testing.T) {
 		_, err = AvgRound(One, 0, RoundingMode(255))
 		require.ErrorIs(t, err, ErrInvalidRoundingMode)
 	})
+}
+
+func TestAggregateSamePrecisionFastPathDifferential(t *testing.T) {
+	t.Parallel()
+	maxScale2, err := NewFromHiLo(false, ^uint64(0), ^uint64(0), 2)
+	require.NoError(t, err)
+	maxScale2Neg := maxScale2.Neg()
+
+	cases := []struct {
+		name string
+		xs   []Decimal
+		fast bool
+	}{
+		{
+			name: "positive_money",
+			xs:   []Decimal{MustNew(123456, -2), MustNew(654321, -2)},
+			fast: true,
+		},
+		{
+			name: "mixed_sign_with_canonical_zero",
+			xs:   []Decimal{Zero, MustNew(50025, -2), MustNew(-12525, -2), Zero},
+			fast: true,
+		},
+		{
+			name: "negative_total",
+			xs:   []Decimal{MustNew(-50025, -2), MustNew(12525, -2)},
+			fast: true,
+		},
+		{
+			name: "positive_subtotal_overflow_falls_back",
+			xs:   []Decimal{maxScale2, maxScale2, maxScale2Neg},
+			fast: false,
+		},
+		{
+			name: "negative_subtotal_overflow_falls_back",
+			xs:   []Decimal{maxScale2Neg, maxScale2Neg, maxScale2},
+			fast: false,
+		},
+		{
+			name: "final_overflow_falls_back",
+			xs:   []Decimal{maxScale2, maxScale2},
+			fast: false,
+		},
+		{
+			name: "mixed_precision_falls_back",
+			xs:   []Decimal{MustNew(100, -2), MustNew(20, -1)},
+			fast: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ok := aggregateSamePrecision128(tc.xs[0], tc.xs[1:])
+			require.Equal(t, tc.fast, ok)
+			requireAggregateSumOracle(t, tc.xs)
+			requireAggregateAvgOracle(t, tc.xs)
+			requireAggregateExactOracle(t, tc.xs)
+			requireAggregateRoundOracle(t, tc.xs, 7, ToNearestEven)
+		})
+	}
+}
+
+func TestAggregateSamePrecisionRandomDifferential(t *testing.T) {
+	t.Parallel()
+	rng := rand.New(rand.NewPCG(0x8f28_6d3c_01c7_ada9, 0x7e1a_b905_322f_a441))
+	for iter := 0; iter < 1_000; iter++ {
+		prec := uint8(rng.Uint64N(uint64(MaxPrec) + 1))
+		n := 1 + int(rng.Uint64N(32))
+		xs := make([]Decimal, n)
+		for i := range xs {
+			if rng.Uint64N(16) == 0 {
+				xs[i] = Zero
+				continue
+			}
+			d, err := NewFromHiLo(rng.Uint64()&1 != 0, rng.Uint64N(1<<40), rng.Uint64(), prec)
+			require.NoError(t, err)
+			xs[i] = d
+		}
+		_, ok := aggregateSamePrecision128(xs[0], xs[1:])
+		require.True(t, ok, "bounded same-precision subtotals must take the fast path")
+		requireAggregateSumOracle(t, xs)
+		requireAggregateAvgOracle(t, xs)
+		requireAggregateExactOracle(t, xs)
+		places := uint8(rng.Uint64N(uint64(MaxPrec) + 1))
+		mode := RoundingMode(rng.Uint64N(uint64(TowardNegative) + 1))
+		requireAggregateRoundOracle(t, xs, places, mode)
+	}
 }
 
 func TestAggregateCountUsesUnsignedFullRange(t *testing.T) {

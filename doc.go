@@ -73,8 +73,11 @@
 // StrictSQLDecimal and StrictNullDecimal are the required and nullable SQL
 // boundaries for exact decimal provenance. Both reject float32/float64 with
 // ErrScanFloat; StrictSQLDecimal rejects SQL NULL with ErrScanNil, while
-// StrictNullDecimal clears itself. Decimal.Scan and NullDecimal.Scan retain v1
-// compatibility and accept float64.
+// StrictNullDecimal clears itself. This rejects Go float source types; a driver
+// that returns a floating column as text is indistinguishable from exact
+// decimal text, so end-to-end provenance also requires NUMERIC/DECIMAL schema
+// types and driver integration tests. Decimal.Scan and NullDecimal.Scan retain
+// v1 compatibility and accept float64.
 //
 // # Allocations and cache
 //

@@ -10,16 +10,16 @@ latency-critical Go.
   heap allocations — success and error paths alike — enforced by
   `testing.AllocsPerRun` gates in the default test suite
   ([alloc_test.go](alloc_test.go)).
-- **Lower pairwise geomean latency in the committed suite.** The controlled
-  cache-off run reports 36.55% lower sec/op than jokruger/dec128, 48.77% lower
-  than quagmt/udecimal, and 92.51% lower than shopspring/decimal across each
-  pair's common successful native-API rows
+- **Lower pairwise geomean latency in the committed suite.** The reproducibly
+  configured hosted-runner cache-off comparison reports 36.55% lower sec/op
+  than jokruger/dec128, 48.77% lower than quagmt/udecimal, and 92.51% lower than
+  shopspring/decimal across each pair's common successful native-API rows
   ([benchmarks/bench-vs-\*.txt](benchmarks/)). These are microbenchmark-suite
   results, not production-throughput guarantees.
-- **Bit-exact.** Every operation is differentially checked against
-  shopspring/decimal's unbounded arithmetic — including an *iff* proof for
-  every returned overflow — deterministically in the default suite
-  ([crosscheck_test.go](crosscheck_test.go)) and by 49 fuzz targets.
+- **Independently oracled.** Deterministic boundary suites and 49 fuzz targets
+  use shopspring/decimal, `math/big`, and quagmt/udecimal where applicable.
+  Arithmetic overflow classification is checked in both directions; codecs
+  and SQL boundaries are covered by semantic and round-trip invariants.
 - **Panic-free.** Fallible operations return zero-allocation sentinel errors
   ([errors.go](errors.go)) and the fuzz suite requires every target to be
   total — no input, including garbage binary payloads, may panic the library.
@@ -34,7 +34,9 @@ go get github.com/AlexandrosKyriakakis/zerodecimal
 import "github.com/AlexandrosKyriakakis/zerodecimal" // package zerodecimal
 ```
 
-Requires Go 1.26.5 or later. The library has zero runtime dependencies.
+The module's language floor is Go 1.26. Production builds should use Go 1.26.5
+or later so they include the standard-library security fixes in that patch.
+The library has zero runtime dependencies.
 
 ```go
 price, err := zerodecimal.NewFromString("99.99")
@@ -85,8 +87,9 @@ use precomputed Granlund–Montgomery–Warren multiply-high magics, and
 reciprocal table ([div10.go](div10.go), tables generated and re-proven
 against `bits.Div64` and `big.Int` in [tables_test.go](tables_test.go)).
 A multiply-high plus a shift replaces an 18-cycle `DIV` — and for 128-bit
-dividends, two *dependent* `DIV`s — which is where most of the headroom over
-udecimal comes from.
+dividends, two *dependent* `DIV`s. This is a major source of rescaling
+headroom; competitor impact is measured by the committed suite rather than
+inferred from instruction counts.
 
 `Div` uses **adaptive precision**: the result is the exact quotient truncated
 at the largest precision ≤ `DefaultPrec` (19 by default) whose coefficient
@@ -249,8 +252,12 @@ For SQL `NUMERIC`/`DECIMAL`, `StrictSQLDecimal` is the recommended required
 scanner and `StrictNullDecimal` the nullable scanner. They accept exact text,
 byte, and integer sources but reject float32/float64 provenance with
 `ErrScanFloat`. The legacy `Decimal` and `NullDecimal` scanners continue to
-accept float sources for compatibility. Exercise the actual database driver
-in integration tests because driver source types and cast behavior differ.
+accept float sources for compatibility. This is a Go-side source-type policy:
+a driver that renders a floating column as text cannot be distinguished from
+exact decimal text. Exercise `NUMERIC`/`DECIMAL` schemas, casts, and the actual
+driver protocol in integration tests. Do not bind a nil
+`*StrictSQLDecimal` for a required parameter; `database/sql` converts it to SQL
+NULL without invoking `Value`.
 
 ## Benchmarks
 
@@ -352,7 +359,7 @@ Allocation floors accepted by design (from
 
 PGO attaches to binaries, not libraries — so zerodecimal cannot ship a
 profile, but an application build can use one. The hot arithmetic paths avoid
-interfaces and indirect calls, and the slow arms (`addSlow`, `mulSlow`, the
+interfaces and indirect calls, and the slow arms (`addUnaligned`, `mulSlow`, the
 multi-limb division bodies) are deliberately outlined into small functions
 that profile-driven inlining can promote into hot call sites past the default
 inlining budget.
@@ -364,8 +371,9 @@ inlining budget.
 3. Rebuild and benchmark the resulting application.
 
 The committed [benchmarks/bench-pgo.txt](benchmarks/bench-pgo.txt) is a
-controlled but deliberately in-sample experiment: the synthetic benchmark
-binary is rebuilt against its own profile. It reports a 10.28% lower sec/op
+reproducibly configured hosted-runner experiment, but deliberately in-sample:
+the synthetic benchmark binary is rebuilt against its own profile. It reports
+a 10.28% lower sec/op
 geomean, with 64 faster rows, 24 statistical ties, and 2 slower rows
 (`Truncate/small_int` at +6.39% and `UnmarshalBinary/near_max` at +4.86%).
 This illustrates compiler opportunity in the harness; it does not predict the

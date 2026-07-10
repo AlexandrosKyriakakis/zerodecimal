@@ -134,7 +134,11 @@ func (d Decimal) Value() (driver.Value, error) {
 // Use StrictSQLDecimal for required exact NUMERIC/DECIMAL columns and
 // StrictNullDecimal for nullable ones. Use Decimal or NullDecimal only when
 // their broader legacy Scan behavior is intentional; in particular,
-// Decimal.Scan continues to accept float64 for v1 compatibility.
+// Decimal.Scan continues to accept float64 for v1 compatibility. This is a
+// Go-side source-type policy, not proof of database provenance: a driver that
+// returns a floating column as string or []byte is indistinguishable from
+// exact decimal text. End-to-end use therefore requires NUMERIC/DECIMAL schema
+// types and integration tests against the actual driver protocol and casts.
 type StrictSQLDecimal struct {
 	Decimal
 }
@@ -243,10 +247,14 @@ func (d *StrictSQLDecimal) UnmarshalBinary(data []byte) error {
 	return d.Decimal.UnmarshalBinary(data)
 }
 
-// Value implements driver.Valuer. It always returns Decimal's canonical
-// string form, never a float and never SQL NULL. Its allocation behavior is
-// identical to Decimal.Value: zero for an enabled cache hit; an ordinary
-// uncached multi-byte value is gated at exactly two allocations.
+// Value implements driver.Valuer. A StrictSQLDecimal value always returns
+// Decimal's canonical string form, never a float and never SQL NULL. A nil
+// *StrictSQLDecimal passed as a bind parameter is different: database/sql
+// converts nil Valuer pointers to SQL NULL without invoking this value-receiver
+// method, so applications must reject nil pointers for required parameters.
+// Allocation behavior is identical to Decimal.Value: zero for an enabled
+// cache hit; an ordinary uncached multi-byte value is gated at exactly two
+// allocations.
 func (d StrictSQLDecimal) Value() (driver.Value, error) {
 	return d.Decimal.Value()
 }

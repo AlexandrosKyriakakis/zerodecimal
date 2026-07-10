@@ -115,6 +115,23 @@ func TestStrictSQLDecimalConstructionAndValue(t *testing.T) {
 	assert.Equal(t, driver.Value("0"), zero, "a required value must never emit SQL NULL")
 }
 
+func TestStrictSQLDecimalNilPointerBindBecomesSQLNull(t *testing.T) {
+	db := sql.OpenDB(strictSQLTestConnector{echoArgument: true})
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	// database/sql deliberately converts a nil pointer implementing Valuer to
+	// SQL NULL without invoking its value-receiver Value method. Required bind
+	// validation must therefore happen before the call into database/sql.
+	var parameter *StrictSQLDecimal
+	got := NewStrictNullDecimal(RequireFromString("77.7"))
+	require.NoError(t, db.QueryRowContext(context.Background(), "echo", parameter).Scan(&got))
+	assert.Equal(t, StrictNullDecimal{}, got)
+
+	var required StrictSQLDecimal
+	err := db.QueryRowContext(context.Background(), "echo", parameter).Scan(&required)
+	require.ErrorIs(t, err, ErrScanNil)
+}
+
 func TestStrictSQLDecimalValueRoundTrip(t *testing.T) {
 	for _, tc := range codecBoundaryCases {
 		t.Run(tc.name, func(t *testing.T) {
