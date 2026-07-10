@@ -1,7 +1,7 @@
 zerodecimal comparative benchmark provenance
 
-source-commit: 999387fef7bfd9880167e0220cc1fb21b1fb39c6
-benchmark-source-sha256: 0f2568646a18ae262c5bcc644f738eeead0b08b0974581f945664a5da773c256
+source-commit: 8b365d55232c0f488da4586efcc696478f38cedf
+benchmark-source-sha256: 0b8416497e30339c747dbe0cc6dd2d66ef4819c74e1c4fae94abbbbf6848d4b5
 source-worktree-at-collection-start: clean
 go-version: go1.26.5
 goos: darwin
@@ -23,17 +23,17 @@ samples-per-row: 10
 collection-command: GOENV=off GOFLAGS= GOWORK=off make collect COMPARATIVE_BENCHTIME=100ms COMPARATIVE_COUNT=10
 collection-order: fixed library order; samples for each leaf are consecutive
 pgo-profile: synthetic in-sample benchmark-binary profile; not a production application profile
-raw-collection-sha256: cf8a93c366661c8e60f9806365da88e14425aded4bc2fdceffdaa129e1a35bc0
-artifact-sha256-bench-vs-dec128.txt: 01a6ea6bfe8cce2b6f1da6de7b458c0c052dc2cb6785f07f54ef4f9a5057a2a4
-artifact-sha256-bench-vs-udecimal.txt: 0c9e18ec28702eac4e6adb5d8e41d2a833792b2f1c8d8d95cd43c601e3d0b4cb
-artifact-sha256-bench-vs-govalues.txt: 66189bf04568555241075950fc7dca85313840e752b2777a7094e7e67a73f967
-artifact-sha256-bench-vs-ericlagergren.txt: fd6681658287fea361653b6d728012ee0f380ccc78c32274d6a98e2b45059673
-artifact-sha256-bench-vs-alpacadecimal.txt: eec77ac8c8b60ec38e505026376cae39f889dad5c695d956df2db25780ab2c41
-artifact-sha256-bench-vs-shopspring.txt: e7ea8c79366d4ec09681d90e152958314c0b7c5cd50f892b16c4df017b6691e2
-artifact-sha256-bench-pgo.txt: 8e2ab8f636d84b24cd559b3149a6b0f0709eee110d0883f891b4ab89f29e643d
-artifact-sha256-bench-all.txt: cf8a93c366661c8e60f9806365da88e14425aded4bc2fdceffdaa129e1a35bc0
-artifact-sha256-bench-zd-pgo-default.txt: 24374aaa7dddbe3d7dbb1756403283421754ebefcef72c2a9de8600fc5ed1ec4
-artifact-sha256-bench-zd-pgo.txt: 6f16fc881087f8b56d40f0b01f9be23d8492bec4425e9f5406a8a05ad996c1cb
-pgo-source-sha256-zd.pprof: cdb0a7e67c6c09e6dbec277cc67e311bef8a13269dad9722befa7de29b18b9e1
-pgo-source-sha256-bench-zd-pgo-default-raw.txt: 5672a51a3b87dd79ca3711645d9cc58230530da530a484a7f8a1cc0c03ab0c63
-pgo-source-sha256-bench-zd-pgo-raw.txt: a117bf0009128bc8f015ec8542ec4363fe644f43d0ba74924d17ec3393aef918
+raw-collection-sha256: f097b5c1febeaf38e1dfd34fd8a2bfedb9b3457c19fd79cd1b5d4a1cfc5ae602
+artifact-sha256-bench-vs-dec128.txt: 35ad81c4fe7d94f444f77affdd5952cc5f489fda9cb00b1406a10d7c9a78968b
+artifact-sha256-bench-vs-udecimal.txt: b688a4be201f50d894d994db6411ad7313562d7f71e39ace753905454d083a10
+artifact-sha256-bench-vs-govalues.txt: a8926451741d5f6f7eff91157d94e2c7b99f799bdf6a008fb3b2f94730d702ee
+artifact-sha256-bench-vs-ericlagergren.txt: 6197f822dfd8f453a280b2c8457db483e0c2e3e6d50380bab23924ed282080ce
+artifact-sha256-bench-vs-alpacadecimal.txt: 851b8cf5fe8ac9dd333969889fa0b0f940a3b6212333ed4672c15626789a715d
+artifact-sha256-bench-vs-shopspring.txt: 45fa07b4bea63330ad3675fe1e683b660da859db66adc3e8233aec7fcb2728c5
+artifact-sha256-bench-pgo.txt: 88239369f0ffbd2852ca8b9af5183de75d2bf42ea561be384da701356ae5af89
+artifact-sha256-bench-all.txt: f097b5c1febeaf38e1dfd34fd8a2bfedb9b3457c19fd79cd1b5d4a1cfc5ae602
+artifact-sha256-bench-zd-pgo-default.txt: 17f497c2ee93b266051bbf1de911b4e040c52f7de88ff2f29981440fb1cefd02
+artifact-sha256-bench-zd-pgo.txt: 075dde3932843b847b8aa2c40855b769aa80e992ce673ce694ddb31444618bef
+pgo-source-sha256-zd.pprof: 0c996f0aa84e2ccb8832cc59531d9eb98acd7e495936ea20651d875315b29d34
+pgo-source-sha256-bench-zd-pgo-default-raw.txt: 62e7671448e96abf8e0845701749079271bcecbcf1524752bfca07affd15b0b5
+pgo-source-sha256-bench-zd-pgo-raw.txt: 91e804295e2a697ad42e2a2ed932deef42e9ca065a67e8e53f5e6655d6f88599

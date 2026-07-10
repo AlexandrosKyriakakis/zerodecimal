@@ -3,29 +3,29 @@
 <text x="16" y="48" font-size="12" fill="#57606a">pairwise native-API geomean latency (zerodecimal = 1.0×; shorter is faster)</text>
 <text x="16" y="64" font-size="11" fill="#57606a">Apple M1 (Virtual) · darwin/arm64 · go1.26.5 · 100ms × 10</text>
 <text x="140" y="100" font-size="12.5" font-weight="700" fill="#0969da" text-anchor="end">zerodecimal +PGO</text>
-<rect x="150" y="86" width="39.4" height="20" rx="3" fill="#0969da"/>
-<text x="195.4" y="100" font-size="12" font-weight="700" fill="#0969da">1.0×</text>
+<rect x="150" y="86" width="36.9" height="20" rx="3" fill="#0969da"/>
+<text x="192.9" y="100" font-size="12" font-weight="700" fill="#0969da">1.0×</text>
 <text x="140" y="136" font-size="12.5" font-weight="700" fill="#2da44e" text-anchor="end">zerodecimal</text>
-<rect x="150" y="122" width="40.1" height="20" rx="3" fill="#2da44e"/>
-<text x="196.1" y="136" font-size="12" font-weight="700" fill="#2da44e">1.0×</text>
+<rect x="150" y="122" width="38.4" height="20" rx="3" fill="#2da44e"/>
+<text x="194.4" y="136" font-size="12" font-weight="700" fill="#2da44e">1.0×</text>
 <text x="140" y="172" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">dec128</text>
-<rect x="150" y="158" width="62.8" height="20" rx="3" fill="#afb8c1"/>
-<text x="218.8" y="172" font-size="12" font-weight="400" fill="#1f2328">1.6×</text>
+<rect x="150" y="158" width="60.3" height="20" rx="3" fill="#afb8c1"/>
+<text x="216.3" y="172" font-size="12" font-weight="400" fill="#1f2328">1.6×</text>
 <text x="140" y="208" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">udecimal</text>
-<rect x="150" y="194" width="75.1" height="20" rx="3" fill="#afb8c1"/>
-<text x="231.1" y="208" font-size="12" font-weight="400" fill="#1f2328">1.9×</text>
+<rect x="150" y="194" width="71.3" height="20" rx="3" fill="#afb8c1"/>
+<text x="227.3" y="208" font-size="12" font-weight="400" fill="#1f2328">1.9×</text>
 <text x="140" y="244" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">govalues</text>
-<rect x="150" y="230" width="117.6" height="20" rx="3" fill="#afb8c1"/>
-<text x="273.6" y="244" font-size="12" font-weight="400" fill="#1f2328">2.9×</text>
+<rect x="150" y="230" width="112.6" height="20" rx="3" fill="#afb8c1"/>
+<text x="268.6" y="244" font-size="12" font-weight="400" fill="#1f2328">2.9×</text>
 <text x="140" y="280" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">ericlagergren</text>
-<rect x="150" y="266" width="304.6" height="20" rx="3" fill="#afb8c1"/>
-<text x="460.6" y="280" font-size="12" font-weight="400" fill="#1f2328">7.6×</text>
+<rect x="150" y="266" width="292.7" height="20" rx="3" fill="#afb8c1"/>
+<text x="448.7" y="280" font-size="12" font-weight="400" fill="#1f2328">7.6×</text>
 <text x="140" y="316" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">alpacadecimal</text>
-<rect x="150" y="302" width="369.1" height="20" rx="3" fill="#afb8c1"/>
-<text x="525.1" y="316" font-size="12" font-weight="400" fill="#1f2328">9.2×</text>
+<rect x="150" y="302" width="359.0" height="20" rx="3" fill="#afb8c1"/>
+<text x="515.0" y="316" font-size="12" font-weight="400" fill="#1f2328">9.4×</text>
 <text x="140" y="352" font-size="12.5" font-weight="400" fill="#1f2328" text-anchor="end">shopspring</text>
 <rect x="150" y="338" width="530.0" height="20" rx="3" fill="#afb8c1"/>
-<text x="686.0" y="352" font-size="12" font-weight="400" fill="#1f2328">13.2×</text>
+<text x="686.0" y="352" font-size="12" font-weight="400" fill="#1f2328">13.8×</text>
 <text x="16" y="386" font-size="10.5" fill="#57606a">Common successful rows only; native precision/rounding contracts may differ (see methodology).</text>
 <text x="16" y="402" font-size="10.5" fill="#57606a">PGO is an in-sample self-profiled benchmark-binary result, not an application PGO prediction.</text>
 </svg>
