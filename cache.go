@@ -1,4 +1,4 @@
-//go:build !zerodecimal_nostrcache
+//go:build zerodecimal_strcache && !zerodecimal_nostrcache
 
 package zerodecimal
 
@@ -9,16 +9,17 @@ import "database/sql/driver"
 // cacheSpan + cents.
 const cacheSpan = 100000
 
-// strCacheEnabled records at compile time that the small-value string cache
-// is present in this build; the zerodecimal_nostrcache tag selects the
-// constant-false twin in cache_off.go.
+// strCacheEnabled records at compile time that the opt-in small-value string
+// cache is present in this build. zerodecimal_nostrcache takes precedence over
+// zerodecimal_strcache so existing builds that explicitly disabled the cache
+// remain cache-free.
 const strCacheEnabled = true
 
 // stringCache maps every hundredths offset in [-cacheSpan, +cacheSpan] to
 // its canonical string. It is built in init through appendCanonical, so a
-// cached result is byte-identical to a computed one by construction; the
-// ~8 MB are paid once at startup, leaving no first-hit jitter. Build with
-// -tags zerodecimal_nostrcache to compile the caches out.
+// cached result is byte-identical to a computed one by construction. Build
+// with -tags zerodecimal_strcache to pay the eager memory/startup cost in
+// exchange for allocation-free cache-window String and Value calls.
 var stringCache [2*cacheSpan + 1]string
 
 // valueCache boxes the exact strings of stringCache as driver.Value, so SQL

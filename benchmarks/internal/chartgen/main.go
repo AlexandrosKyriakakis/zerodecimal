@@ -1,6 +1,7 @@
 // Command chartgen renders comparison-light.svg and comparison-dark.svg: a
-// horizontal bar chart of each decimal library's geomean latency (ns/op),
-// zerodecimal (and zerodecimal+PGO) highlighted. The two transparent variants
+// horizontal bar chart of each decimal library's pairwise geomean latency
+// relative to zerodecimal, with zerodecimal (and zerodecimal+PGO) highlighted.
+// The two transparent variants
 // are swapped by prefers-color-scheme via a <picture> element in the README,
 // so the chart matches GitHub's light/dark theme.
 //
@@ -9,19 +10,31 @@
 // hand-drawn. Run it from the benchmarks module root (the Makefile `chart`
 // target does this):
 //
-//	go run ./internal/chartgen
+//	make chart
 //
-// Each competitor's bar is its own geomean column; the zerodecimal and
-// zerodecimal+PGO bars are the default and pgo columns of bench-pgo.txt (the
-// same default-vs-pgo session, so the two are directly comparable).
+// Pairwise ratios, rather than raw absolute geomeans across files, are required
+// because libraries with a smaller numeric domain or API surface have fewer
+// rows. The Makefile filters zerodecimal to each competitor's exact supported
+// row set before benchstat, so each summary compares like with like. The PGO
+// bar is the pgo/default summary ratio from bench-pgo.txt.
 package main
 
 import (
+	"crypto/sha256"
+	"debug/buildinfo"
+	"encoding/hex"
+	"flag"
 	"fmt"
+	"math"
 	"os"
+	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/AlexandrosKyriakakis/zerodecimal/benchmarks/internal/provenance"
 )
 
 // lib pairs a short display name with its bench-vs file. Order here is only
@@ -40,99 +53,501 @@ var libs = []lib{
 	{"shopspring", "bench-vs-shopspring.txt"},
 }
 
-// geomeans returns the competitor and zerodecimal geomean ns/op from the
-// first (sec/op) geomean line of a bench-vs file.
-func geomeans(file string) (comp, zd float64, err error) {
+var publishedInputs = []string{
+	"bench-vs-dec128.txt",
+	"bench-vs-udecimal.txt",
+	"bench-vs-govalues.txt",
+	"bench-vs-ericlagergren.txt",
+	"bench-vs-alpacadecimal.txt",
+	"bench-vs-shopspring.txt",
+	"bench-pgo.txt",
+	"bench-all.txt",
+	"bench-zd-pgo-default.txt",
+	"bench-zd-pgo.txt",
+}
+
+var pgoSourceInputs = []string{
+	"zd.pprof",
+	"bench-zd-pgo-default-raw.txt",
+	"bench-zd-pgo-raw.txt",
+}
+
+const collectionGuardEnv = "ZERODECIMAL_BENCH_COLLECTION_ACTIVE"
+
+// geomeanRatio returns new/base from the first sec/op geomean line in a
+// benchstat comparison. Comparison generation guarantees the two columns have
+// identical row sets; the displayed summary percentage is therefore their
+// pairwise relative geomean.
+func geomeanRatio(file string) (float64, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
+	return geomeanRatioData(file, string(data))
+}
+
+func geomeanRatioData(name, data string) (float64, error) {
 	inSec := false
-	for line := range strings.SplitSeq(string(data), "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		if strings.Contains(line, "sec/op") {
 			inSec = true
 			continue
 		}
 		if inSec && strings.HasPrefix(line, "geomean") {
 			f := strings.Fields(line)
-			if len(f) < 3 {
-				return 0, 0, fmt.Errorf("%s: short geomean line %q", file, line)
+			if len(f) < 4 {
+				return 0, fmt.Errorf("%s: short geomean line %q", name, line)
 			}
-			if comp, err = parseNs(f[1]); err != nil {
-				return 0, 0, fmt.Errorf("%s: %w", file, err)
+			change := f[3]
+			if change == "~" {
+				return 1, nil
 			}
-			if zd, err = parseNs(f[2]); err != nil {
-				return 0, 0, fmt.Errorf("%s: %w", file, err)
+			if !strings.HasSuffix(change, "%") {
+				return 0, fmt.Errorf("%s: invalid geomean change %q", name, change)
 			}
-			return comp, zd, nil
+			pct, err := strconv.ParseFloat(strings.TrimSuffix(change, "%"), 64)
+			if err != nil {
+				return 0, fmt.Errorf("%s: parse geomean change %q: %w", name, change, err)
+			}
+			if math.IsNaN(pct) || math.IsInf(pct, 0) {
+				return 0, fmt.Errorf("%s: non-finite geomean change %q", name, change)
+			}
+			ratio := 1 + pct/100
+			if math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+				return 0, fmt.Errorf("%s: non-finite geomean ratio from %q", name, change)
+			}
+			if ratio <= 0 {
+				return 0, fmt.Errorf("%s: non-positive geomean ratio from %q", name, change)
+			}
+			return ratio, nil
 		}
 	}
-	return 0, 0, fmt.Errorf("%s: no sec/op geomean line", file)
-}
-
-// parseNs converts a benchstat duration token (e.g. "13.15n", "1.20µ") to
-// nanoseconds.
-func parseNs(tok string) (float64, error) {
-	scale := 1.0
-	switch {
-	case strings.HasSuffix(tok, "n"):
-		tok = strings.TrimSuffix(tok, "n")
-	case strings.HasSuffix(tok, "µ"), strings.HasSuffix(tok, "u"):
-		tok, scale = strings.TrimRight(tok, "µu"), 1e3
-	case strings.HasSuffix(tok, "m"):
-		tok, scale = strings.TrimSuffix(tok, "m"), 1e6
-	case strings.HasSuffix(tok, "s"):
-		tok, scale = strings.TrimSuffix(tok, "s"), 1e9
-	}
-	v, err := strconv.ParseFloat(tok, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parse %q: %w", tok, err)
-	}
-	return v * scale, nil
+	return 0, fmt.Errorf("%s: no sec/op geomean line", name)
 }
 
 type bar struct {
-	name string
-	ns   float64
-	self bool // zerodecimal (default build)
-	pgo  bool // zerodecimal rebuilt with PGO
+	name  string
+	ratio float64
+	self  bool // zerodecimal (default build)
+	pgo   bool // zerodecimal rebuilt with PGO
+}
+
+type collectionMetadata struct {
+	goos, goarch, cpu string
+	goVersion         string
+	benchstatVersion  string
+	goenv             string
+	gowork            string
+	goexperiment      string
+	gomaxprocs        string
+	gogc              string
+	gomemlimit        string
+	godebug           string
+	benchTime         string
+	count             int
+	revision          string
+	sourceHash        string
+	worktree          string
+	command           string
+	rawSHA256         string
+	artifactSHA256    map[string]string
+	pgoSourceSHA256   map[string]string
 }
 
 func main() {
-	var bars []bar
-	for _, l := range libs {
-		comp, _, err := geomeans(l.file)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "chartgen:", err)
-			os.Exit(1)
+	publish := flag.Bool("publish", false, "publish collection provenance before rendering charts")
+	rawFile := flag.String("raw", "bench-all.txt", "unified raw benchmark output")
+	benchTime := flag.String("benchtime", "", "per-sample benchmark duration")
+	count := flag.Int("count", 0, "samples per benchmark row")
+	revision := flag.String("revision", "", "source commit used for collection")
+	sourceHash := flag.String("source-hash", "", "benchmark source SHA-256 captured before collection")
+	sourceRoot := flag.String("source-root", "..", "repository root used to validate benchmark source")
+	worktree := flag.String("worktree", "", "source worktree state at collection start (clean or dirty)")
+	command := flag.String("command", "", "exact top-level collection command")
+	flag.Parse()
+
+	var metadata collectionMetadata
+	var err error
+	if *publish {
+		if !publicationAuthorized() {
+			fail(fmt.Errorf("benchmark publication is internal to make collect"))
 		}
-		bars = append(bars, bar{name: l.name, ns: comp})
+		benchstatVersion, versionErr := installedBenchstatVersion()
+		if versionErr != nil {
+			fail(versionErr)
+		}
+		metadata, err = loadCollectionMetadata(*rawFile, *benchTime, *count, *revision, *sourceHash, *worktree, *command, benchstatVersion)
+		if err != nil {
+			fail(err)
+		}
+		if err = validateBenchmarkSource(metadata, *sourceRoot); err != nil {
+			fail(err)
+		}
+		if err = bindPublishedInputs(&metadata, *rawFile); err != nil {
+			fail(err)
+		}
+		//nolint:gosec // G306: 0644 is intentional for a public provenance artifact.
+		if err = os.WriteFile("benchmark-provenance.txt", []byte(renderProvenance(metadata)), 0o644); err != nil {
+			fail(err)
+		}
+		fmt.Println("wrote benchmark-provenance.txt")
+	} else {
+		metadata, err = readProvenance("benchmark-provenance.txt")
+		if err != nil {
+			fail(err)
+		}
+		if err = validatePublishedInputs(metadata); err != nil {
+			fail(err)
+		}
+		if err = validateBenchmarkSource(metadata, *sourceRoot); err != nil {
+			fail(err)
+		}
 	}
 
-	// zerodecimal's default and PGO geomeans both come from bench-pgo.txt, the
-	// same default-vs-pgo session, so the two bars are directly comparable.
-	zdDefault, zdPGO, err := geomeans("bench-pgo.txt")
+	var bars []bar
+	for _, l := range libs {
+		zdToCompetitor, ratioErr := geomeanRatio(l.file)
+		if ratioErr != nil {
+			fmt.Fprintln(os.Stderr, "chartgen:", ratioErr)
+			os.Exit(1)
+		}
+		bars = append(bars, bar{name: l.name, ratio: 1 / zdToCompetitor})
+	}
+
+	// PGO and default cover the same complete zerodecimal matrix.
+	zdPGOToDefault, err := geomeanRatio("bench-pgo.txt")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "chartgen:", err)
 		os.Exit(1)
 	}
 	bars = append(bars,
-		bar{name: "zerodecimal", ns: zdDefault, self: true},
-		bar{name: "zerodecimal +PGO", ns: zdPGO, pgo: true},
+		bar{name: "zerodecimal", ratio: 1, self: true},
+		bar{name: "zerodecimal +PGO", ratio: zdPGOToDefault, pgo: true},
 	)
 
-	sort.Slice(bars, func(i, j int) bool { return bars[i].ns < bars[j].ns })
+	sort.Slice(bars, func(i, j int) bool { return bars[i].ratio < bars[j].ratio })
 
 	// Two transparent variants, swapped by prefers-color-scheme via a <picture>
 	// element in the README so the chart matches GitHub's light/dark theme.
 	for _, t := range themes {
 		out := "comparison-" + t.name + ".svg"
-		if err := os.WriteFile(out, []byte(render(bars, t)), 0o644); err != nil {
+		// The generated SVGs are committed documentation assets and must remain
+		// readable by users other than the account that regenerated them.
+		//nolint:gosec // G306: 0644 is intentional for public repository assets.
+		if err := os.WriteFile(out, []byte(render(bars, t, metadata)), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, "chartgen:", err)
 			os.Exit(1)
 		}
 		fmt.Println("wrote", out)
 	}
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "chartgen:", err)
+	os.Exit(1)
+}
+
+func publicationAuthorized() bool {
+	return os.Getenv(collectionGuardEnv) == "1"
+}
+
+func loadCollectionMetadata(rawFile, benchTime string, count int, revision, sourceHash, worktree, command, benchstatVersion string) (collectionMetadata, error) {
+	var m collectionMetadata
+	data, err := os.ReadFile(rawFile)
+	if err != nil {
+		return m, err
+	}
+	rawSourceHash, err := embeddedBenchmarkSourceHash(rawFile, data)
+	if err != nil {
+		return m, err
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		key, value, ok := strings.Cut(line, ": ")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "goos":
+			m.goos = value
+		case "goarch":
+			m.goarch = value
+		case "cpu":
+			m.cpu = value
+		}
+	}
+	if m.goos == "" || m.goarch == "" || m.cpu == "" {
+		return m, fmt.Errorf("%s: missing GOOS, GOARCH, or CPU metadata", rawFile)
+	}
+	d, err := time.ParseDuration(benchTime)
+	if err != nil || d <= 0 {
+		return m, fmt.Errorf("invalid benchtime %q", benchTime)
+	}
+	if count < 2 {
+		return m, fmt.Errorf("count must be at least 2, got %d", count)
+	}
+	if len(revision) != 40 {
+		return m, fmt.Errorf("revision must be a 40-character commit SHA")
+	}
+	if _, err := hex.DecodeString(revision); err != nil {
+		return m, fmt.Errorf("revision must be hexadecimal: %w", err)
+	}
+	if err := validateSHA256("benchmark source", sourceHash); err != nil {
+		return m, err
+	}
+	if rawSourceHash != sourceHash {
+		return m, fmt.Errorf("%s: embedded benchmark source hash %q does not match collection hash %q", rawFile, rawSourceHash, sourceHash)
+	}
+	if worktree != "clean" {
+		return m, fmt.Errorf("benchmark publication requires a clean worktree, got %q", worktree)
+	}
+	if strings.TrimSpace(command) == "" {
+		return m, fmt.Errorf("collection command is empty")
+	}
+	if strings.TrimSpace(benchstatVersion) == "" {
+		return m, fmt.Errorf("benchstat version is empty")
+	}
+	if os.Getenv("GOFLAGS") != "" {
+		return m, fmt.Errorf("GOFLAGS must be empty for benchmark publication")
+	}
+	if os.Getenv("GOENV") != "off" {
+		return m, fmt.Errorf("GOENV must be off for benchmark publication")
+	}
+	if os.Getenv("GOWORK") != "off" {
+		return m, fmt.Errorf("GOWORK must be off for benchmark publication")
+	}
+	m.goVersion = runtime.Version()
+	m.benchstatVersion = benchstatVersion
+	m.goenv = "off (enforced)"
+	m.gowork = "off (enforced)"
+	m.goexperiment = envOrUnset("GOEXPERIMENT")
+	m.gomaxprocs = envOrUnset("GOMAXPROCS")
+	m.gogc = envOrUnset("GOGC")
+	m.gomemlimit = envOrUnset("GOMEMLIMIT")
+	m.godebug = envOrUnset("GODEBUG")
+	m.benchTime = d.String()
+	m.count = count
+	m.revision = revision
+	m.sourceHash = sourceHash
+	m.worktree = worktree
+	m.command = command
+	return m, nil
+}
+
+func envOrUnset(key string) string {
+	if value, ok := os.LookupEnv(key); ok && value != "" {
+		return value
+	}
+	return "<unset>"
+}
+
+func installedBenchstatVersion() (string, error) {
+	path, err := exec.LookPath("benchstat")
+	if err != nil {
+		return "", err
+	}
+	info, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read benchstat build info: %w", err)
+	}
+	version := info.Main.Path + " " + info.Main.Version
+	if info.Main.Sum != "" {
+		version += " " + info.Main.Sum
+	}
+	return version, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return dataSHA256(data), nil
+}
+
+func dataSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func embeddedBenchmarkSourceHash(name string, data []byte) (string, error) {
+	firstLine, _, _ := strings.Cut(string(data), "\n")
+	firstLine = strings.TrimSuffix(firstLine, "\r")
+	const prefix = "benchmark-source-sha256: "
+	if !strings.HasPrefix(firstLine, prefix) {
+		return "", fmt.Errorf("%s: first line does not contain benchmark source hash", name)
+	}
+	sourceHash := strings.TrimPrefix(firstLine, prefix)
+	if err := validateSHA256("embedded benchmark source", sourceHash); err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	return sourceHash, nil
+}
+
+func validateEmbeddedBenchmarkSourceHash(name string, data []byte, want string) error {
+	got, err := embeddedBenchmarkSourceHash(name, data)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("%s embedded benchmark source hash %s does not match provenance %s", name, got, want)
+	}
+	return nil
+}
+
+func bindPublishedInputs(m *collectionMetadata, rawFile string) error {
+	var err error
+	m.rawSHA256, err = fileSHA256(rawFile)
+	if err != nil {
+		return fmt.Errorf("hash raw collection: %w", err)
+	}
+	m.artifactSHA256 = make(map[string]string, len(publishedInputs))
+	for _, file := range publishedInputs {
+		data, readErr := os.ReadFile(file)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", file, readErr)
+		}
+		if sourceErr := validateEmbeddedBenchmarkSourceHash(file, data, m.sourceHash); sourceErr != nil {
+			return sourceErr
+		}
+		m.artifactSHA256[file] = dataSHA256(data)
+	}
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return fmt.Errorf("raw collection hash %s does not match bench-all artifact hash %s", m.rawSHA256, m.artifactSHA256["bench-all.txt"])
+	}
+	m.pgoSourceSHA256 = make(map[string]string, len(pgoSourceInputs))
+	for _, file := range pgoSourceInputs {
+		m.pgoSourceSHA256[file], err = fileSHA256(file)
+		if err != nil {
+			return fmt.Errorf("hash %s: %w", file, err)
+		}
+	}
+	return nil
+}
+
+func validatePublishedInputs(m collectionMetadata) error {
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return fmt.Errorf("raw collection hash %s does not match bench-all artifact hash %s", m.rawSHA256, m.artifactSHA256["bench-all.txt"])
+	}
+	for _, file := range publishedInputs {
+		want, ok := m.artifactSHA256[file]
+		if !ok {
+			return fmt.Errorf("provenance has no hash for %s", file)
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		got := dataSHA256(data)
+		if got != want {
+			return fmt.Errorf("%s hash %s does not match provenance %s", file, got, want)
+		}
+		if err := validateEmbeddedBenchmarkSourceHash(file, data, m.sourceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateBenchmarkSource(m collectionMetadata, repoRoot string) error {
+	got, err := provenance.SourceHash(repoRoot)
+	if err != nil {
+		return fmt.Errorf("hash current benchmark source: %w", err)
+	}
+	if got != m.sourceHash {
+		return fmt.Errorf("benchmark source hash %s does not match provenance %s; run make collect", got, m.sourceHash)
+	}
+	return nil
+}
+
+func readProvenance(path string) (collectionMetadata, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return collectionMetadata{}, err
+	}
+	return parseProvenanceData(string(data))
+}
+
+func parseProvenanceData(data string) (collectionMetadata, error) {
+	var m collectionMetadata
+	values := make(map[string]string)
+	for line := range strings.SplitSeq(data, "\n") {
+		key, value, ok := strings.Cut(line, ": ")
+		if ok {
+			values[key] = value
+		}
+	}
+	m.revision = values["source-commit"]
+	m.sourceHash = values["benchmark-source-sha256"]
+	m.worktree = values["source-worktree-at-collection-start"]
+	m.goVersion = values["go-version"]
+	m.goos = values["goos"]
+	m.goarch = values["goarch"]
+	m.cpu = values["cpu"]
+	m.benchstatVersion = values["benchstat"]
+	m.goenv = values["goenv"]
+	m.gowork = values["gowork"]
+	m.goexperiment = values["goexperiment"]
+	m.gomaxprocs = values["gomaxprocs"]
+	m.gogc = values["gogc"]
+	m.gomemlimit = values["gomemlimit"]
+	m.godebug = values["godebug"]
+	m.benchTime = values["benchtime-per-sample"]
+	m.command = values["collection-command"]
+	m.rawSHA256 = values["raw-collection-sha256"]
+	m.count, _ = strconv.Atoi(values["samples-per-row"])
+	m.artifactSHA256 = make(map[string]string, len(publishedInputs))
+	for _, file := range publishedInputs {
+		m.artifactSHA256[file] = values["artifact-sha256-"+file]
+	}
+	m.pgoSourceSHA256 = make(map[string]string, len(pgoSourceInputs))
+	for _, file := range pgoSourceInputs {
+		m.pgoSourceSHA256[file] = values["pgo-source-sha256-"+file]
+	}
+	if len(m.revision) != 40 || m.goVersion == "" || m.goos == "" || m.goarch == "" || m.cpu == "" ||
+		m.benchstatVersion == "" || m.goenv != "off (enforced)" || m.gowork != "off (enforced)" || m.goexperiment == "" || m.gomaxprocs == "" || m.gogc == "" || m.gomemlimit == "" || m.godebug == "" ||
+		m.command == "" || m.count < 2 || values["goflags"] != "empty (enforced)" || values["build-tags"] != "none" ||
+		!strings.HasPrefix(values["string-cache"], "off") {
+		return collectionMetadata{}, fmt.Errorf("incomplete or invalid benchmark provenance")
+	}
+	if _, err := hex.DecodeString(m.revision); err != nil {
+		return collectionMetadata{}, fmt.Errorf("invalid provenance revision: %w", err)
+	}
+	if err := validateSHA256("benchmark source", m.sourceHash); err != nil {
+		return collectionMetadata{}, err
+	}
+	if m.worktree != "clean" {
+		return collectionMetadata{}, fmt.Errorf("invalid provenance worktree %q", m.worktree)
+	}
+	if d, err := time.ParseDuration(m.benchTime); err != nil || d <= 0 {
+		return collectionMetadata{}, fmt.Errorf("invalid provenance benchtime %q", m.benchTime)
+	}
+	if err := validateSHA256("raw collection", m.rawSHA256); err != nil {
+		return collectionMetadata{}, err
+	}
+	for _, file := range publishedInputs {
+		if err := validateSHA256(file, m.artifactSHA256[file]); err != nil {
+			return collectionMetadata{}, err
+		}
+	}
+	if m.rawSHA256 != m.artifactSHA256["bench-all.txt"] {
+		return collectionMetadata{}, fmt.Errorf("raw collection hash does not match bench-all artifact hash")
+	}
+	for _, file := range pgoSourceInputs {
+		if err := validateSHA256(file, m.pgoSourceSHA256[file]); err != nil {
+			return collectionMetadata{}, err
+		}
+	}
+	return m, nil
+}
+
+func validateSHA256(name, sum string) error {
+	if len(sum) != sha256.Size*2 {
+		return fmt.Errorf("invalid %s SHA-256 length", name)
+	}
+	if _, err := hex.DecodeString(sum); err != nil {
+		return fmt.Errorf("invalid %s SHA-256: %w", name, err)
+	}
+	return nil
 }
 
 // theme is a color set; bars and the card are transparent, so only text, the
@@ -150,7 +565,7 @@ var themes = []theme{
 // render builds one transparent SVG: a label column, a proportional bar, and a
 // value label, one row per library. No background rect, so it blends into
 // whatever page background GitHub paints in the active theme.
-func render(bars []bar, t theme) string {
+func render(bars []bar, t theme, m collectionMetadata) string {
 	const (
 		width  = 760
 		labelW = 150
@@ -158,7 +573,7 @@ func render(bars []bar, t theme) string {
 		padX   = 16
 		rowH   = 36
 		barH   = 20
-		titleH = 64
+		titleH = 78
 		footH  = 46
 		barX   = labelW
 		barMax = width - labelW - valueW - padX
@@ -167,24 +582,26 @@ func render(bars []bar, t theme) string {
 	font := "-apple-system,Segoe UI,Helvetica,Arial,sans-serif"
 	height := titleH + len(bars)*rowH + footH
 
-	var maxNs float64
+	var maxRatio float64
 	for _, b := range bars {
-		if b.ns > maxNs {
-			maxNs = b.ns
+		if b.ratio > maxRatio {
+			maxRatio = b.ratio
 		}
 	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" font-family="%s">`+"\n", width, height, width, height, font)
 	fmt.Fprintf(&sb, `<text x="%d" y="28" font-size="16" font-weight="700" fill="%s">zerodecimal vs other Go decimal libraries</text>`+"\n", padX, text)
-	fmt.Fprintf(&sb, `<text x="%d" y="48" font-size="12" fill="%s">geomean latency, ns/op (shorter is faster) — Apple M1 Pro, Go 1.26, count=10</text>`+"\n", padX, muted)
+	fmt.Fprintf(&sb, `<text x="%d" y="48" font-size="12" fill="%s">pairwise native-API geomean latency (zerodecimal = 1.0×; shorter is faster)</text>`+"\n", padX, muted)
+	fmt.Fprintf(&sb, `<text x="%d" y="64" font-size="11" fill="%s">%s · %s/%s · %s · %s × %d</text>`+"\n",
+		padX, muted, m.cpu, m.goos, m.goarch, m.goVersion, m.benchTime, m.count)
 
 	for i, b := range bars {
 		y := titleH + i*rowH
 		barY := y + (rowH-barH)/2
 		w := 2.0
-		if maxNs > 0 {
-			w = b.ns / maxNs * float64(barMax)
+		if maxRatio > 0 {
+			w = b.ratio / maxRatio * float64(barMax)
 		}
 		fill, weight, lblFill := gray, "400", text
 		switch {
@@ -197,20 +614,57 @@ func render(bars []bar, t theme) string {
 			labelW-10, barY+barH-6, weight, lblFill, b.name)
 		fmt.Fprintf(&sb, `<rect x="%d" y="%d" width="%.1f" height="%d" rx="3" fill="%s"/>`+"\n", barX, barY, w, barH, fill)
 		fmt.Fprintf(&sb, `<text x="%.1f" y="%d" font-size="12" font-weight="%s" fill="%s">%s</text>`+"\n",
-			float64(barX)+w+6, barY+barH-6, weight, lblFill, fmtNs(b.ns))
+			float64(barX)+w+6, barY+barH-6, weight, lblFill, fmtRatio(b.ratio))
 	}
 
-	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">zerodecimal +PGO = the same library rebuilt with profile-guided optimization.</text>`+"\n",
+	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">Common successful rows only; native precision/rounding contracts may differ (see methodology).</text>`+"\n",
 		padX, height-26, muted)
-	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">govalues geomean covers its three representable shapes (≤19 sig. digits); all others, five.</text>`+"\n",
+	fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="10.5" fill="%s">PGO is an in-sample self-profiled benchmark-binary result, not an application PGO prediction.</text>`+"\n",
 		padX, height-10, muted)
 	sb.WriteString("</svg>\n")
 	return sb.String()
 }
 
-func fmtNs(ns float64) string {
-	if ns < 100 {
-		return strconv.FormatFloat(ns, 'f', 1, 64) + " ns"
+func renderProvenance(m collectionMetadata) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `zerodecimal comparative benchmark provenance
+
+source-commit: %s
+benchmark-source-sha256: %s
+source-worktree-at-collection-start: %s
+go-version: %s
+goos: %s
+goarch: %s
+cpu: %s
+benchstat: %s
+goenv: %s
+gowork: %s
+goflags: empty (enforced)
+goexperiment: %s
+gomaxprocs: %s
+gogc: %s
+gomemlimit: %s
+godebug: %s
+build-tags: none
+string-cache: off (zerodecimal_strcache not set)
+benchtime-per-sample: %s
+samples-per-row: %d
+collection-command: %s
+collection-order: fixed library order; samples for each leaf are consecutive
+pgo-profile: synthetic in-sample benchmark-binary profile; not a production application profile
+raw-collection-sha256: %s
+`, m.revision, m.sourceHash, m.worktree, m.goVersion, m.goos, m.goarch, m.cpu,
+		m.benchstatVersion, m.goenv, m.gowork, m.goexperiment, m.gomaxprocs, m.gogc, m.gomemlimit, m.godebug,
+		m.benchTime, m.count, m.command, m.rawSHA256)
+	for _, file := range publishedInputs {
+		fmt.Fprintf(&sb, "artifact-sha256-%s: %s\n", file, m.artifactSHA256[file])
 	}
-	return strconv.FormatFloat(ns, 'f', 0, 64) + " ns"
+	for _, file := range pgoSourceInputs {
+		fmt.Fprintf(&sb, "pgo-source-sha256-%s: %s\n", file, m.pgoSourceSHA256[file])
+	}
+	return sb.String()
+}
+
+func fmtRatio(ratio float64) string {
+	return strconv.FormatFloat(ratio, 'f', 1, 64) + "×"
 }

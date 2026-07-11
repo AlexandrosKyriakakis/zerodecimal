@@ -1,0 +1,39 @@
+zerodecimal comparative benchmark provenance
+
+source-commit: 9aaeadb07e65d71e2e6e9cc92b0af6f3d5c10c1d
+benchmark-source-sha256: 17f0cd3e870736225d6e901059ae6cb38cd147cff540fe3b4f4f293f776eff1d
+source-worktree-at-collection-start: clean
+go-version: go1.26.5
+goos: darwin
+goarch: arm64
+cpu: Apple M1 (Virtual)
+benchstat: golang.org/x/perf v0.0.0-20260610192853-712aea8b4705 h1:KIE5hxNodGiMfsx0txchv5+0n+w/m9YcGqtpv/+3hYU=
+goenv: off (enforced)
+gowork: off (enforced)
+goflags: empty (enforced)
+goexperiment: <unset>
+gomaxprocs: <unset>
+gogc: <unset>
+gomemlimit: <unset>
+godebug: <unset>
+build-tags: none
+string-cache: off (zerodecimal_strcache not set)
+benchtime-per-sample: 100ms
+samples-per-row: 10
+collection-command: GOENV=off GOFLAGS= GOWORK=off make collect COMPARATIVE_BENCHTIME=100ms COMPARATIVE_COUNT=10
+collection-order: fixed library order; samples for each leaf are consecutive
+pgo-profile: synthetic in-sample benchmark-binary profile; not a production application profile
+raw-collection-sha256: 3b367b2919af374f11e2c54f16cc5d1c1f673a48cba892b8557c65d070015f6d
+artifact-sha256-bench-vs-dec128.txt: 1c3503689615f15c448300dfa58055ec59c31ad9f99b15b401188bbfc7892fba
+artifact-sha256-bench-vs-udecimal.txt: 0f429c1b85bff32ecbf49a01dfc2ac32699fe56b4ac67aa500cb152c74edc0a8
+artifact-sha256-bench-vs-govalues.txt: 6689aa753dc76cb223d15c3b7fb50d01c51def013fc67b29f6b7602df6b64900
+artifact-sha256-bench-vs-ericlagergren.txt: 3007a93298eaeb9f3dbdd3152f79dcce91351af306926d701507d2b8e0c366db
+artifact-sha256-bench-vs-alpacadecimal.txt: 7cbde935fa3d8359dac39fd31afc5eb52936fb6171a3c513d914e6c0717b229e
+artifact-sha256-bench-vs-shopspring.txt: a76e5755f73737a975c74ad13819061449c9eec4b9d1bcc829918c906093b6d3
+artifact-sha256-bench-pgo.txt: d0f52c7251ec0650c2f0f163caf0b0b12f46ee4cdd9eceebdc214cb9a434b20f
+artifact-sha256-bench-all.txt: 3b367b2919af374f11e2c54f16cc5d1c1f673a48cba892b8557c65d070015f6d
+artifact-sha256-bench-zd-pgo-default.txt: 15e27cc7cf2c600556134eb8c9158ba6b53a69ae163525935fbce2628288019b
+artifact-sha256-bench-zd-pgo.txt: 56927d220b6e9c3d0a78dc8d1b33605a4e49732ee3f7a0245da740433278b703
+pgo-source-sha256-zd.pprof: 52878f197eea8d4beb2ed7fc20a0a141d17dbadfa65a47d5240f3aa362615d6d
+pgo-source-sha256-bench-zd-pgo-default-raw.txt: 7da836ddbe918680869c86c003ec2a3c12dd840aa48f7c7c84b359290756525d
+pgo-source-sha256-bench-zd-pgo-raw.txt: 2d0727ed7c0126dcae036d95845a3bc56546404788f1a578126130203081d693

@@ -9,15 +9,28 @@ on:
       - 'scripts/**'
       - '.github/workflows/fuzz.yaml'
 
+concurrency:
+  # One active run per workflow + branch/PR.
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
+env:
+  GOTOOLCHAIN: local
 
 jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
-      - run: make fuzz-all 20
+          go-version: '1.26.5'
+      - name: Fuzz-tag regression tests
+        run: go test -tags=fuzz -run '^Test' -count=1 ./...
+      - name: Fuzz runner regression tests
+        run: sh scripts/fuzz-all_test.sh
+      - name: Fuzz targets
+        run: make fuzz-all 20

@@ -34,7 +34,18 @@ func decimalToRat(d Decimal) *big.Rat {
 }
 
 func TestDecimalLayout(t *testing.T) {
-	assert.Equal(t, uintptr(24), unsafe.Sizeof(Decimal{}), "Decimal must stay a 24-byte value")
+	wantAlign := unsafe.Alignof(uint64(0))
+	var wantSize uintptr
+	switch wantAlign {
+	case 4:
+		wantSize = 20
+	case 8:
+		wantSize = 24
+	default:
+		t.Fatalf("unsupported uint64 alignment: %d", wantAlign)
+	}
+	assert.Equal(t, wantSize, unsafe.Sizeof(Decimal{}), "Decimal size changed for this uint64 alignment")
+	assert.Equal(t, wantAlign, unsafe.Alignof(Decimal{}), "Decimal alignment must follow its uint64 limbs")
 }
 
 func TestZeroOneConstants(t *testing.T) {

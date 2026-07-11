@@ -3,7 +3,7 @@ module github.com/AlexandrosKyriakakis/zerodecimal
 go 1.26
 
 require (
-	github.com/quagmt/udecimal v1.9.0
+	github.com/quagmt/udecimal v1.10.1
 	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.10.0
 )

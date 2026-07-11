@@ -5,9 +5,11 @@ package zerodecimal
 //	value = (neg ? -1 : +1) · coef / 10^prec
 //
 // with coef an unsigned 128-bit coefficient and prec 0..MaxPrec fractional
-// digits. A Decimal is a 24-byte pointer-free value — copy it freely; the
-// zero value is the canonical decimal zero and ready to use. The field order
-// is load-bearing: coef first keeps the hot-path limb loads at offset zero.
+// digits. A Decimal is a pointer-free value (24 bytes on targets with 8-byte
+// maximum alignment, and 20 on gc's 32-bit max-align-4 ports) — copy it
+// freely; the zero value is the canonical decimal zero and ready to use. The
+// field order is load-bearing: coef first keeps the hot-path limb loads at
+// offset zero.
 //
 // INVARIANT (canonical zero): a Decimal with a zero coefficient is always
 // exactly Decimal{} — neg false, prec 0. Every code path that can produce
@@ -23,10 +25,18 @@ type Decimal struct {
 	prec uint8
 }
 
-// Zero is the canonical decimal zero, identical to the zero value Decimal{}.
+// Zero is a mutable compatibility variable initialized to Decimal{}.
+// Package internals do not read it.
+//
+// Deprecated: use Decimal{}. Exported variables can be reassigned or raced by
+// callers and therefore must not be treated as constants.
 var Zero = Decimal{}
 
-// One is the decimal one with precision 0.
+// One is a mutable compatibility variable initialized to NewFromInt(1).
+// Package internals do not read it.
+//
+// Deprecated: use NewFromInt(1). Exported variables can be reassigned or
+// raced by callers and therefore must not be treated as constants.
 var One = NewFromInt(1)
 
 // newDecimal assembles a Decimal from raw parts while enforcing the
@@ -68,7 +78,7 @@ func NewFromUint64(v uint64) Decimal {
 // exp > 38 with a nonzero value). A negative exp becomes fractional
 // precision; when it exceeds MaxPrec, factors of ten are stripped from value
 // while it stays exact, and ErrPrecOutOfRange is returned if the precision
-// still cannot fit. New(0, exp) is Zero for every exp.
+// still cannot fit. New(0, exp) is canonical Decimal{} for every exp.
 func New(value int64, exp int32) (Decimal, error) {
 	if value == 0 {
 		return Decimal{}, nil

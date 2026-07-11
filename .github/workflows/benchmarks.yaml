@@ -1,0 +1,122 @@
+name: comparative-benchmarks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: off
+
+concurrency:
+  group: comparative-benchmarks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    name: hosted-runner comparative benchmarks
+    # This is intentionally a pull_request workflow (never pull_request_target)
+    # on an ephemeral GitHub-hosted runner. Fork PRs receive no secrets and run
+    # detection/verification on Linux, but cannot trigger the costly macOS
+    # collection path; a maintainer-controlled branch must refresh stale data.
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'macos-15' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: benchmarks/go.mod
+
+      # The content identity covers every tracked source path that can affect
+      # collection. Unlike a commit-ancestry check, it remains valid after a
+      # squash merge or rebase while still detecting worktree content changes.
+      - name: Detect benchmark source changes
+        id: changes
+        shell: bash
+        working-directory: benchmarks
+        run: |
+          provenance=benchmark-provenance.txt
+          current_hash=$(GOENV=off GOFLAGS= GOWORK=off go run ./internal/sourcehash -repo ..)
+          recorded_hash=$(awk -F': ' '$1 == "benchmark-source-sha256" { print $2 }' "$provenance" 2>/dev/null || true)
+          run=true
+          if [[ "$recorded_hash" =~ ^[0-9a-f]{64}$ && "$recorded_hash" == "$current_hash" ]]; then
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "current_hash=$current_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned benchstat
+        if: steps.changes.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260610192853-712aea8b4705
+
+      - name: Collect comparisons, PGO samples, provenance, and charts
+        id: collection
+        if: steps.changes.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: benchmarks
+        run: make collect
+
+      - name: Verify published hashes regenerate the charts
+        id: verification
+        if: steps.changes.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: benchmarks
+        run: make chart
+
+      - name: Require maintainer refresh for changed fork benchmarks
+        if: steps.changes.outputs.run == 'true' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error title=Benchmark evidence needs maintainer refresh::This fork changes benchmark source. Reproduce it on a maintainer-controlled branch to collect and commit hosted macOS evidence."
+          exit 1
+
+      - name: Verify committed benchmark evidence
+        if: steps.changes.outputs.run != 'true'
+        shell: bash
+        run: |
+          make -C benchmarks chart
+          git diff --exit-code -- \
+            benchmarks/comparison-light.svg \
+            benchmarks/comparison-dark.svg
+
+      - name: Upload raw and published benchmark evidence
+        # Preserve a successful collection for diagnosis/recovery even when
+        # the independent chart/provenance verification step fails.
+        if: always() && steps.changes.outputs.run == 'true' && steps.collection.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zerodecimal-benchmarks-${{ github.event.pull_request.head.sha }}
+          path: |
+            benchmarks/bench*.txt
+            benchmarks/benchmark-provenance.txt
+            benchmarks/comparison-*.svg
+            benchmarks/zd.pprof
+          if-no-files-found: error
+          retention-days: 30
+
+      # A source-changing PR is not green merely because collection succeeded.
+      # The uploaded bundle is the maintainer input: commit it unchanged, then
+      # the replacement run takes the cheap source-hash + artifact verification
+      # path above. Keep this gate after upload so the red run remains useful.
+      - name: Require refreshed evidence to be committed
+        if: always() && steps.changes.outputs.run == 'true' && steps.collection.outcome == 'success' && steps.verification.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          changed=$(git status --short --untracked-files=all -- \
+            benchmarks/benchmark-provenance.txt \
+            benchmarks/bench-all.txt \
+            benchmarks/bench-vs-*.txt \
+            benchmarks/bench-pgo.txt \
+            benchmarks/bench-zd-pgo-default.txt \
+            benchmarks/bench-zd-pgo.txt \
+            benchmarks/comparison-*.svg)
+          if [[ -n "$changed" ]]; then
+            echo "$changed"
+            echo "::error title=Fresh benchmark evidence is not committed::Download the benchmark artifact from this run, replace the tracked files above, and commit them. The next run will verify their hashes without recollecting."
+            exit 1
+          fi
