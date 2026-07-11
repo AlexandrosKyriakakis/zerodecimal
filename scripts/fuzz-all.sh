@@ -35,12 +35,15 @@ runFuzzAttempt() {
 }
 
 isDeadlineOnlyFailure() {
-	target=$1
 	case "$fuzzTime" in
 		''|*[!0-9]*|0) return 1 ;;
 	esac
 
-	awk -v target="$target" -v seconds="$fuzzTime" '
+	# Fail closed when the attempt contains any non-fuzz prelude, including
+	# cold-cache `go: downloading ...` output. The preceding tagged-test CI step
+	# warms the module cache; broadening this allowlist would risk retrying an
+	# unrecognized diagnostic along with the deadline tail.
+	awk -v target="$1" -v seconds="$fuzzTime" '
 		{ lines[NR] = $0 }
 		END {
 			if (NR < 5) exit 1

@@ -355,6 +355,11 @@ func TestAggregateSamePrecisionFastPathDifferential(t *testing.T) {
 			narrow: false,
 		},
 		{
+			name:   "zero_after_subtotal_overflow_handoff",
+			xs:     []Decimal{maxScale2, maxScale2, Zero, maxScale2Neg},
+			narrow: false,
+		},
+		{
 			name:   "final_overflow_promotes",
 			xs:     []Decimal{maxScale2, maxScale2},
 			narrow: false,

@@ -74,6 +74,7 @@ func FuzzWideAggregates(f *testing.F) {
 	f.Add(aggregateFuzzEncode(Zero, MustNew(50025, -2), MustNew(-12525, -2), Zero), uint8(2), uint8(ToNearestEven))
 	f.Add(aggregateFuzzEncode(maxValue.Neg(), maxValue.Neg(), maxValue), uint8(0), uint8(TowardZero))
 	f.Add(aggregateFuzzEncode(maxValue, maxValue), uint8(0), uint8(TowardZero))
+	f.Add(aggregateFuzzEncode(maxValue, maxValue, Zero, maxValue.Neg()), uint8(0), uint8(TowardZero))
 	f.Add(aggregateFuzzEncode(maxValue, maxValue, maxValue.Neg(), maxValue.Neg(), MustNew(1, -2)), uint8(2), uint8(ToNearestEven))
 	f.Add(aggregateFuzzEncode(MustNew(100, -2), MustNew(-25, -2), MustNew(5000, -4)), uint8(4), uint8(ToNearestEven))
 

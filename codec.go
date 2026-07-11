@@ -315,6 +315,7 @@ func jsonHexRune(src []byte, off int) (rune, bool) {
 // PRECONDITION: r is a Unicode scalar value. The sole caller obtains one
 // UTF-16 code unit from jsonHexRune, rejects lone surrogates, and combines a
 // validated surrogate pair into U+10000..U+10FFFF before calling here.
+// Violating this internal precondition panics.
 func appendJSONRune(dst *[maxParseLen]byte, n int, r rune) (int, bool) {
 	size := utf8.RuneLen(r)
 	if size > len(dst)-n {

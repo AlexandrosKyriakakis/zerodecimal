@@ -164,8 +164,17 @@ case "$FUZZ_FAKE_SCENARIO" in
 		printf 'FAIL\texample.test/fuzzfixture\t20.123s\n'
 		exit 1
 		;;
+	deadline-with-cold-cache-prelude)
+		printf 'go: downloading example.test/dependency v1.2.3\n'
+		emitDeadline
+		exit 1
+		;;
 	wrong-duration)
 		emitDeadline 19.99
+		exit 1
+		;;
+	wrong-duration-high)
+		emitDeadline 21.00
 		exit 1
 		;;
 	wrong-status)
@@ -250,8 +259,15 @@ runCase reproducer deadline-with-reproducer 1 1 0
 assertContains "${testDir}/reproducer/output" 'Failing input written to testdata/fuzz/FuzzRetry/deadbeef'
 assertNotContains "${testDir}/reproducer/output" "$retryMessage"
 
+runCase cold_cache_prelude deadline-with-cold-cache-prelude 1 1 0
+assertContains "${testDir}/cold_cache_prelude/output" 'go: downloading example.test/dependency v1.2.3'
+assertNotContains "${testDir}/cold_cache_prelude/output" "$retryMessage"
+
 runCase wrong_duration wrong-duration 1 1 0
 assertNotContains "${testDir}/wrong_duration/output" "$retryMessage"
+
+runCase wrong_duration_high wrong-duration-high 1 1 0
+assertNotContains "${testDir}/wrong_duration_high/output" "$retryMessage"
 
 runCase wrong_status wrong-status 2 1 0
 assertNotContains "${testDir}/wrong_status/output" "$retryMessage"

@@ -152,6 +152,6 @@ jobs:
         with:
           go-version-file: benchmarks/go.mod
       - name: Test benchmark fixtures and helpers
-        run: go test ./...
+        run: go test -count=1 ./...
       - name: Exercise every production benchmark in both cache modes
         run: make production-smoke
