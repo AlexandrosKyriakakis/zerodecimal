@@ -3,6 +3,7 @@ package zerodecimal
 import (
 	"encoding/json"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -144,9 +145,106 @@ func TestUnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestUnmarshalJSONNullIsNoOp(t *testing.T) {
+func TestUnmarshalJSONBareNumberGrammarAndDelegation(t *testing.T) {
+	marker := RequireFromString("42.5")
+	invalidBare := []struct {
+		name, bare, quoted, want string
+	}{
+		{name: "leading_plus", bare: `+1`, quoted: `"+1"`, want: "1"},
+		{name: "leading_plus_fraction", bare: `+0.5`, quoted: `"+0.5"`, want: "0.5"},
+		{name: "leading_zero_integer", bare: `01`, quoted: `"01"`, want: "1"},
+		{name: "double_zero", bare: `00`, quoted: `"00"`, want: "0"},
+		{name: "negative_double_zero", bare: `-00`, quoted: `"-00"`, want: "0"},
+		{name: "negative_leading_zero", bare: `-01`, quoted: `"-01"`, want: "-1"},
+		{name: "leading_zero_fraction", bare: `00.10`, quoted: `"00.10"`, want: "0.1"},
+		{name: "negative_leading_zero_fraction", bare: `-00.10`, quoted: `"-00.10"`, want: "-0.1"},
+		{name: "double_zero_exponent", bare: `00e1`, quoted: `"00e1"`, want: "0"},
+		{name: "leading_zero_exponent", bare: `01e2`, quoted: `"01e2"`, want: "100"},
+		{name: "negative_leading_zero_exponent", bare: `-01E+2`, quoted: `"-01E+2"`, want: "-100"},
+	}
+
+	for _, tc := range invalidBare {
+		t.Run(tc.name, func(t *testing.T) {
+			bare := []byte(tc.bare)
+			want := RequireFromString(tc.want)
+
+			d := marker
+			require.Same(t, ErrInvalidFormat, d.UnmarshalJSON(bare))
+			assert.Equal(t, marker, d, "Decimal rejection must be atomic")
+			require.NoError(t, d.UnmarshalJSON([]byte(tc.quoted)))
+			assert.Equal(t, want, d, "quoted content retains decimal grammar")
+
+			strict := NewStrictSQLDecimal(marker)
+			require.Same(t, ErrInvalidFormat, strict.UnmarshalJSON(bare))
+			assert.Equal(t, NewStrictSQLDecimal(marker), strict, "StrictSQLDecimal rejection must be atomic")
+			require.NoError(t, strict.UnmarshalJSON([]byte(tc.quoted)))
+			assert.Equal(t, NewStrictSQLDecimal(want), strict)
+
+			nullable := NewNullDecimal(marker)
+			require.Same(t, ErrInvalidFormat, nullable.UnmarshalJSON(bare))
+			assert.Equal(t, NewNullDecimal(marker), nullable, "NullDecimal rejection must be atomic")
+			require.NoError(t, nullable.UnmarshalJSON([]byte(tc.quoted)))
+			assert.Equal(t, NewNullDecimal(want), nullable)
+
+			strictNull := NewStrictNullDecimal(marker)
+			require.Same(t, ErrInvalidFormat, strictNull.UnmarshalJSON(bare))
+			assert.Equal(t, NewStrictNullDecimal(marker), strictNull, "StrictNullDecimal rejection must be atomic")
+			require.NoError(t, strictNull.UnmarshalJSON([]byte(tc.quoted)))
+			assert.Equal(t, NewStrictNullDecimal(want), strictNull)
+		})
+	}
+
+	validBare := []struct {
+		input, want string
+	}{
+		{input: `0`, want: "0"},
+		{input: `-0`, want: "0"},
+		{input: `0.125`, want: "0.125"},
+		{input: `-0E+10`, want: "0"},
+		{input: `10`, want: "10"},
+		{input: `-10.5`, want: "-10.5"},
+		{input: `1e-7`, want: "0.0000001"},
+		{input: `1e01`, want: "10"},
+	}
+	for _, tc := range validBare {
+		t.Run("valid_"+tc.input, func(t *testing.T) {
+			data := []byte(tc.input)
+			want := RequireFromString(tc.want)
+
+			var d Decimal
+			require.NoError(t, d.UnmarshalJSON(data))
+			assert.Equal(t, want, d)
+
+			var strict StrictSQLDecimal
+			require.NoError(t, strict.UnmarshalJSON(data))
+			assert.Equal(t, NewStrictSQLDecimal(want), strict)
+
+			var nullable NullDecimal
+			require.NoError(t, nullable.UnmarshalJSON(data))
+			assert.Equal(t, NewNullDecimal(want), nullable)
+
+			var strictNull StrictNullDecimal
+			require.NoError(t, strictNull.UnmarshalJSON(data))
+			assert.Equal(t, NewStrictNullDecimal(want), strictNull)
+		})
+	}
+
+	t.Run("length_error_precedence", func(t *testing.T) {
+		d := marker
+		require.Same(t, ErrInvalidFormat, d.UnmarshalJSON([]byte(strings.Repeat("0", maxParseLen))))
+		assert.Equal(t, marker, d)
+		for _, prefix := range []string{"+", "00"} {
+			data := []byte(prefix + strings.Repeat("0", maxParseLen+1-len(prefix)))
+			require.Len(t, data, maxParseLen+1)
+			require.Same(t, ErrMaxStrLen, d.UnmarshalJSON(data))
+			assert.Equal(t, marker, d)
+		}
+	})
+}
+
+func TestUnmarshalJSONNullRejectedIsAtomic(t *testing.T) {
 	d := RequireFromString("7.25")
-	require.NoError(t, d.UnmarshalJSON([]byte("null")))
+	require.ErrorIs(t, d.UnmarshalJSON([]byte("null")), ErrJSONNull)
 	assert.Equal(t, RequireFromString("7.25"), d)
 }
 

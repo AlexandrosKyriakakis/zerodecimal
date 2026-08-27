@@ -133,8 +133,8 @@ func TestInexactFloat64Random(t *testing.T) {
 	}
 }
 
-// stringCacheEnabled reports whether the small-value cache is compiled in
-// (it is not under -tags zerodecimal_nostrcache, where every probe misses).
+// stringCacheEnabled reports whether the opt-in small-value cache is compiled
+// in. It is absent by default and whenever zerodecimal_nostrcache is set.
 func stringCacheEnabled() bool {
 	_, ok := cachedString(Zero)
 	return ok
@@ -142,7 +142,7 @@ func stringCacheEnabled() bool {
 
 func TestStringCacheMatchesComputed(t *testing.T) {
 	if !stringCacheEnabled() {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	rng := rand.New(rand.NewPCG(0xCAC4E, 0x0015))
 	for range 20_000 {
@@ -182,7 +182,7 @@ func TestStringCacheMatchesComputed(t *testing.T) {
 
 func TestStringCacheHitMissBoundary(t *testing.T) {
 	if !stringCacheEnabled() {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	tests := []struct {
 		name    string
@@ -226,7 +226,7 @@ func TestStringCacheHitMissBoundary(t *testing.T) {
 
 func TestValueCacheSharesStringBacking(t *testing.T) {
 	if !stringCacheEnabled() {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	d := mustHiLo(t, false, 0, 12345, 2) // 123.45
 
@@ -330,29 +330,25 @@ func TestAppendFixedLargePlacesPrefix(t *testing.T) {
 }
 
 // TestStringFixedReparse pins the parse contract of fixed renderings flagged
-// by the differential fuzz suite: padding zeros can push the digits as
-// written past 39 significant figures, which strict parsing deliberately
-// rejects (the written coefficient must fit 128 bits before trailing-zero
-// trimming), while truncating parsing drops only the padding and recovers the
-// exact rounded value.
+// by the differential fuzz suite: padding zeros can push the lexical form
+// past 39 digits or MaxPrec fractional places, but canonicalization removes
+// those value-neutral zeros before range checks. Both strict and truncating
+// parsing must therefore recover the exact rounded value.
 func TestStringFixedReparse(t *testing.T) {
 	tests := []struct {
-		name      string
-		d         Decimal
-		places    uint8
-		strictErr error
+		name   string
+		d      Decimal
+		places uint8
 	}{
 		{
-			name:      "pow2_127_coef_padding_overflows_strict_parse",
-			d:         Decimal{coef: u128{hi: 1 << 63}, prec: 18},
-			places:    19,
-			strictErr: ErrOverflow,
+			name:   "pow2_127_coef_padding_canonicalizes",
+			d:      Decimal{coef: u128{hi: 1 << 63}, prec: 18},
+			places: 19,
 		},
 		{
-			name:      "negative_max_coef_padding_overflows_strict_parse",
-			d:         Decimal{coef: u128{hi: maxUint64, lo: maxUint64}, neg: true, prec: 1},
-			places:    11,
-			strictErr: ErrOverflow,
+			name:   "negative_max_coef_padding_canonicalizes",
+			d:      Decimal{coef: u128{hi: maxUint64, lo: maxUint64}, neg: true, prec: 1},
+			places: 11,
 		},
 		{
 			name:   "padding_within_coefficient_strict_reparses",
@@ -364,12 +360,8 @@ func TestStringFixedReparse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.d.StringFixed(tc.places)
 			strict, err := NewFromString(s)
-			if tc.strictErr != nil {
-				require.ErrorIs(t, err, tc.strictErr, "strict parse of %q", s)
-			} else {
-				require.NoError(t, err, "strict parse of %q", s)
-				require.Zero(t, tc.d.Round(tc.places).Cmp(strict), "strict reparse of %q", s)
-			}
+			require.NoError(t, err, "strict parse of %q", s)
+			require.Zero(t, tc.d.Round(tc.places).Cmp(strict), "strict reparse of %q", s)
 			trunc, err := NewFromStringTrunc(s)
 			require.NoError(t, err, "trunc parse of %q", s)
 			require.Zero(t, tc.d.Round(tc.places).Cmp(trunc), "trunc reparse must recover the rounded value: %q", s)

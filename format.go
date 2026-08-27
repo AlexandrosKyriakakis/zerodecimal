@@ -220,9 +220,11 @@ func writeUnpadded(buf *[scratchLen]byte, pos int, v uint64) int {
 }
 
 // String returns the canonical decimal representation of d (the exact form
-// appendCanonical produces). Values inside the small-value cache window
-// return the precomputed string with zero allocations; everything else costs
-// exactly one string allocation.
+// appendCanonical produces). In a zerodecimal_strcache build, values inside
+// the small-value cache window return a precomputed string with zero
+// allocations. An uncached multi-byte result costs exactly one string
+// allocation; the Go runtime may serve a one-byte result from its static
+// one-byte string table.
 func (d Decimal) String() string {
 	if s, ok := cachedString(d); ok {
 		return s
@@ -241,10 +243,11 @@ func (d Decimal) String() string {
 
 // AppendText appends the canonical decimal representation of d to b and
 // returns the extended slice, matching the encoding.TextAppender shape. The
-// error is always nil. Values inside the small-value cache window append the
-// precomputed string (byte-identical to appendCanonical's output, since the
-// cache is built through it — see cache.go); everything else renders inline.
-// It allocates only if b lacks capacity.
+// error is always nil. In a zerodecimal_strcache build, values inside the
+// small-value cache window append the precomputed string (byte-identical to
+// appendCanonical's output, since the cache is built through it — see
+// cache.go); everything else renders inline. It allocates only if b lacks
+// capacity.
 func (d Decimal) AppendText(b []byte) ([]byte, error) {
 	if s, ok := cachedString(d); ok {
 		return append(b, s...), nil
@@ -308,18 +311,45 @@ const zeroRun = "00000000000000000000000000000000"
 // zero-padded, never trimmed — so StringFixed(3) of 1.5 is "1.500". With
 // places 0 the result has no decimal point. It costs one string allocation.
 func (d Decimal) StringFixed(places uint8) string {
-	var buf [48]byte
-	return string(d.AppendFixed(buf[:0], places))
+	return d.stringFixed(places)
 }
 
-// AppendFixed appends the StringFixed rendering of d to b and returns the
-// extended slice. It allocates only if b lacks capacity.
-func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
+// stringFixed is StringFixed's outlined allocation core. The formatter first
+// renders the non-padding prefix into stack scratch, then allocates the exact
+// final byte count. The returned unsafe string is sound because the byte slice
+// is freshly allocated, is never exposed or mutated after conversion, and its
+// backing allocation remains live through the returned string pointer.
+func (d Decimal) stringFixed(places uint8) string {
+	var scratch [scratchLen]byte
+	pos, pad := d.fixedScratch(&scratch, places)
+	// fixedScratch consumes at most 41 bytes and always leaves pos in range;
+	// restating the invariant proves the slice below safe without a bounds
+	// check. The impossible arm is unreachable for every valid Decimal.
+	//nolint:gosec // deliberate: a negative cursor converts above len and fails the guard
+	if uint(pos) > uint(len(scratch)) {
+		return ""
+	}
+
+	buf := make([]byte, 0, len(scratch)-pos+pad)
+	buf = append(buf, scratch[pos:]...)
+	buf = appendFixedZeros(buf, pad)
+	// buf cannot be empty: every rendering contains at least its integer zero.
+	// The string is the sole owner visible to callers, so zero-copy conversion
+	// cannot expose mutable aliases or outlive its backing allocation.
+	return unsafe.String(unsafe.SliceData(buf), len(buf))
+}
+
+// fixedScratch rounds d and renders the sign, integer part, decimal point,
+// and represented fractional digits right to left into scratch. It returns
+// the prefix start plus the number of trailing ASCII zeros still required to
+// reach places. Callers append those two pieces into their chosen ownership
+// model: caller-owned storage for AppendFixed or one exact allocation for
+// StringFixed.
+func (d Decimal) fixedScratch(scratch *[scratchLen]byte, places uint8) (pos, pad int) {
 	d = d.Round(places)
 	// After rounding d.prec ≤ places, so the fraction is the full d.prec
 	// digits of the remainder followed by places - d.prec padding zeros.
-	var scratch [scratchLen]byte
-	pos := len(scratch)
+	pos = len(scratch)
 
 	// Open-code the divmod128Pow10 dispatch (see appendCanonical). Unlike that
 	// path, d.prec can legitimately be 0 here, so the k == 0 short-circuit is
@@ -331,17 +361,25 @@ func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
 		} else {
 			q, r = divmod128Pow10Slow(q, d.prec)
 		}
-		pos = writePadded(&scratch, pos, r, int(d.prec))
+		pos = writePadded(scratch, pos, r, int(d.prec))
 	}
 	if places > 0 {
 		pos--
 		scratch[pos&scratchMask] = '.'
 	}
-	pos = writeIntPart(&scratch, pos, q)
+	pos = writeIntPart(scratch, pos, q)
 	if d.neg {
 		pos--
 		scratch[pos&scratchMask] = '-'
 	}
+	return pos, int(places) - int(d.prec)
+}
+
+// AppendFixed appends the StringFixed rendering of d to b and returns the
+// extended slice. It allocates only if b lacks capacity.
+func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
+	var scratch [scratchLen]byte
+	pos, pad := d.fixedScratch(&scratch, places)
 	// 0 ≤ pos ≤ len(scratch) holds on every path (see appendCanonical); the
 	// restatement drops the slice bounds check, and the impossible branch
 	// skips straight to the padding.
@@ -349,11 +387,14 @@ func (d Decimal) AppendFixed(b []byte, places uint8) []byte {
 	if uint(pos) <= uint(len(scratch)) {
 		b = append(b, scratch[pos:]...)
 	}
+	return appendFixedZeros(b, pad)
+}
 
-	// Rounding capped d.prec at places, so pad ≥ 0; after the run loop it is
-	// below len(zeroRun), making the closing mask the identity — its only
-	// job is proving the slice in range.
-	pad := int(places) - int(d.prec)
+// appendFixedZeros appends pad ASCII zeros. Rounding capped d.prec at places,
+// so pad ≥ 0; after the run loop it is
+// below len(zeroRun), making the closing mask the identity — its only
+// job is proving the slice in range.
+func appendFixedZeros(b []byte, pad int) []byte {
 	for pad >= len(zeroRun) {
 		b = append(b, zeroRun...)
 		pad -= len(zeroRun)

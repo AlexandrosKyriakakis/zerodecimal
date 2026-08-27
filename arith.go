@@ -139,6 +139,10 @@ func addUnaligned(d, e Decimal, eNeg bool) (Decimal, error) {
 // min(d.prec + e.prec, DefaultPrec). ErrOverflow iff the truncated
 // coefficient does not fit 128 bits. One-limb products that need no rescale
 // take a single hardware multiply; everything else outlines into mulSlow.
+//
+// Mul is the legacy compatibility operation: discarded digits are not
+// reported. Use MulExact when loss must be an error or MulRound to round once
+// from the full product to an explicit scale.
 func (d Decimal) Mul(e Decimal) (Decimal, error) {
 	neg := d.neg != e.neg
 	pSum := d.prec + e.prec
@@ -205,7 +209,12 @@ func bitLen128(u u128) int {
 // p = DefaultPrec (their trailing zeros are not trimmed), while quotients of
 // huge magnitudes degrade precision gracefully instead of failing.
 // ErrOverflow only when even the integer quotient (p = 0) does not fit;
-// ErrDivideByZero when e is zero. Dividing zero by anything nonzero is Zero.
+// ErrDivideByZero when e is zero. Dividing zero by anything nonzero returns
+// canonical Decimal{}.
+//
+// Div is the legacy compatibility operation: a discarded remainder is not
+// reported. Use DivExact when loss must be an error or DivRound to round once
+// from the full quotient and remainder to an explicit scale.
 //
 // The common case is fast-pathed: p = DefaultPrec is the maximum precision, so
 // when its quotient already fits 128 bits (the overwhelmingly common shape) it
@@ -331,7 +340,7 @@ func divCoefAt(d, e Decimal, p int) (u128, bool) {
 // d.neg != e.neg; r has precision f = max(d.prec, e.prec), the sign of d,
 // and |r| < |e|; the identity d = q·e + r always holds. ErrDivideByZero when
 // e is zero; ErrOverflow when the quotient does not fit a 128-bit
-// coefficient, or when the divisor aligned to precision f does not.
+// coefficient.
 func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 	if e.coef.isZero() {
 		return Decimal{}, Decimal{}, ErrDivideByZero
@@ -362,7 +371,12 @@ func (d Decimal) QuoRem(e Decimal) (Decimal, Decimal, error) {
 		var overflow uint64
 		den, overflow = mul128by64(e.coef, pow10u64[(f-e.prec)&31])
 		if overflow != 0 {
-			return Decimal{}, Decimal{}, ErrOverflow
+			// f != e.prec implies f == d.prec, so num is exactly d.coef and
+			// fits 128 bits. An overflowing aligned divisor is strictly larger
+			// than every 128-bit numerator; therefore trunc(d/e) is zero and d
+			// itself is the exact remainder. Returning d also preserves its
+			// contracted sign and precision without manufacturing a wide den.
+			return Decimal{}, d, nil
 		}
 	}
 	if den.hi == 0 {
@@ -479,18 +493,202 @@ func Max(first Decimal, rest ...Decimal) Decimal {
 	return m
 }
 
-// Sum returns first + rest[0] + ... + rest[n-1], folding Add left to right,
-// and stops with ErrOverflow as soon as a partial sum overflows.
-func Sum(first Decimal, rest ...Decimal) (Decimal, error) {
-	s := first
-	for _, d := range rest {
-		var err error
-		s, err = s.Add(d)
-		if err != nil {
-			return Decimal{}, err
+// aggregateAccum is the exact fixed-width accumulator shared by Sum and the
+// average helpers. Every input is aligned to the greatest input precision and
+// added to a separate unsigned total for its sign. An aligned term is less
+// than 2^128*10^MaxPrec < 2^192. A variadic call contains at most MaxInt+1
+// terms, which is at most 2^63 on every supported Go architecture, so either
+// same-sign total is strictly less than 2^255 and always fits u256.
+//
+// Keeping the signs separate makes cancellation independent of operand order;
+// one final magnitude subtraction recovers the exact signed total.
+type aggregateAccum struct {
+	pos, neg u256
+	prec     uint8
+}
+
+// accumulateAggregateAdaptive accumulates same-precision inputs into separate
+// positive and negative 128-bit subtotals. Keeping the signs separate retains
+// Sum's order-independent cancellation semantics. first must be nonzero unless
+// rest is empty; callers discard leading canonical zeros so first.prec is the
+// common prefix precision without carrying a separate precision result through
+// the hot-loop ABI.
+//
+// A nonnegative state indexes the first rest input not represented by the two
+// returned prefix subtotals. A negative state means the entire input remained
+// narrow: the first coefficient is then the final magnitude, while -1 denotes
+// a nonnegative result and -2 a negative result. Computing that magnitude here
+// keeps the successful common-precision path in one call.
+func accumulateAggregateAdaptive(first Decimal, rest []Decimal) (pos, neg u128, state int) {
+	prec := first.prec
+	if first.neg {
+		neg = first.coef
+	} else {
+		pos = first.coef
+	}
+
+	for i, d := range rest {
+		if d.coef.isZero() {
+			continue
+		}
+		if d.prec != prec {
+			return pos, neg, i
+		}
+		var carry uint64
+		if d.neg {
+			neg, carry = add128(neg, d.coef)
+		} else {
+			pos, carry = add128(pos, d.coef)
+		}
+		if carry != 0 {
+			// Recover the exact pre-add subtotal from the wrapped result; this
+			// subtraction is cold and lets the successful loop retain one add and
+			// one carry branch per element.
+			if d.neg {
+				neg, _ = sub128(neg, d.coef)
+			} else {
+				pos, _ = sub128(pos, d.coef)
+			}
+			return pos, neg, i
 		}
 	}
-	return s, nil
+	if neg.isZero() {
+		return pos, u128{}, -1
+	}
+	if pos.isZero() {
+		return neg, u128{}, -2
+	}
+	if cmp128(pos, neg) >= 0 {
+		coef, _ := sub128(pos, neg)
+		return coef, u128{}, -1
+	}
+	coef, _ := sub128(neg, pos)
+	return coef, u128{}, -2
+}
+
+// aggregateFinishWide is the cold narrow-to-wide handoff. prefixPos and
+// prefixNeg contain exactly the inputs before suffix, whose first element
+// caused either a precision mismatch or a subtotal carry.
+func aggregateFinishWide(a *aggregateAccum, prefixPos, prefixNeg u128, prec uint8, suffix []Decimal) {
+	aggregatePromote128(a, prefixPos, prefixNeg, prec)
+	for _, d := range suffix {
+		if d.coef.isZero() {
+			continue
+		}
+		if d.prec > a.prec {
+			// After alignment both exact same-sign subtotals are prefixes of
+			// the <2^255 totals proved by aggregateAccum's bound, so neither
+			// multiplication can overflow.
+			scale := pow10u64[(d.prec-a.prec)&31]
+			a.pos = aggregateMul256by64(a.pos, scale)
+			a.neg = aggregateMul256by64(a.neg, scale)
+			a.prec = d.prec
+		}
+		// Keep the aligned add local to this suffix loop. aggregateAddDecimal
+		// remains shared by the from-scratch path, but a helper call per suffix
+		// element measurably regresses early handoffs.
+		d2, d1, d0 := mul128by64to192(d.coef, pow10u64[(a.prec-d.prec)&31])
+		if d.neg {
+			a.neg = aggregateAdd192(a.neg, d2, d1, d0)
+		} else {
+			a.pos = aggregateAdd192(a.pos, d2, d1, d0)
+		}
+	}
+}
+
+func aggregatePromote128(a *aggregateAccum, pos, neg u128, prec uint8) {
+	*a = aggregateAccum{
+		pos:  u256{d0: pos.lo, d1: pos.hi},
+		neg:  u256{d0: neg.lo, d1: neg.hi},
+		prec: prec,
+	}
+}
+
+// accumulateAggregate aligns and accumulates first and rest exactly. It scans
+// precision separately so every term is scaled only once, by a single-limb
+// power of ten, and it never allocates.
+func accumulateAggregate(first Decimal, rest []Decimal) aggregateAccum {
+	prec := first.prec
+	for _, d := range rest {
+		prec = max(prec, d.prec)
+	}
+
+	a := aggregateAccum{prec: prec}
+	aggregateAddDecimal(&a, first)
+	for _, d := range rest {
+		aggregateAddDecimal(&a, d)
+	}
+	return a
+}
+
+func aggregateAddDecimal(a *aggregateAccum, d Decimal) {
+	if d.coef.isZero() {
+		return
+	}
+	d2, d1, d0 := mul128by64to192(d.coef, pow10u64[(a.prec-d.prec)&31])
+	if d.neg {
+		a.neg = aggregateAdd192(a.neg, d2, d1, d0)
+	} else {
+		a.pos = aggregateAdd192(a.pos, d2, d1, d0)
+	}
+}
+
+func aggregateAdd192(u u256, d2, d1, d0 uint64) u256 {
+	d0, carry := bits.Add64(u.d0, d0, 0)
+	d1, carry = bits.Add64(u.d1, d1, carry)
+	d2, carry = bits.Add64(u.d2, d2, carry)
+	d3, _ := bits.Add64(u.d3, 0, carry) // the aggregateAccum bound proves no carry out
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}
+}
+
+// signedMagnitude returns |pos-neg| and the sign of the difference.
+func (a aggregateAccum) signedMagnitude() (u256, bool) {
+	cmp := cmp256(a.pos, a.neg)
+	if cmp >= 0 {
+		return aggregateSub256(a.pos, a.neg), false
+	}
+	return aggregateSub256(a.neg, a.pos), true
+}
+
+// aggregateSub256 returns a-b. Callers guarantee a >= b.
+func aggregateSub256(a, b u256) u256 {
+	d0, borrow := bits.Sub64(a.d0, b.d0, 0)
+	d1, borrow := bits.Sub64(a.d1, b.d1, borrow)
+	d2, borrow := bits.Sub64(a.d2, b.d2, borrow)
+	d3, _ := bits.Sub64(a.d3, b.d3, borrow)
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}
+}
+
+// Sum returns the exact sum first + rest[0] + ... + rest[n-1] at the
+// greatest input precision. ErrOverflow is returned iff the final exact
+// coefficient does not fit 128 bits; overflowing partial sums that later
+// cancel do not cause a spurious error. Its representation is independent of
+// operand order: a nonzero result carries the greatest input precision and
+// zero is canonical. Precision is not lowered to rescue a final overflow: a
+// value that would fit only after dropping trailing-zero fractional places
+// still returns ErrOverflow when its coefficient does not fit at the
+// contracted greatest input precision.
+func Sum(first Decimal, rest ...Decimal) (Decimal, error) {
+	if len(rest) == 1 {
+		// For two operands Sum's exact greatest-precision contract is identical
+		// to Add's, including mixed precision, cancellation, and overflow. Use
+		// Add's fully inlined pair path instead of setting up an accumulator.
+		return first.Add(rest[0])
+	}
+	for first.coef.isZero() && len(rest) > 0 {
+		first, rest = rest[0], rest[1:]
+	}
+	pos, neg128, state := accumulateAggregateAdaptive(first, rest)
+	if state < 0 {
+		return newDecimal(pos, state == -2, first.prec), nil
+	}
+	var wide aggregateAccum
+	aggregateFinishWide(&wide, pos, neg128, first.prec, rest[state:])
+	coef, neg := wide.signedMagnitude()
+	if !coef.isZeroUpper() {
+		return Decimal{}, ErrOverflow
+	}
+	return newDecimal(coef.lo128(), neg, wide.prec), nil
 }
 
 // MustSum is Sum for operands with proven bounds: it panics on error.
@@ -502,15 +700,199 @@ func MustSum(first Decimal, rest ...Decimal) Decimal {
 	return s
 }
 
-// Avg returns the arithmetic mean (first + rest...)/(1 + len(rest)) with
-// Div's adaptive precision and error contract; the intermediate Sum can also
-// overflow.
+// aggregateDiv256by64 returns the full-width quotient and remainder u/v.
+// Unlike div256by64, no 128-bit quotient limit applies.
+func aggregateDiv256by64(u u256, v uint64) (u256, uint64) {
+	q3, r := bits.Div64(0, u.d3, v)
+	q2, r := bits.Div64(r, u.d2, v)
+	q1, r := bits.Div64(r, u.d1, v)
+	q0, r := bits.Div64(r, u.d0, v)
+	return u256{d0: q0, d1: q1, d2: q2, d3: q3}, r
+}
+
+// aggregateMul256by64 returns the low 256 bits of u*v. Callers prove their
+// aligned aggregate or mean coefficient fits, so no high carry is discarded.
+func aggregateMul256by64(u u256, v uint64) u256 {
+	carry, d0 := bits.Mul64(u.d0, v)
+	hi, lo := bits.Mul64(u.d1, v)
+	d1, c := bits.Add64(lo, carry, 0)
+	carry = hi + c // hi <= v-1, so this cannot wrap
+	hi, lo = bits.Mul64(u.d2, v)
+	d2, c := bits.Add64(lo, carry, 0)
+	carry = hi + c
+	_, lo = bits.Mul64(u.d3, v)
+	d3, _ := bits.Add64(lo, carry, 0) // high carry is impossible by the caller's bound
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}
+}
+
+func aggregateAdd128(u u256, v u128) u256 {
+	d0, carry := bits.Add64(u.d0, v.lo, 0)
+	d1, carry := bits.Add64(u.d1, v.hi, carry)
+	d2, carry := bits.Add64(u.d2, 0, carry)
+	d3, _ := bits.Add64(u.d3, 0, carry)
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}
+}
+
+// aggregateAverageAt derives trunc(total/count*10^(places-sourcePrec)) from
+// the one full-width division total = count*base + baseRem. It also returns
+// the exact fractional remainder and denominator at places, which lets
+// AvgRound decide every rounding mode without a truncated intermediate.
+func aggregateAverageAt(base u256, baseRem, count uint64, sourcePrec, places uint8) (u256, u128, u128) {
+	if places >= sourcePrec {
+		scale := pow10u64[(places-sourcePrec)&31]
+		q := aggregateMul256by64(base, scale)
+		// The exact mean is bounded by the greatest input magnitude. At any
+		// supported result precision its truncated coefficient is <2^192, so
+		// aggregateMul256by64 cannot discard a high carry here.
+		hi, lo := bits.Mul64(baseRem, scale)
+		correction, rem := quoRem64(u128{hi: hi, lo: lo}, count)
+		return aggregateAdd128(q, correction), u128{lo: rem}, u128{lo: count}
+	}
+
+	drop := sourcePrec - places
+	scale := pow10u64[drop&31]
+	q, qRem := divmodU256Pow10Wide(base, drop)
+	hi, lo := bits.Mul64(count, qRem)
+	lo, carry := bits.Add64(lo, baseRem, 0)
+	hi += carry // count*qRem+baseRem < count*scale < 2^127
+	denHi, denLo := bits.Mul64(count, scale)
+	return q, u128{hi: hi, lo: lo}, u128{hi: denHi, lo: denLo}
+}
+
+func aggregateBase(a aggregateAccum, count uint64) (u256, uint64, bool) {
+	total, neg := a.signedMagnitude()
+	q, rem := aggregateDiv256by64(total, count)
+	return q, rem, neg
+}
+
+// aggregateGreatestFit returns the mean coefficient at the greatest places
+// <= limit that fits 128 bits, plus its exact fractional remainder. Fit is
+// monotone in places because floor(|mean|*10^places) never decreases. Probe
+// limit first so ordinary values take one calculation; only a degraded result
+// pays for the binary search over lower precisions.
+func aggregateGreatestFit(base u256, baseRem, count uint64, sourcePrec, limit uint8) (u256, u128, uint8, bool) {
+	q, rem, _ := aggregateAverageAt(base, baseRem, count, sourcePrec, limit)
+	if q.isZeroUpper() {
+		return q, rem, limit, true
+	}
+	if limit == 0 {
+		return u256{}, u128{}, 0, false
+	}
+
+	lo, hi := uint8(0), limit-1
+	var bestQ u256
+	var bestRem u128
+	var bestPlaces uint8
+	found := false
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		mq, mr, _ := aggregateAverageAt(base, baseRem, count, sourcePrec, mid)
+		if mq.isZeroUpper() {
+			bestQ, bestRem, bestPlaces, found = mq, mr, mid, true
+			lo = mid + 1
+		} else {
+			if mid == 0 {
+				break
+			}
+			hi = mid - 1
+		}
+	}
+	return bestQ, bestRem, bestPlaces, found
+}
+
+// Avg returns the arithmetic mean (first + rest...)/(1 + len(rest)),
+// truncated toward zero at the greatest precision at or below DefaultPrec
+// whose coefficient fits 128 bits. This is the same adaptive-precision
+// representation as Div on every previously successful input, but the exact
+// aggregate is divided while still wide: a representable mean is not rejected
+// merely because its intermediate sum exceeds 128 bits.
+//
+// Avg is the legacy compatibility operation: discarded digits are not
+// reported. Use AvgExact when loss must be an error or AvgRound to round once
+// from the exact wide aggregate to an explicit scale.
 func Avg(first Decimal, rest ...Decimal) (Decimal, error) {
-	s, err := Sum(first, rest...)
+	// Convert before adding: len(rest) <= MaxInt, hence this remains exact even
+	// when len(rest)+1 would overflow a signed int on a 64-bit architecture.
+	count := uint64(len(rest)) + 1
+	if len(rest) == 1 {
+		// Reuse Add's pair fast path when its exact sum fits. If it overflows,
+		// the mean can still be representable, so continue into the wide handoff.
+		if total, err := first.Add(rest[0]); err == nil {
+			return total.Div(NewFromUint64(count))
+		}
+	}
+	for first.coef.isZero() && len(rest) > 0 {
+		first, rest = rest[0], rest[1:]
+	}
+	pos, neg128, state := accumulateAggregateAdaptive(first, rest)
+	if state < 0 {
+		// Div implements the same greatest-fitting-precision contract as Avg.
+		// The direct route is valid because the exact same-precision total and
+		// the unsigned count are both representable Decimals.
+		return newDecimal(pos, state == -2, first.prec).Div(NewFromUint64(count))
+	}
+	var wide aggregateAccum
+	aggregateFinishWide(&wide, pos, neg128, first.prec, rest[state:])
+	base, baseRem, neg := aggregateBase(wide, count)
+	q, _, places, ok := aggregateGreatestFit(base, baseRem, count, wide.prec, DefaultPrec)
+	if !ok {
+		// The mean lies between its Decimal inputs, so its integer coefficient
+		// must fit. Keep the guard as a defensive invariant check.
+		return Decimal{}, ErrOverflow
+	}
+	return newDecimal(q.lo128(), neg, places), nil
+}
+
+// AvgExact returns the exact arithmetic mean when it has a Decimal
+// representation. Like DivExact, it uses the greatest precision at or below
+// MaxPrec whose coefficient fits, retaining exact trailing zeros.
+// ErrUnderflow reports a nonzero mean below 10^-MaxPrec; ErrInexact reports a
+// mean that requires discarded digits. Use AvgRound instead when loss at a
+// caller-selected scale is intentional. The operation never allocates.
+func AvgExact(first Decimal, rest ...Decimal) (Decimal, error) {
+	a := accumulateAggregate(first, rest)
+	count := uint64(len(rest)) + 1
+	base, baseRem, neg := aggregateBase(a, count)
+	q, rem, places, ok := aggregateGreatestFit(base, baseRem, count, a.prec, MaxPrec)
+	if !ok {
+		// The mean lies between its Decimal inputs, so its integer coefficient
+		// must fit. Keep the guard as a defensive invariant check.
+		return Decimal{}, ErrOverflow
+	}
+	if rem.isZero() {
+		return newDecimal(q.lo128(), neg, places), nil
+	}
+	if q.lo128().isZero() {
+		return Decimal{}, ErrUnderflow
+	}
+	return Decimal{}, ErrInexact
+}
+
+// AvgRound returns the arithmetic mean rounded directly to exactly places
+// fractional digits. It retains the exact aggregate quotient and remainder
+// through the rounding decision, so it cannot double-round. A nonzero result
+// carries precision places; zero remains canonical Decimal{}. Validation
+// checks places before mode, matching MulRound and DivRound. ErrOverflow means
+// the rounded coefficient at the requested precision does not fit 128 bits.
+func AvgRound(first Decimal, places uint8, mode RoundingMode, rest ...Decimal) (Decimal, error) {
+	if places > MaxPrec {
+		return Decimal{}, ErrPrecOutOfRange
+	}
+	if !mode.valid() {
+		return Decimal{}, ErrInvalidRoundingMode
+	}
+	a := accumulateAggregate(first, rest)
+	count := uint64(len(rest)) + 1
+	base, baseRem, neg := aggregateBase(a, count)
+	q, rem, den := aggregateAverageAt(base, baseRem, count, a.prec, places)
+	if !q.isZeroUpper() {
+		return Decimal{}, ErrOverflow
+	}
+	coef, err := roundQuotient(q.lo128(), !rem.isZero(), cmpDouble128(rem, den), neg, mode)
 	if err != nil {
 		return Decimal{}, err
 	}
-	return s.Div(NewFromInt(int64(len(rest)) + 1))
+	return newDecimal(coef, neg, places), nil
 }
 
 // MustAvg is Avg for operands with proven bounds: it panics on error.

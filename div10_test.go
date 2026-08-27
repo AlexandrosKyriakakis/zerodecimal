@@ -166,6 +166,9 @@ func buildInlineReport(t *testing.T) map[string]inlineReportEntry {
 }
 
 func TestDiv10InlineBudgets(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("inline budgets are calibrated for 64-bit compiler targets")
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
 	}
@@ -248,6 +251,9 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //     inline (Trim 67, Rescale 78 — Rescale has only ~2 points of headroom,
 //     hence no maxCost pin), trimCore/rescaleCore stay outlined.
 func TestArithRoundingInlineBudgets(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("inline budgets are calibrated for 64-bit compiler targets")
+	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH; cannot query inlining diagnostics")
 	}
@@ -349,6 +355,26 @@ var divU256Pow10Ks = []uint8{1, 5, 19, 20, 29, 38}
 // by 10^k no longer fits 128 bits.
 func overflowBound256(k uint8) *big.Int {
 	return new(big.Int).Lsh(pow10Big(int(k)), 128)
+}
+
+func TestDivmodU256Pow10WideRandom(t *testing.T) {
+	rng := rand.New(rand.NewPCG(0xd1f0_0256, 0x10de_cafe))
+	for k := uint8(1); k <= MaxPrec; k++ {
+		den := pow10Big(int(k))
+		for i := 0; i < 2_000; i++ {
+			u := u256{d0: rng.Uint64(), d1: rng.Uint64(), d2: rng.Uint64(), d3: rng.Uint64()}
+			switch i {
+			case 0:
+				u = u256{}
+			case 1:
+				u = u256{d0: ^uint64(0), d1: ^uint64(0), d2: ^uint64(0), d3: ^uint64(0)}
+			}
+			gotQ, gotR := divmodU256Pow10Wide(u, k)
+			wantQ, wantR := new(big.Int).QuoRem(u256ToBig(u), den, new(big.Int))
+			require.Equal(t, bigToU256(t, wantQ), gotQ, "quotient k=%d input=%+v", k, u)
+			require.Equal(t, wantR.Uint64(), gotR, "remainder k=%d input=%+v", k, u)
+		}
+	}
 }
 
 func TestDivU256Pow10KZero(t *testing.T) {

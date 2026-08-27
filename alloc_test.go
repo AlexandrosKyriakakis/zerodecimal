@@ -28,6 +28,7 @@ package zerodecimal
 
 import (
 	"database/sql/driver"
+	"errors"
 	"testing"
 	"time"
 )
@@ -55,16 +56,21 @@ var (
 // Error-path and NullDecimal fixtures, pre-boxed once so the measured
 // closures load package state only (boxing into any allocates; see aStrAny).
 var (
-	sinkNull NullDecimal
+	sinkNull           NullDecimal
+	sinkStrictJSON     StrictSQLDecimal
+	sinkStrictNullJSON StrictNullDecimal
 
-	allocInvalidStr   = "not-a-number"
-	allocInvalidBytes = []byte("1..2")
-	allocPrecStr      = "0.00000000000000000001" // > MaxPrec fractional digits
-	allocValidStr     = "1.5"
-	allocValidBytes   = []byte("1.5")
-	allocInvalidJSON  = []byte(`"abc"`)
-	allocInvalidBin   = []byte{0x00, 0x00, 0x00} // wrong length → ErrInvalidBinaryData
-	allocInvalidText  = []byte("abc")
+	allocInvalidStr          = "not-a-number"
+	allocInvalidBytes        = []byte("1..2")
+	allocPrecStr             = "0.00000000000000000001" // > MaxPrec fractional digits
+	allocValidStr            = "1.5"
+	allocValidBytes          = []byte("1.5")
+	allocInvalidJSON         = []byte(`"abc"`)
+	allocInvalidBin          = []byte{0x00, 0x00, 0x00} // wrong length → ErrInvalidBinaryData
+	allocInvalidText         = []byte("abc")
+	allocBareJSONValid       = []byte("-1234.5e-2")
+	allocBareJSONPlus        = []byte("+1")
+	allocBareJSONLeadingZero = []byte("-00")
 
 	allocScanBadStr   any = "not-a-number"
 	allocScanBadBytes any = []byte("1..2")
@@ -409,6 +415,40 @@ func TestAllocsErrorPaths(t *testing.T) {
 	}
 }
 
+func TestAllocsBareJSONNumberGrammar(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts are unreliable under -race")
+	}
+	marker := RequireFromString("42.5")
+	sinkDecimal = marker
+	sinkStrictJSON = NewStrictSQLDecimal(marker)
+	sinkNull = NewNullDecimal(marker)
+	sinkStrictNullJSON = NewStrictNullDecimal(marker)
+	tests := []struct {
+		name    string
+		fn      func()
+		wantErr error
+	}{
+		{name: "decimal_valid", fn: func() { errSink = sinkDecimal.UnmarshalJSON(allocBareJSONValid) }},
+		{name: "decimal_reject_plus", fn: func() { errSink = sinkDecimal.UnmarshalJSON(allocBareJSONPlus) }, wantErr: ErrInvalidFormat},
+		{name: "decimal_reject_leading_zero", fn: func() { errSink = sinkDecimal.UnmarshalJSON(allocBareJSONLeadingZero) }, wantErr: ErrInvalidFormat},
+		{name: "strict_valid", fn: func() { errSink = sinkStrictJSON.UnmarshalJSON(allocBareJSONValid) }},
+		{name: "strict_reject_leading_zero", fn: func() { errSink = sinkStrictJSON.UnmarshalJSON(allocBareJSONLeadingZero) }, wantErr: ErrInvalidFormat},
+		{name: "null_valid", fn: func() { errSink = sinkNull.UnmarshalJSON(allocBareJSONValid) }},
+		{name: "null_reject_leading_zero", fn: func() { errSink = sinkNull.UnmarshalJSON(allocBareJSONLeadingZero) }, wantErr: ErrInvalidFormat},
+		{name: "strict_null_valid", fn: func() { errSink = sinkStrictNullJSON.UnmarshalJSON(allocBareJSONValid) }},
+		{name: "strict_null_reject_leading_zero", fn: func() { errSink = sinkStrictNullJSON.UnmarshalJSON(allocBareJSONLeadingZero) }, wantErr: ErrInvalidFormat},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			requireAllocs(t, 0, tc.fn)
+			if !errors.Is(errSink, tc.wantErr) {
+				t.Fatalf("error: got %v, want %v", errSink, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestAllocsNullValueCached asserts NullDecimal.Value on a cache-window value
 // forwards to Decimal.Value's zero-allocation cached path.
 func TestAllocsNullValueCached(t *testing.T) {
@@ -416,7 +456,7 @@ func TestAllocsNullValueCached(t *testing.T) {
 		t.Skip("allocation counts are unreliable under -race")
 	}
 	if !strCacheEnabled {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	requireAllocs(t, 0, func() { sinkValue, errSink = allocNullValid.Value() })
 }
@@ -477,7 +517,7 @@ func TestAllocsStringCached(t *testing.T) {
 		t.Skip("allocation counts are unreliable under -race")
 	}
 	if !strCacheEnabled {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	for _, tc := range allocCachedValues {
 		t.Run(tc.name, func(t *testing.T) {
@@ -529,7 +569,7 @@ func TestAllocsSQLValueCached(t *testing.T) {
 		t.Skip("allocation counts are unreliable under -race")
 	}
 	if !strCacheEnabled {
-		t.Skip("string cache compiled out by zerodecimal_nostrcache")
+		t.Skip("string cache is not enabled; run with -tags=zerodecimal_strcache")
 	}
 	for _, tc := range allocCachedValues {
 		t.Run(tc.name, func(t *testing.T) {

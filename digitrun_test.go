@@ -30,5 +30,5 @@ func testDigitRunLen[T string | []byte](s T, i int) int {
 	if digitRunWideEnabled && len(s)-i >= 28 && s[len(s)-1]-'0' <= 9 {
 		return digitRunLenWide(s, i)
 	}
-	return digitRunLenScalar(s, i)
+	return digitRunLen(s, i)
 }

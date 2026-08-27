@@ -1,4 +1,4 @@
-//go:build !zerodecimal_nostrcache
+//go:build zerodecimal_strcache && !zerodecimal_nostrcache
 
 package zerodecimal
 
@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestStringCacheBuildModeEnabled(t *testing.T) {
+	assert.True(t, strCacheEnabled)
+	_, ok := cachedString(Zero)
+	assert.True(t, ok, "zero must hit when zerodecimal_strcache is enabled")
+}
 
 // TestCacheMissSentinelOutOfRange locks in the contract that powers the
 // branch-free callers: the miss sentinel must be >= len of both caches, so a

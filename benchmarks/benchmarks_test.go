@@ -46,7 +46,7 @@ var shapes = [numShapes]struct {
 	{"small_int", "5", "7"},
 	{"typical_price", "1234.5678", "8765.4321"},
 	{"max_prec", "0.1234567890123456789", "0.9876543210987654321"},
-	{"large", "12345678901234567890.123456789", "987654321.987654321"},
+	{"large", "12345678901234567890.123456789", "9.876543211"},
 	{"near_max", "17014118346046923173.1687303715884105727", "1.000000001"},
 }
 
@@ -65,6 +65,15 @@ var (
 // caps at 19 significant digits, so the large and near_max shapes are absent.
 // Every gv sub-benchmark is gated on it.
 var gvOK [numShapes]bool
+
+// Some competitors report an unsupported result by returning NaN rather than
+// an error. Their benchmark rows are omitted instead of timing those failure
+// paths as though they were successful arithmetic.
+var (
+	decMulOK    [numShapes]bool
+	ericRoundOK [numShapes]bool
+	ericTruncOK [numShapes]bool
+)
 
 // Pre-encoded inputs for the decode-direction codec and conversion benchmarks.
 var (
@@ -87,7 +96,6 @@ var (
 	decSink, decSink2       dec.Dec128
 	gvSink, gvSink2         gv.Decimal
 	ericPtrSink             *ed.Big
-	ericPtrSink2            *ed.Big
 
 	boolSink  bool
 	bytesSink []byte
@@ -114,7 +122,6 @@ var (
 // needs its own receiver.
 var (
 	ericSink      = newEricSink(ed.ToNearestEven)
-	ericRemSink   = newEricSink(ed.ToNearestEven)
 	ericTruncSink = newEricSink(ed.ToZero)
 )
 
@@ -172,6 +179,9 @@ func init() {
 		ericB[i] = newEric(sh.b)
 		decA[i] = mustDec(sh.a)
 		decB[i] = mustDec(sh.b)
+		decMulOK[i] = !decA[i].Mul(decB[i]).IsNaN()
+		ericRoundOK[i] = !newEricSink(ed.ToNearestEven).Copy(ericA[i]).Quantize(roundPlaces).IsNaN(0)
+		ericTruncOK[i] = !newEricSink(ed.ToZero).Copy(ericA[i]).Quantize(roundPlaces).IsNaN(0)
 
 		// govalues caps at 19 significant digits; the large and near_max
 		// operands do not fit, so those shapes stay skipped (gvOK false).
@@ -464,15 +474,15 @@ func BenchmarkMul(b *testing.B) {
 				ericPtrSink = ericSink.Mul(d, e)
 			}
 		})
-		// dec on max_prec, large, near_max: measures the overflow-to-NaN
-		// path — dec128 only returns exact products (see README).
-		b.Run("dec/"+sh.name, func(b *testing.B) {
-			d, e := decA[i], decB[i]
-			b.ReportAllocs()
-			for b.Loop() {
-				decSink = d.Mul(e)
-			}
-		})
+		if decMulOK[i] {
+			b.Run("dec/"+sh.name, func(b *testing.B) {
+				d, e := decA[i], decB[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					decSink = d.Mul(e)
+				}
+			})
+		}
 		// gv on max_prec rounds the product half-even to fit 19 digits (the
 		// exact product needs more scale); see README.
 		if gvOK[i] {
@@ -573,13 +583,8 @@ func BenchmarkQuoRem(b *testing.B) {
 				ssSink, ssSink2 = d.QuoRem(e, 0)
 			}
 		})
-		b.Run("eric/"+sh.name, func(b *testing.B) {
-			d, e := ericA[i], ericB[i]
-			b.ReportAllocs()
-			for b.Loop() {
-				ericPtrSink, ericPtrSink2 = ericSink.QuoRem(d, e, ericRemSink)
-			}
-		})
+		// eric: skipped. Its QuoRem returns an exponent-zero unscaled
+		// remainder for mixed-scale decimals, violating x = q*y+r.
 		b.Run("dec/"+sh.name, func(b *testing.B) {
 			d, e := decA[i], decB[i]
 			b.ReportAllocs()
@@ -685,13 +690,15 @@ func BenchmarkRoundBank(b *testing.B) {
 				ssSink = d.RoundBank(roundPlaces)
 			}
 		})
-		b.Run("eric/"+sh.name, func(b *testing.B) {
-			d := ericA[i]
-			b.ReportAllocs()
-			for b.Loop() {
-				ericPtrSink = ericSink.Copy(d).Quantize(roundPlaces)
-			}
-		})
+		if ericRoundOK[i] {
+			b.Run("eric/"+sh.name, func(b *testing.B) {
+				d := ericA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					ericPtrSink = ericSink.Copy(d).Quantize(roundPlaces)
+				}
+			})
+		}
 		b.Run("dec/"+sh.name, func(b *testing.B) {
 			d := decA[i]
 			b.ReportAllocs()
@@ -741,13 +748,15 @@ func BenchmarkTruncate(b *testing.B) {
 				ssSink = d.Truncate(roundPlaces)
 			}
 		})
-		b.Run("eric/"+sh.name, func(b *testing.B) {
-			d := ericA[i]
-			b.ReportAllocs()
-			for b.Loop() {
-				ericPtrSink = ericTruncSink.Copy(d).Quantize(roundPlaces)
-			}
-		})
+		if ericTruncOK[i] {
+			b.Run("eric/"+sh.name, func(b *testing.B) {
+				d := ericA[i]
+				b.ReportAllocs()
+				for b.Loop() {
+					ericPtrSink = ericTruncSink.Copy(d).Quantize(roundPlaces)
+				}
+			})
+		}
 		b.Run("dec/"+sh.name, func(b *testing.B) {
 			d := decA[i]
 			b.ReportAllocs()
@@ -1166,5 +1175,306 @@ func BenchmarkNewFromFloat(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+// TestComparativeBenchmarkFixtures gates successful fixture execution and the
+// unambiguous shared mappings (round/truncate, quotient/remainder, and codec
+// round trips). It is not a cross-library oracle for deliberately different
+// division, multiplication, or float-conversion contracts. Rows a competitor
+// can only answer with NaN are required to stay omitted.
+func TestComparativeBenchmarkFixtures(t *testing.T) {
+	wantDecMulOK := [numShapes]bool{true, true, false, true, false}
+	wantEricQuantizeOK := [numShapes]bool{true, true, true, false, false}
+	wantGVOK := [numShapes]bool{true, true, true, false, false}
+	if decMulOK != wantDecMulOK {
+		t.Fatalf("dec128 Mul availability = %v, want %v", decMulOK, wantDecMulOK)
+	}
+	if ericRoundOK != wantEricQuantizeOK || ericTruncOK != wantEricQuantizeOK {
+		t.Fatalf("ericlagergren Quantize availability: round=%v trunc=%v, want %v", ericRoundOK, ericTruncOK, wantEricQuantizeOK)
+	}
+	if gvOK != wantGVOK {
+		t.Fatalf("govalues shape availability = %v, want %v", gvOK, wantGVOK)
+	}
+
+	for i, sh := range shapes {
+		t.Run(sh.name, func(t *testing.T) {
+			wantQ, wantR := ssA[i].QuoRem(ssB[i], 0)
+			wantRound := ssA[i].RoundBank(roundPlaces).String()
+			wantTrunc := ssA[i].Truncate(roundPlaces).String()
+			if _, err := zd.NewFromString(sh.a); err != nil {
+				t.Fatalf("zerodecimal Parse: %v", err)
+			}
+			if _, err := udec.Parse(sh.a); err != nil {
+				t.Fatalf("udecimal Parse: %v", err)
+			}
+			if _, err := alpaca.NewFromString(sh.a); err != nil {
+				t.Fatalf("alpacadecimal Parse: %v", err)
+			}
+			if _, err := ss.NewFromString(sh.a); err != nil {
+				t.Fatalf("shopspring Parse: %v", err)
+			}
+
+			if _, err := zdA[i].Add(zdB[i]); err != nil {
+				t.Fatalf("zerodecimal Add: %v", err)
+			}
+			if _, err := zdA[i].Sub(zdB[i]); err != nil {
+				t.Fatalf("zerodecimal Sub: %v", err)
+			}
+			if _, err := zdA[i].Mul(zdB[i]); err != nil {
+				t.Fatalf("zerodecimal Mul: %v", err)
+			}
+			if _, err := zdA[i].Div(zdB[i]); err != nil {
+				t.Fatalf("zerodecimal Div: %v", err)
+			}
+			q, r, err := zdA[i].QuoRem(zdB[i])
+			if err != nil {
+				t.Fatalf("zerodecimal QuoRem: %v", err)
+			}
+			if q.String() != wantQ.String() || r.String() != wantR.String() {
+				t.Fatalf("zerodecimal QuoRem = (%s, %s), want (%s, %s)", q, r, wantQ, wantR)
+			}
+			if got := zdA[i].RoundBank(roundPlaces).String(); got != wantRound {
+				t.Fatalf("zerodecimal RoundBank = %s, want %s", got, wantRound)
+			}
+			if got := zdA[i].Truncate(roundPlaces).String(); got != wantTrunc {
+				t.Fatalf("zerodecimal Truncate = %s, want %s", got, wantTrunc)
+			}
+			recomposed, err := q.Mul(zdB[i])
+			if err != nil {
+				t.Fatalf("zerodecimal QuoRem recomposition multiply: %v", err)
+			}
+			recomposed, err = recomposed.Add(r)
+			if err != nil || !recomposed.Equal(zdA[i]) {
+				t.Fatalf("zerodecimal QuoRem invariant: q=%s r=%s recomposed=%s err=%v", q, r, recomposed, err)
+			}
+
+			if _, divErr := udecA[i].Div(udecB[i]); divErr != nil {
+				t.Fatalf("udecimal Div: %v", divErr)
+			}
+			udecQ, udecR, err := udecA[i].QuoRem(udecB[i])
+			if err != nil {
+				t.Fatalf("udecimal QuoRem: %v", err)
+			}
+			if udecQ.String() != wantQ.String() || udecR.String() != wantR.String() {
+				t.Fatalf("udecimal QuoRem = (%s, %s), want (%s, %s)", udecQ, udecR, wantQ, wantR)
+			}
+			if got := udecA[i].RoundBank(roundPlaces).String(); got != wantRound {
+				t.Fatalf("udecimal RoundBank = %s, want %s", got, wantRound)
+			}
+			if got := udecA[i].Trunc(roundPlaces).String(); got != wantTrunc {
+				t.Fatalf("udecimal Truncate = %s, want %s", got, wantTrunc)
+			}
+			if _, err := zd.NewFromFloat(floats[i]); err != nil {
+				t.Fatalf("zerodecimal NewFromFloat: %v", err)
+			}
+			if _, err := udec.NewFromFloat64(floats[i]); err != nil {
+				t.Fatalf("udecimal NewFromFloat: %v", err)
+			}
+			alpacaQ, alpacaR := alpacaA[i].QuoRem(alpacaB[i], 0)
+			if alpacaQ.String() != wantQ.String() || alpacaR.String() != wantR.String() {
+				t.Fatalf("alpacadecimal QuoRem = (%s, %s), want (%s, %s)", alpacaQ, alpacaR, wantQ, wantR)
+			}
+			if got := alpacaA[i].RoundBank(roundPlaces).String(); got != wantRound {
+				t.Fatalf("alpacadecimal RoundBank = %s, want %s", got, wantRound)
+			}
+			if got := alpacaA[i].Truncate(roundPlaces).String(); got != wantTrunc {
+				t.Fatalf("alpacadecimal Truncate = %s, want %s", got, wantTrunc)
+			}
+			if !wantQ.Mul(ssB[i]).Add(wantR).Equal(ssA[i]) {
+				t.Fatalf("shopspring QuoRem invariant failed: q=%s r=%s", wantQ, wantR)
+			}
+
+			decQ, decR := decA[i].QuoRem(decB[i])
+			if decA[i].Add(decB[i]).IsNaN() || decA[i].Sub(decB[i]).IsNaN() ||
+				decA[i].Div(decB[i]).IsNaN() || decQ.IsNaN() || decR.IsNaN() ||
+				decA[i].RoundBank(roundPlaces).IsNaN() || decA[i].Trunc(roundPlaces).IsNaN() ||
+				dec.FromFloat64(floats[i]).IsNaN() {
+				t.Fatal("dec128 success row returned NaN")
+			}
+			if decQ.String() != wantQ.String() || decR.String() != wantR.String() {
+				t.Fatalf("dec128 QuoRem = (%s, %s), want (%s, %s)", decQ, decR, wantQ, wantR)
+			}
+			if got := decA[i].RoundBank(roundPlaces).String(); got != wantRound {
+				t.Fatalf("dec128 RoundBank = %s, want %s", got, wantRound)
+			}
+			if got := decA[i].Trunc(roundPlaces).String(); got != wantTrunc {
+				t.Fatalf("dec128 Truncate = %s, want %s", got, wantTrunc)
+			}
+			if decA[i].Mul(decB[i]).IsNaN() == decMulOK[i] {
+				t.Fatalf("dec128 Mul gate/result mismatch: gate=%v", decMulOK[i])
+			}
+
+			if newEricSink(ed.ToNearestEven).Add(ericA[i], ericB[i]).IsNaN(0) ||
+				newEricSink(ed.ToNearestEven).Sub(ericA[i], ericB[i]).IsNaN(0) ||
+				newEricSink(ed.ToNearestEven).Mul(ericA[i], ericB[i]).IsNaN(0) ||
+				newEricSink(ed.ToNearestEven).Quo(ericA[i], ericB[i]).IsNaN(0) ||
+				newEricSink(ed.ToNearestEven).SetFloat64(floats[i]).IsNaN(0) {
+				t.Fatal("ericlagergren success row returned NaN")
+			}
+			if ericRoundOK[i] {
+				if got := newEricSink(ed.ToNearestEven).Copy(ericA[i]).Quantize(roundPlaces); got.Cmp(newEric(wantRound)) != 0 {
+					t.Fatalf("ericlagergren RoundBank = %s, want %s", got, wantRound)
+				}
+				if got := newEricSink(ed.ToZero).Copy(ericA[i]).Quantize(roundPlaces); got.Cmp(newEric(wantTrunc)) != 0 {
+					t.Fatalf("ericlagergren Truncate = %s, want %s", got, wantTrunc)
+				}
+			}
+
+			var zdJSONDst zd.Decimal
+			if err := zdJSONDst.UnmarshalJSON(zdJSON[i]); err != nil {
+				t.Fatalf("zerodecimal UnmarshalJSON: %v", err)
+			}
+			var zdBinaryDst zd.Decimal
+			if err := zdBinaryDst.UnmarshalBinary(zdBin[i]); err != nil {
+				t.Fatalf("zerodecimal UnmarshalBinary: %v", err)
+			}
+			var zdScanDst zd.Decimal
+			if err := zdScanDst.Scan(scanSrcs[i]); err != nil {
+				t.Fatalf("zerodecimal SQLScan: %v", err)
+			}
+			if !zdJSONDst.Equal(zdA[i]) || !zdBinaryDst.Equal(zdA[i]) || !zdScanDst.Equal(zdA[i]) {
+				t.Fatal("zerodecimal codec/SQL round trip changed the value")
+			}
+			if _, err := zdA[i].AppendText(nil); err != nil {
+				t.Fatalf("zerodecimal AppendText: %v", err)
+			}
+			if _, err := zdA[i].Value(); err != nil {
+				t.Fatalf("zerodecimal SQLValue: %v", err)
+			}
+
+			var udecJSONDst, udecBinaryDst, udecScanDst udec.Decimal
+			if err := udecJSONDst.UnmarshalJSON(udecJSON[i]); err != nil {
+				t.Fatalf("udecimal UnmarshalJSON: %v", err)
+			}
+			if err := udecBinaryDst.UnmarshalBinary(udecBin[i]); err != nil {
+				t.Fatalf("udecimal UnmarshalBinary: %v", err)
+			}
+			if err := udecScanDst.Scan(scanSrcs[i]); err != nil {
+				t.Fatalf("udecimal SQLScan: %v", err)
+			}
+			if udecJSONDst.String() != udecA[i].String() || udecBinaryDst.String() != udecA[i].String() || udecScanDst.String() != udecA[i].String() {
+				t.Fatal("udecimal codec/SQL round trip changed the value")
+			}
+			if _, err := udecA[i].AppendText(nil); err != nil {
+				t.Fatalf("udecimal AppendText: %v", err)
+			}
+			if _, err := udecA[i].Value(); err != nil {
+				t.Fatalf("udecimal SQLValue: %v", err)
+			}
+
+			var alpacaJSONDst, alpacaScanDst alpaca.Decimal
+			if err := alpacaJSONDst.UnmarshalJSON(alpacaJSON[i]); err != nil {
+				t.Fatalf("alpacadecimal UnmarshalJSON: %v", err)
+			}
+			if err := alpacaScanDst.Scan(scanSrcs[i]); err != nil {
+				t.Fatalf("alpacadecimal SQLScan: %v", err)
+			}
+			if alpacaJSONDst.String() != alpacaA[i].String() || alpacaScanDst.String() != alpacaA[i].String() {
+				t.Fatal("alpacadecimal codec/SQL round trip changed the value")
+			}
+			if _, err := alpacaA[i].Value(); err != nil {
+				t.Fatalf("alpacadecimal SQLValue: %v", err)
+			}
+
+			var ssJSONDst, ssBinaryDst, ssScanDst ss.Decimal
+			if err := ssJSONDst.UnmarshalJSON(ssJSON[i]); err != nil {
+				t.Fatalf("shopspring UnmarshalJSON: %v", err)
+			}
+			if err := ssBinaryDst.UnmarshalBinary(ssBin[i]); err != nil {
+				t.Fatalf("shopspring UnmarshalBinary: %v", err)
+			}
+			if err := ssScanDst.Scan(scanSrcs[i]); err != nil {
+				t.Fatalf("shopspring SQLScan: %v", err)
+			}
+			if !ssJSONDst.Equal(ssA[i]) || !ssBinaryDst.Equal(ssA[i]) || !ssScanDst.Equal(ssA[i]) {
+				t.Fatal("shopspring codec/SQL round trip changed the value")
+			}
+			if _, err := ssA[i].Value(); err != nil {
+				t.Fatalf("shopspring SQLValue: %v", err)
+			}
+
+			ericJSONDst := newEricSink(ed.ToNearestEven)
+			if err := ericJSONDst.UnmarshalJSON(ericJSON[i]); err != nil || ericJSONDst.IsNaN(0) {
+				t.Fatalf("ericlagergren UnmarshalJSON: value=%v err=%v", ericJSONDst, err)
+			}
+			ericScanDst := ericpg.Decimal{V: newEricSink(ed.ToNearestEven)}
+			if err := ericScanDst.Scan(scanSrcs[i]); err != nil || ericScanDst.V.IsNaN(0) {
+				t.Fatalf("ericlagergren SQLScan: value=%v err=%v", ericScanDst.V, err)
+			}
+			if ericJSONDst.Cmp(ericA[i]) != 0 || ericScanDst.V.Cmp(ericA[i]) != 0 {
+				t.Fatal("ericlagergren codec/SQL round trip changed the value")
+			}
+			if _, err := ericValuers[i].Value(); err != nil {
+				t.Fatalf("ericlagergren SQLValue: %v", err)
+			}
+
+			var decJSONDst, decBinaryDst, decScanDst dec.Dec128
+			if err := decJSONDst.UnmarshalJSON(decJSON[i]); err != nil || decJSONDst.IsNaN() {
+				t.Fatalf("dec128 UnmarshalJSON: value=%v err=%v", decJSONDst, err)
+			}
+			if err := decBinaryDst.UnmarshalBinary(decBin[i]); err != nil || decBinaryDst.IsNaN() {
+				t.Fatalf("dec128 UnmarshalBinary: value=%v err=%v", decBinaryDst, err)
+			}
+			if err := decScanDst.Scan(scanSrcs[i]); err != nil || decScanDst.IsNaN() {
+				t.Fatalf("dec128 SQLScan: value=%v err=%v", decScanDst, err)
+			}
+			if decJSONDst.Compare(decA[i]) != 0 || decBinaryDst.Compare(decA[i]) != 0 || decScanDst.Compare(decA[i]) != 0 {
+				t.Fatal("dec128 codec/SQL round trip changed the value")
+			}
+			if _, err := decA[i].Value(); err != nil {
+				t.Fatalf("dec128 SQLValue: %v", err)
+			}
+
+			if gvOK[i] {
+				if _, err := gvA[i].Add(gvB[i]); err != nil {
+					t.Fatalf("govalues Add: %v", err)
+				}
+				if _, err := gvA[i].Sub(gvB[i]); err != nil {
+					t.Fatalf("govalues Sub: %v", err)
+				}
+				if _, err := gvA[i].Mul(gvB[i]); err != nil {
+					t.Fatalf("govalues Mul: %v", err)
+				}
+				if _, err := gvA[i].Quo(gvB[i]); err != nil {
+					t.Fatalf("govalues Div: %v", err)
+				}
+				if _, _, err := gvA[i].QuoRem(gvB[i]); err != nil {
+					t.Fatalf("govalues QuoRem: %v", err)
+				}
+				gvQ, gvR, err := gvA[i].QuoRem(gvB[i])
+				if err != nil || gvQ.String() != wantQ.String() || gvR.String() != wantR.String() {
+					t.Fatalf("govalues QuoRem = (%s, %s, %v), want (%s, %s)", gvQ, gvR, err, wantQ, wantR)
+				}
+				if got := gvA[i].Round(roundPlaces).String(); got != wantRound {
+					t.Fatalf("govalues RoundBank = %s, want %s", got, wantRound)
+				}
+				if got := gvA[i].Trunc(roundPlaces).String(); got != wantTrunc {
+					t.Fatalf("govalues Truncate = %s, want %s", got, wantTrunc)
+				}
+				if _, err := gv.NewFromFloat64(floats[i]); err != nil {
+					t.Fatalf("govalues NewFromFloat: %v", err)
+				}
+				var gvJSONDst, gvBinaryDst, gvScanDst gv.Decimal
+				if err := gvJSONDst.UnmarshalJSON(gvJSON[i]); err != nil {
+					t.Fatalf("govalues UnmarshalJSON: %v", err)
+				}
+				if err := gvBinaryDst.UnmarshalBinary(gvBin[i]); err != nil {
+					t.Fatalf("govalues UnmarshalBinary: %v", err)
+				}
+				if err := gvScanDst.Scan(scanSrcs[i]); err != nil {
+					t.Fatalf("govalues SQLScan: %v", err)
+				}
+				if gvJSONDst.String() != gvA[i].String() || gvBinaryDst.String() != gvA[i].String() || gvScanDst.String() != gvA[i].String() {
+					t.Fatal("govalues codec/SQL round trip changed the value")
+				}
+				if _, err := gvA[i].AppendText(nil); err != nil {
+					t.Fatalf("govalues AppendText: %v", err)
+				}
+				if _, err := gvA[i].Value(); err != nil {
+					t.Fatalf("govalues SQLValue: %v", err)
+				}
+			}
+		})
 	}
 }

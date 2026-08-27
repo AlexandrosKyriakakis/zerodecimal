@@ -7,5 +7,5 @@ const digitRunWideEnabled = false
 // digitRunLenWide is the portable fallback used by direct tests. Production
 // scalar builds compile the false digitRunWideEnabled branch out entirely.
 func digitRunLenWide[T string | []byte](s T, i int) int {
-	return digitRunLenScalar(s, i)
+	return digitRunLen(s, i)
 }

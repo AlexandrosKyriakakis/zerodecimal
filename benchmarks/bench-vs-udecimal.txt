@@ -1,291 +1,292 @@
+benchmark-source-sha256: 17f0cd3e870736225d6e901059ae6cb38cd147cff540fe3b4f4f293f776eff1d
 goos: darwin
 goarch: arm64
 pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
-cpu: Apple M1 Pro
-                                 │   udecimal   │             zerodecimal             │
-                                 │    sec/op    │   sec/op     vs base                │
-Parse/small_int-10                  8.487n ± 0%   4.165n ± 0%  -50.92% (p=0.000 n=10)
-Parse/typical_price-10             14.470n ± 1%   8.993n ± 6%  -37.85% (p=0.000 n=10)
-Parse/max_prec-10                   28.26n ± 1%   11.62n ± 1%  -58.86% (p=0.000 n=10)
-Parse/large-10                      44.93n ± 0%   26.88n ± 0%  -40.18% (p=0.000 n=10)
-Parse/near_max-10                   50.66n ± 1%   32.19n ± 0%  -36.46% (p=0.000 n=10)
-String/small_int-10                10.685n ± 0%   2.579n ± 0%  -75.86% (p=0.000 n=10)
-String/typical_price-10             33.04n ± 2%   22.89n ± 2%  -30.71% (p=0.000 n=10)
-String/max_prec-10                  44.34n ± 1%   29.63n ± 2%  -33.17% (p=0.000 n=10)
-String/large-10                     64.50n ± 2%   40.64n ± 1%  -37.00% (p=0.000 n=10)
-String/near_max-10                  75.60n ± 1%   48.32n ± 1%  -36.08% (p=0.000 n=10)
-Add/small_int-10                    4.738n ± 2%   2.288n ± 0%  -51.70% (p=0.000 n=10)
-Add/typical_price-10                4.723n ± 1%   2.290n ± 0%  -51.51% (p=0.000 n=10)
-Add/max_prec-10                     4.734n ± 1%   2.306n ± 1%  -51.29% (p=0.000 n=10)
-Add/large-10                        4.734n ± 0%   2.636n ± 0%  -44.31% (p=0.000 n=10)
-Add/near_max-10                     8.178n ± 1%   3.592n ± 1%  -56.07% (p=0.000 n=10)
-Sub/small_int-10                    7.220n ± 1%   2.778n ± 1%  -61.52% (p=0.000 n=10)
-Sub/typical_price-10                7.221n ± 0%   2.753n ± 1%  -61.87% (p=0.000 n=10)
-Sub/max_prec-10                     7.216n ± 1%   2.750n ± 1%  -61.89% (p=0.000 n=10)
-Sub/large-10                        6.712n ± 1%   2.590n ± 0%  -61.41% (p=0.000 n=10)
-Sub/near_max-10                    10.090n ± 1%   4.499n ± 1%  -55.41% (p=0.000 n=10)
-Mul/small_int-10                    6.488n ± 1%   2.416n ± 0%  -62.77% (p=0.000 n=10)
-Mul/typical_price-10                6.494n ± 0%   2.429n ± 0%  -62.60% (p=0.000 n=10)
-Mul/max_prec-10                    12.605n ± 0%   7.514n ± 0%  -40.39% (p=0.000 n=10)
-Mul/large-10                       94.540n ± 3%   4.835n ± 0%  -94.89% (p=0.000 n=10)
-Mul/near_max-10                    17.045n ± 1%   8.602n ± 0%  -49.53% (p=0.000 n=10)
-Div/small_int-10                   13.010n ± 0%   7.141n ± 0%  -45.11% (p=0.000 n=10)
-Div/typical_price-10               12.990n ± 0%   7.128n ± 1%  -45.12% (p=0.000 n=10)
-Div/max_prec-10                    14.025n ± 1%   8.579n ± 1%  -38.83% (p=0.000 n=10)
-Div/large-10                        18.60n ± 1%   13.57n ± 1%  -27.05% (p=0.000 n=10)
-Div/near_max-10                     18.21n ± 0%   12.67n ± 0%  -30.41% (p=0.000 n=10)
-QuoRem/small_int-10                13.635n ± 1%   3.276n ± 1%  -75.98% (p=0.000 n=10)
-QuoRem/typical_price-10            13.515n ± 0%   3.260n ± 1%  -75.88% (p=0.000 n=10)
-QuoRem/max_prec-10                 13.500n ± 0%   3.257n ± 1%  -75.87% (p=0.000 n=10)
-QuoRem/large-10                    15.310n ± 0%   6.514n ± 1%  -57.45% (p=0.000 n=10)
-QuoRem/near_max-10                 19.495n ± 0%   9.023n ± 1%  -53.72% (p=0.000 n=10)
-Cmp/small_int-10                    5.329n ± 0%   2.168n ± 1%  -59.32% (p=0.000 n=10)
-Cmp/typical_price-10                5.334n ± 0%   2.162n ± 0%  -59.47% (p=0.000 n=10)
-Cmp/max_prec-10                     5.327n ± 0%   2.166n ± 0%  -59.35% (p=0.000 n=10)
-Cmp/large-10                        5.300n ± 0%   2.164n ± 0%  -59.17% (p=0.000 n=10)
-Cmp/near_max-10                     5.961n ± 0%   3.534n ± 0%  -40.71% (p=0.000 n=10)
-RoundBank/small_int-10              2.235n ± 1%   2.093n ± 0%   -6.33% (p=0.000 n=10)
-RoundBank/typical_price-10          5.981n ± 1%   3.218n ± 0%  -46.20% (p=0.000 n=10)
-RoundBank/max_prec-10               5.888n ± 1%   3.226n ± 0%  -45.20% (p=0.000 n=10)
-RoundBank/large-10                  8.243n ± 1%   6.072n ± 1%  -26.34% (p=0.000 n=10)
-RoundBank/near_max-10               9.970n ± 1%   6.177n ± 1%  -38.04% (p=0.000 n=10)
-Truncate/small_int-10               2.180n ± 0%   2.089n ± 0%   -4.20% (p=0.000 n=10)
-Truncate/typical_price-10           5.438n ± 0%   2.627n ± 0%  -51.68% (p=0.000 n=10)
-Truncate/max_prec-10                5.440n ± 1%   2.636n ± 1%  -51.53% (p=0.000 n=10)
-Truncate/large-10                   7.853n ± 0%   5.413n ± 1%  -31.07% (p=0.000 n=10)
-Truncate/near_max-10                8.308n ± 0%   5.415n ± 0%  -34.82% (p=0.000 n=10)
-MarshalJSON/small_int-10            19.41n ± 2%   19.38n ± 1%        ~ (p=0.644 n=10)
-MarshalJSON/typical_price-10        33.65n ± 2%   23.55n ± 1%  -30.02% (p=0.000 n=10)
-MarshalJSON/max_prec-10             43.78n ± 1%   30.50n ± 2%  -30.33% (p=0.000 n=10)
-MarshalJSON/large-10                63.44n ± 2%   41.51n ± 1%  -34.56% (p=0.000 n=10)
-MarshalJSON/near_max-10             73.79n ± 1%   50.60n ± 1%  -31.43% (p=0.000 n=10)
-UnmarshalJSON/small_int-10         10.685n ± 0%   5.462n ± 0%  -48.89% (p=0.000 n=10)
-UnmarshalJSON/typical_price-10      16.97n ± 1%   10.01n ± 0%  -41.03% (p=0.000 n=10)
-UnmarshalJSON/max_prec-10           29.73n ± 1%   13.50n ± 1%  -54.58% (p=0.000 n=10)
-UnmarshalJSON/large-10              47.16n ± 1%   29.21n ± 0%  -38.07% (p=0.000 n=10)
-UnmarshalJSON/near_max-10           52.70n ± 0%   34.41n ± 0%  -34.72% (p=0.000 n=10)
-MarshalBinary/small_int-10          19.50n ± 1%   14.46n ± 1%  -25.87% (p=0.000 n=10)
-MarshalBinary/typical_price-10      19.52n ± 1%   14.40n ± 1%  -26.23% (p=0.000 n=10)
-MarshalBinary/max_prec-10           19.59n ± 1%   14.42n ± 1%  -26.39% (p=0.000 n=10)
-MarshalBinary/large-10              19.01n ± 1%   16.57n ± 1%  -12.84% (p=0.000 n=10)
-MarshalBinary/near_max-10           18.95n ± 1%   16.48n ± 1%  -13.03% (p=0.000 n=10)
-UnmarshalBinary/small_int-10        2.507n ± 0%   2.091n ± 1%  -16.57% (p=0.000 n=10)
-UnmarshalBinary/typical_price-10    2.518n ± 0%   2.122n ± 1%  -15.73% (p=0.000 n=10)
-UnmarshalBinary/max_prec-10         2.508n ± 0%   2.127n ± 1%  -15.21% (p=0.000 n=10)
-UnmarshalBinary/large-10            2.551n ± 1%   2.285n ± 1%  -10.43% (p=0.000 n=10)
-UnmarshalBinary/near_max-10         2.555n ± 0%   2.288n ± 1%  -10.47% (p=0.000 n=10)
-AppendText/small_int-10             9.094n ± 0%   5.456n ± 0%  -40.00% (p=0.000 n=10)
-AppendText/typical_price-10         19.82n ± 0%   11.25n ± 0%  -43.22% (p=0.000 n=10)
-AppendText/max_prec-10              30.82n ± 0%   18.96n ± 0%  -38.47% (p=0.000 n=10)
-AppendText/large-10                 51.61n ± 2%   29.59n ± 1%  -42.67% (p=0.000 n=10)
-AppendText/near_max-10              61.95n ± 0%   36.82n ± 0%  -40.56% (p=0.000 n=10)
-SQLValue/small_int-10              26.010n ± 1%   2.895n ± 0%  -88.87% (p=0.000 n=10)
-SQLValue/typical_price-10           52.46n ± 1%   39.24n ± 2%  -25.21% (p=0.000 n=10)
-SQLValue/max_prec-10                64.03n ± 2%   45.90n ± 2%  -28.30% (p=0.000 n=10)
-SQLValue/large-10                   81.78n ± 1%   57.25n ± 2%  -30.00% (p=0.000 n=10)
-SQLValue/near_max-10                91.79n ± 1%   66.28n ± 1%  -27.79% (p=0.000 n=10)
-SQLScan/small_int-10                9.738n ± 0%   5.163n ± 0%  -46.99% (p=0.000 n=10)
-SQLScan/typical_price-10            16.02n ± 0%   10.15n ± 0%  -36.65% (p=0.000 n=10)
-SQLScan/max_prec-10                 29.21n ± 0%   13.02n ± 0%  -55.40% (p=0.000 n=10)
-SQLScan/large-10                    46.51n ± 0%   28.19n ± 1%  -39.38% (p=0.000 n=10)
-SQLScan/near_max-10                 51.95n ± 0%   33.46n ± 1%  -35.61% (p=0.000 n=10)
-NewFromFloat/small_int-10          33.820n ± 0%   3.860n ± 1%  -88.59% (p=0.000 n=10)
-NewFromFloat/typical_price-10       62.76n ± 1%   11.42n ± 0%  -81.80% (p=0.000 n=10)
-NewFromFloat/max_prec-10           81.740n ± 1%   8.525n ± 0%  -89.57% (p=0.000 n=10)
-NewFromFloat/large-10              88.130n ± 1%   9.142n ± 1%  -89.63% (p=0.000 n=10)
-NewFromFloat/near_max-10           88.475n ± 1%   9.104n ± 0%  -89.71% (p=0.000 n=10)
-geomean                             15.67n        7.759n       -50.48%
+cpu: Apple M1 (Virtual)
+                                │   udecimal    │             zerodecimal              │
+                                │    sec/op     │    sec/op     vs base                │
+Parse/small_int-3                 13.645n ±  7%   5.649n ± 36%  -58.60% (p=0.000 n=10)
+Parse/typical_price-3              20.47n ± 18%   13.01n ± 15%  -36.47% (p=0.000 n=10)
+Parse/max_prec-3                   42.10n ± 27%   18.28n ± 16%  -56.57% (p=0.000 n=10)
+Parse/large-3                      48.83n ± 13%   41.72n ± 17%        ~ (p=0.063 n=10)
+Parse/near_max-3                   50.37n ±  8%   38.85n ± 14%  -22.88% (p=0.000 n=10)
+String/small_int-3                15.030n ± 26%   8.386n ± 20%  -44.21% (p=0.000 n=10)
+String/typical_price-3             42.34n ± 35%   34.66n ± 11%  -18.14% (p=0.001 n=10)
+String/max_prec-3                  55.74n ± 11%   37.34n ± 14%  -33.00% (p=0.000 n=10)
+String/large-3                     77.75n ± 27%   63.52n ± 12%  -18.31% (p=0.000 n=10)
+String/near_max-3                  89.93n ± 46%   73.13n ± 16%  -18.68% (p=0.000 n=10)
+Add/small_int-3                    6.810n ± 11%   2.752n ± 11%  -59.60% (p=0.000 n=10)
+Add/typical_price-3                7.474n ± 14%   3.385n ± 12%  -54.70% (p=0.000 n=10)
+Add/max_prec-3                     8.229n ± 39%   3.356n ±  5%  -59.22% (p=0.000 n=10)
+Add/large-3                        7.657n ±  9%   4.135n ± 11%  -46.00% (p=0.000 n=10)
+Add/near_max-3                    10.900n ±  5%   5.127n ± 21%  -52.97% (p=0.000 n=10)
+Sub/small_int-3                   10.765n ±  7%   3.809n ±  9%  -64.62% (p=0.000 n=10)
+Sub/typical_price-3               10.490n ± 10%   3.889n ± 13%  -62.92% (p=0.000 n=10)
+Sub/max_prec-3                     9.468n ±  6%   3.821n ± 15%  -59.65% (p=0.000 n=10)
+Sub/large-3                       10.115n ± 14%   3.325n ±  7%  -67.13% (p=0.000 n=10)
+Sub/near_max-3                    14.125n ± 13%   5.588n ± 15%  -60.44% (p=0.000 n=10)
+Mul/small_int-3                    7.601n ±  9%   2.837n ±  4%  -62.67% (p=0.000 n=10)
+Mul/typical_price-3                7.656n ±  6%   2.752n ±  5%  -64.05% (p=0.000 n=10)
+Mul/max_prec-3                    14.675n ±  8%   8.771n ±  4%  -40.23% (p=0.000 n=10)
+Mul/large-3                        8.335n ± 17%   5.455n ± 22%  -34.55% (p=0.000 n=10)
+Mul/near_max-3                    20.540n ±  2%   9.393n ±  6%  -54.27% (p=0.000 n=10)
+Div/small_int-3                   14.970n ±  4%   8.050n ±  9%  -46.23% (p=0.000 n=10)
+Div/typical_price-3                19.24n ± 27%   10.28n ± 50%  -46.57% (p=0.002 n=10)
+Div/max_prec-3                    18.930n ± 56%   9.856n ± 19%  -47.93% (p=0.000 n=10)
+Div/large-3                        20.87n ±  2%   17.65n ± 23%  -15.43% (p=0.000 n=10)
+Div/near_max-3                     23.03n ±  5%   15.37n ±  4%  -33.26% (p=0.000 n=10)
+QuoRem/small_int-3                16.980n ±  9%   4.074n ± 17%  -76.01% (p=0.000 n=10)
+QuoRem/typical_price-3            17.905n ±  7%   3.903n ± 14%  -78.20% (p=0.000 n=10)
+QuoRem/max_prec-3                 15.140n ±  7%   3.871n ±  6%  -74.43% (p=0.000 n=10)
+QuoRem/large-3                    18.540n ± 10%   8.232n ±  3%  -55.60% (p=0.000 n=10)
+QuoRem/near_max-3                  21.07n ±  5%   10.73n ±  9%  -49.06% (p=0.000 n=10)
+Cmp/small_int-3                    5.776n ±  1%   2.256n ±  4%  -60.94% (p=0.000 n=10)
+Cmp/typical_price-3                5.763n ±  2%   2.330n ±  2%  -59.56% (p=0.000 n=10)
+Cmp/max_prec-3                     5.697n ±  2%   2.279n ±  3%  -60.00% (p=0.000 n=10)
+Cmp/large-3                        6.230n ±  7%   2.555n ±  3%  -58.98% (p=0.000 n=10)
+Cmp/near_max-3                     6.446n ±  4%   3.667n ±  1%  -43.10% (p=0.000 n=10)
+RoundBank/small_int-3              2.584n ±  5%   2.217n ± 10%  -14.17% (p=0.000 n=10)
+RoundBank/typical_price-3          6.812n ±  3%   3.483n ±  8%  -48.87% (p=0.000 n=10)
+RoundBank/max_prec-3               6.431n ±  4%   3.439n ±  2%  -46.52% (p=0.000 n=10)
+RoundBank/large-3                  9.372n ±  4%   6.511n ±  6%  -30.53% (p=0.000 n=10)
+RoundBank/near_max-3              13.265n ±  5%   7.064n ± 15%  -46.74% (p=0.000 n=10)
+Truncate/small_int-3               2.328n ±  7%   2.281n ±  4%   -2.02% (p=0.022 n=10)
+Truncate/typical_price-3           6.100n ±  7%   2.891n ±  3%  -52.61% (p=0.000 n=10)
+Truncate/max_prec-3                5.862n ±  4%   2.784n ±  6%  -52.50% (p=0.000 n=10)
+Truncate/large-3                   8.481n ±  6%   5.736n ±  3%  -32.37% (p=0.000 n=10)
+Truncate/near_max-3                8.972n ±  3%   5.760n ±  1%  -35.80% (p=0.000 n=10)
+MarshalJSON/small_int-3            21.57n ±  5%   21.01n ±  5%        ~ (p=0.239 n=10)
+MarshalJSON/typical_price-3        33.91n ± 10%   24.72n ±  8%  -27.11% (p=0.000 n=10)
+MarshalJSON/max_prec-3             55.01n ± 11%   40.91n ± 11%  -25.63% (p=0.000 n=10)
+MarshalJSON/large-3                61.39n ± 34%   88.02n ± 41%        ~ (p=0.063 n=10)
+MarshalJSON/near_max-3             72.31n ±  8%   56.16n ±  9%  -22.34% (p=0.000 n=10)
+UnmarshalJSON/small_int-3         11.540n ±  1%   5.742n ±  4%  -50.25% (p=0.000 n=10)
+UnmarshalJSON/typical_price-3      20.07n ±  8%   12.02n ±  3%  -40.12% (p=0.000 n=10)
+UnmarshalJSON/max_prec-3           37.34n ±  4%   16.66n ±  5%  -55.38% (p=0.000 n=10)
+UnmarshalJSON/large-3              41.97n ± 10%   35.03n ± 17%  -16.53% (p=0.002 n=10)
+UnmarshalJSON/near_max-3           47.69n ±  4%   36.36n ±  5%  -23.75% (p=0.000 n=10)
+MarshalBinary/small_int-3          22.79n ±  6%   16.18n ±  6%  -29.02% (p=0.000 n=10)
+MarshalBinary/typical_price-3      21.00n ±  0%   16.68n ± 10%  -20.57% (p=0.000 n=10)
+MarshalBinary/max_prec-3           20.67n ±  3%   14.79n ±  2%  -28.43% (p=0.000 n=10)
+MarshalBinary/large-3              22.89n ±  7%   20.76n ±  7%   -9.33% (p=0.000 n=10)
+MarshalBinary/near_max-3           21.88n ±  2%   19.29n ±  1%  -11.86% (p=0.000 n=10)
+UnmarshalBinary/small_int-3        2.630n ±  2%   2.385n ±  1%   -9.32% (p=0.000 n=10)
+UnmarshalBinary/typical_price-3    2.825n ±  6%   2.530n ±  7%  -10.41% (p=0.000 n=10)
+UnmarshalBinary/max_prec-3         2.941n ± 10%   2.447n ±  7%  -16.80% (p=0.000 n=10)
+UnmarshalBinary/large-3            2.767n ±  1%   2.388n ±  1%  -13.68% (p=0.000 n=10)
+UnmarshalBinary/near_max-3         2.937n ±  4%   2.479n ±  5%  -15.61% (p=0.000 n=10)
+AppendText/small_int-3            10.930n ±  5%   8.537n ±  4%  -21.89% (p=0.000 n=10)
+AppendText/typical_price-3         19.92n ±  2%   11.29n ± 10%  -43.35% (p=0.000 n=10)
+AppendText/max_prec-3              35.60n ± 13%   21.93n ±  9%  -38.41% (p=0.000 n=10)
+AppendText/large-3                 41.19n ±  4%   30.58n ±  5%  -25.76% (p=0.000 n=10)
+AppendText/near_max-3              52.54n ±  3%   38.86n ±  4%  -26.03% (p=0.000 n=10)
+SQLValue/small_int-3               28.63n ±  8%   23.43n ± 11%  -18.15% (p=0.000 n=10)
+SQLValue/typical_price-3           53.88n ± 11%   44.89n ±  8%  -16.69% (p=0.000 n=10)
+SQLValue/max_prec-3                66.19n ±  4%   50.52n ± 11%  -23.67% (p=0.000 n=10)
+SQLValue/large-3                   79.80n ±  7%   67.41n ± 14%  -15.53% (p=0.000 n=10)
+SQLValue/near_max-3                89.24n ±  8%   76.61n ± 10%  -14.16% (p=0.000 n=10)
+SQLScan/small_int-3               10.560n ±  3%   5.746n ±  4%  -45.59% (p=0.000 n=10)
+SQLScan/typical_price-3            17.31n ±  3%   10.77n ±  5%  -37.75% (p=0.000 n=10)
+SQLScan/max_prec-3                 33.06n ±  6%   14.46n ±  1%  -56.28% (p=0.000 n=10)
+SQLScan/large-3                    38.34n ±  3%   30.45n ±  7%  -20.60% (p=0.000 n=10)
+SQLScan/near_max-3                 46.62n ±  2%   36.08n ±  5%  -22.62% (p=0.000 n=10)
+NewFromFloat/small_int-3          37.910n ±  6%   4.064n ±  1%  -89.28% (p=0.000 n=10)
+NewFromFloat/typical_price-3       68.14n ±  8%   11.95n ± 19%  -82.47% (p=0.000 n=10)
+NewFromFloat/max_prec-3           92.430n ±  3%   8.666n ±  1%  -90.62% (p=0.000 n=10)
+NewFromFloat/large-3              96.940n ± 14%   9.906n ± 17%  -89.78% (p=0.000 n=10)
+NewFromFloat/near_max-3           92.550n ± 11%   9.739n ±  8%  -89.48% (p=0.000 n=10)
+geomean                            17.62n         9.550n        -45.80%
 
-                                 │   udecimal   │               zerodecimal               │
-                                 │     B/op     │    B/op     vs base                     │
-Parse/small_int-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/typical_price-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/max_prec-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/large-10                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/near_max-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/small_int-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/typical_price-10            16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
-String/max_prec-10                 24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
-String/large-10                    32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
-String/near_max-10                 48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
-Add/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/large-10                       160.0 ± 0%       0.0 ± 0%  -100.00% (p=0.000 n=10)
-Mul/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/small_int-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/typical_price-10            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/max_prec-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/large-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/near_max-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/small_int-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/typical_price-10         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/max_prec-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/large-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/near_max-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/small_int-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/typical_price-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/max_prec-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/large-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/near_max-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/small_int-10           3.000 ± 0%     3.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/typical_price-10       16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/max_prec-10            24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/large-10               32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/near_max-10            48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/small_int-10         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/typical_price-10     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/max_prec-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/large-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/near_max-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/small_int-10         16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/typical_price-10     16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/max_prec-10          16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/large-10             24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/near_max-10          24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/small_int-10       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/typical_price-10   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/max_prec-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/large-10           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/near_max-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/small_int-10            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/typical_price-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/max_prec-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/large-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/near_max-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/small_int-10              16.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
-SQLValue/typical_price-10          32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/max_prec-10               40.00 ± 0%     40.00 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/large-10                  48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/near_max-10               64.00 ± 0%     64.00 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/small_int-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/typical_price-10           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/max_prec-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/large-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/near_max-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-NewFromFloat/small_int-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-NewFromFloat/typical_price-10      16.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/max_prec-10           24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/large-10              24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/near_max-10           24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
-geomean                                       ²               ?                       ² ³
+                                │   udecimal   │               zerodecimal               │
+                                │     B/op     │    B/op     vs base                     │
+Parse/small_int-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/typical_price-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/max_prec-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/large-3                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/near_max-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/small_int-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/typical_price-3            16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+String/max_prec-3                 24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
+String/large-3                    32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
+String/near_max-3                 48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
+Add/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/small_int-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/typical_price-3            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/max_prec-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/large-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/near_max-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/small_int-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/typical_price-3         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/max_prec-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/large-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/near_max-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/small_int-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/typical_price-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/max_prec-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/large-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/near_max-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/small_int-3           3.000 ± 0%     3.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/typical_price-3       16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/max_prec-3            24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/large-3               32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/near_max-3            48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/small_int-3         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/typical_price-3     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/max_prec-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/large-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/near_max-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/small_int-3         16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/typical_price-3     16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/max_prec-3          16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/large-3             24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/near_max-3          24.00 ± 0%     24.00 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/small_int-3       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/typical_price-3   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/max_prec-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/large-3           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/near_max-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/small_int-3            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/typical_price-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/max_prec-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/large-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/near_max-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/small_int-3              16.00 ± 0%     16.00 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/typical_price-3          32.00 ± 0%     32.00 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/max_prec-3               40.00 ± 0%     40.00 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/large-3                  48.00 ± 0%     48.00 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/near_max-3               64.00 ± 0%     64.00 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/small_int-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/typical_price-3           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/max_prec-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/large-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/near_max-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+NewFromFloat/small_int-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+NewFromFloat/typical_price-3      16.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/max_prec-3           24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/large-3              24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/near_max-3           24.00 ± 0%      0.00 ± 0%  -100.00% (p=0.000 n=10)
+geomean                                      ²               ?                       ² ³
 ¹ all samples are equal
 ² summaries must be >0 to compute geomean
 ³ ratios must be >0 to compute geomean
 
-                                 │   udecimal   │               zerodecimal               │
-                                 │  allocs/op   │ allocs/op   vs base                     │
-Parse/small_int-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/typical_price-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/max_prec-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/large-10                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Parse/near_max-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/small_int-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/typical_price-10            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/max_prec-10                 1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/large-10                    1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-String/near_max-10                 1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Add/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Sub/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Mul/large-10                       4.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-Mul/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Div/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/small_int-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/typical_price-10            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/max_prec-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/large-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-QuoRem/near_max-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/small_int-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/typical_price-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/max_prec-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/large-10                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Cmp/near_max-10                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/small_int-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/typical_price-10         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/max_prec-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/large-10                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-RoundBank/near_max-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/small_int-10              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/typical_price-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/max_prec-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/large-10                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-Truncate/near_max-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/small_int-10           1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/typical_price-10       1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/max_prec-10            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/large-10               1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalJSON/near_max-10            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/small_int-10         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/typical_price-10     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/max_prec-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/large-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalJSON/near_max-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/small_int-10         1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/typical_price-10     1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/max_prec-10          1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/large-10             1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-MarshalBinary/near_max-10          1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/small_int-10       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/typical_price-10   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/max_prec-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/large-10           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-UnmarshalBinary/near_max-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/small_int-10            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/typical_price-10        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/max_prec-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/large-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-AppendText/near_max-10             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/small_int-10              1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-SQLValue/typical_price-10          2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/max_prec-10               2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/large-10                  2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLValue/near_max-10               2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/small_int-10               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/typical_price-10           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/max_prec-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/large-10                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-SQLScan/near_max-10                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-NewFromFloat/small_int-10          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
-NewFromFloat/typical_price-10      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/max_prec-10           1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/large-10              1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-NewFromFloat/near_max-10           1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
-geomean                                       ²               ?                       ² ³
+                                │   udecimal   │               zerodecimal               │
+                                │  allocs/op   │ allocs/op   vs base                     │
+Parse/small_int-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/typical_price-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/max_prec-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/large-3                     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Parse/near_max-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/small_int-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/typical_price-3            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/max_prec-3                 1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/large-3                    1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+String/near_max-3                 1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Add/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Sub/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Mul/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Div/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/small_int-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/typical_price-3            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/max_prec-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/large-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+QuoRem/near_max-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/small_int-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/typical_price-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/max_prec-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/large-3                       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Cmp/near_max-3                    0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/small_int-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/typical_price-3         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/max_prec-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/large-3                 0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+RoundBank/near_max-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/small_int-3              0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/typical_price-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/max_prec-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/large-3                  0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+Truncate/near_max-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/small_int-3           1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/typical_price-3       1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/max_prec-3            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/large-3               1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalJSON/near_max-3            1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/small_int-3         0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/typical_price-3     0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/max_prec-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/large-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalJSON/near_max-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/small_int-3         1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/typical_price-3     1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/max_prec-3          1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/large-3             1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+MarshalBinary/near_max-3          1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/small_int-3       0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/typical_price-3   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/max_prec-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/large-3           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+UnmarshalBinary/near_max-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/small_int-3            0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/typical_price-3        0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/max_prec-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/large-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+AppendText/near_max-3             0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/small_int-3              1.000 ± 0%     1.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/typical_price-3          2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/max_prec-3               2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/large-3                  2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLValue/near_max-3               2.000 ± 0%     2.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/small_int-3               0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/typical_price-3           0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/max_prec-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/large-3                   0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+SQLScan/near_max-3                0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+NewFromFloat/small_int-3          0.000 ± 0%     0.000 ± 0%         ~ (p=1.000 n=10) ¹
+NewFromFloat/typical_price-3      1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/max_prec-3           1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/large-3              1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
+NewFromFloat/near_max-3           1.000 ± 0%     0.000 ± 0%  -100.00% (p=0.000 n=10)
+geomean                                      ²               ?                       ² ³
 ¹ all samples are equal
 ² summaries must be >0 to compute geomean
 ³ ratios must be >0 to compute geomean

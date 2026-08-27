@@ -58,6 +58,28 @@ func TestU256Lo128Hi128(t *testing.T) {
 	}
 }
 
+func TestCmp256(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b u256
+		want int
+	}{
+		{name: "equal_zero", want: 0},
+		{name: "equal_all_limbs", a: u256{d0: 1, d1: 2, d2: 3, d3: 4}, b: u256{d0: 1, d1: 2, d2: 3, d3: 4}, want: 0},
+		{name: "low_limb", a: u256{d0: 1}, want: 1},
+		{name: "second_limb", a: u256{d1: 1}, b: u256{d0: ^uint64(0)}, want: 1},
+		{name: "third_limb", a: u256{d2: 1}, b: u256{d0: ^uint64(0), d1: ^uint64(0)}, want: 1},
+		{name: "top_limb", a: u256{d3: 1}, b: u256{d0: ^uint64(0), d1: ^uint64(0), d2: ^uint64(0)}, want: 1},
+		{name: "less", a: u256{d0: 7, d3: 2}, b: u256{d3: 3}, want: -1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, cmp256(tc.a, tc.b))
+			assert.Equal(t, -tc.want, cmp256(tc.b, tc.a))
+		})
+	}
+}
+
 func TestMulToU256ExactBoundaries(t *testing.T) {
 	tests := []struct {
 		name string
