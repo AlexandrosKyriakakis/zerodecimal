@@ -52,6 +52,23 @@ fmt.Println(total.StringFixed(4)) // 299.9700
 Runnable examples for parsing, arithmetic, rounding, JSON, and SQL live in
 [example_test.go](example_test.go).
 
+## Experimental Go 1.27 SIMD
+
+Go 1.27 users on amd64 and arm64 can opt into a SIMD-accelerated scan for
+long decimal inputs:
+
+```sh
+GOEXPERIMENT=simd go test ./...
+GOEXPERIMENT=simd go build ./...
+```
+
+The SIMD path activates only when at least 28 input bytes remain; shorter
+inputs keep the faster scalar/SWAR path. Builds without the experiment, other
+architectures, and Go 1.26 retain the same portable implementation and API.
+Because `simd/archsimd` is experimental, this optimization is deliberately
+limited to Go 1.27; later Go releases fall back to scalar until their revised
+API and generated code have been audited and benchmarked.
+
 ## Design
 
 ```go

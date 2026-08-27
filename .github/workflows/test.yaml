@@ -45,6 +45,25 @@ jobs:
         with:
           files: coverage.out
 
+  simd:
+    name: simd (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GOEXPERIMENT: simd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.x
+      - name: Unit tests (race)
+        run: go test -race -failfast .
+      - name: Allocation assertions (no race)
+        run: go test -run TestAllocs -count=1 .
+
   test-nostrcache:
     runs-on: ubuntu-latest
     steps:
