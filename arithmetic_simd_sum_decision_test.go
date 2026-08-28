@@ -8,24 +8,12 @@ import (
 	"testing"
 )
 
-// arithSIMDSumPositive64Candidate selects the widest available candidate. It
-// intentionally mirrors a future optimistic Sum dispatch but remains test-only
-// until the size and fallback benchmarks establish a safe production policy.
-func arithSIMDSumPositive64Candidate(ds []Decimal) (Decimal, bool) {
-	if archsimd.X86.AVX512() {
-		return arithAVX512SumDecimalsPositive64x2(ds)
+func arithScalarSumReference(ds []Decimal) (Decimal, error) {
+	first, rest := ds[0], ds[1:]
+	for first.coef.isZero() && len(rest) > 0 {
+		first, rest = rest[0], rest[1:]
 	}
-	if archsimd.X86.AVX2() {
-		return arithAVX2SumDecimalsPositive64x2(ds)
-	}
-	return Decimal{}, false
-}
-
-func arithSIMDSumPositive64Fallback(ds []Decimal) (Decimal, error) {
-	if result, ok := arithSIMDSumPositive64Candidate(ds); ok {
-		return result, nil
-	}
-	return Sum(ds[0], ds[1:]...)
+	return sumScalar(first, rest)
 }
 
 func BenchmarkArithmeticSIMDSumDecision(b *testing.B) {
@@ -44,7 +32,7 @@ func BenchmarkArithmeticSIMDSumDecision(b *testing.B) {
 			var result Decimal
 			var err error
 			for b.Loop() {
-				result, err = Sum(ds[0], ds[1:]...)
+				result, err = arithScalarSumReference(ds)
 			}
 			if err != nil {
 				b.Fatal(err)
@@ -53,12 +41,12 @@ func BenchmarkArithmeticSIMDSumDecision(b *testing.B) {
 		})
 		b.Run("Positive64/"+name+"/simd", func(b *testing.B) {
 			var result Decimal
-			var ok bool
+			var err error
 			for b.Loop() {
-				result, ok = arithSIMDSumPositive64Candidate(ds)
+				result, err = Sum(ds[0], ds[1:]...)
 			}
-			if !ok {
-				b.Fatal("unexpected SIMD fallback")
+			if err != nil {
+				b.Fatal(err)
 			}
 			arithAVX2DecimalSink = result
 		})
@@ -87,18 +75,18 @@ func BenchmarkArithmeticSIMDSumDecision(b *testing.B) {
 			var result Decimal
 			var err error
 			for b.Loop() {
-				result, err = Sum(tc.ds[0], tc.ds[1:]...)
+				result, err = arithScalarSumReference(tc.ds)
 			}
 			if err != nil {
 				b.Fatal(err)
 			}
 			arithAVX2DecimalSink = result
 		})
-		b.Run("Fallback4096/"+tc.name+"/optimistic", func(b *testing.B) {
+		b.Run("Fallback4096/"+tc.name+"/continuation", func(b *testing.B) {
 			var result Decimal
 			var err error
 			for b.Loop() {
-				result, err = arithSIMDSumPositive64Fallback(tc.ds)
+				result, err = Sum(tc.ds[0], tc.ds[1:]...)
 			}
 			if err != nil {
 				b.Fatal(err)

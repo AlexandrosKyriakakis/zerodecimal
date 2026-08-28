@@ -917,7 +917,7 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 			positiveDS[i] = newDecimal(coef, false, 4)
 			positive64DS[i] = newDecimal(u128{lo: coef.lo}, false, 4)
 		}
-		want, err := Sum(ds[0], ds[1:]...)
+		want, err := arithScalarSumReference(ds)
 		if err != nil {
 			t.Fatalf("decimal sum size %d: unexpected scalar error: %v", size, err)
 		}
@@ -930,7 +930,7 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 			t.Fatalf("decimal sum vector metadata size %d: got (%#v,%t), want %#v", size, gotVectorMeta, okVectorMeta, want)
 		}
 
-		wantPositive, err := Sum(positiveDS[0], positiveDS[1:]...)
+		wantPositive, err := arithScalarSumReference(positiveDS)
 		if err != nil {
 			t.Fatalf("positive decimal sum size %d: unexpected scalar error: %v", size, err)
 		}
@@ -943,7 +943,7 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 			t.Fatalf("positive 2x decimal sum size %d: got (%#v,%t), want %#v", size, gotPositive2x, okPositive2x, wantPositive)
 		}
 
-		wantPositive64, err := Sum(positive64DS[0], positive64DS[1:]...)
+		wantPositive64, err := arithScalarSumReference(positive64DS)
 		if err != nil {
 			t.Fatalf("positive 64-bit decimal sum size %d: unexpected scalar error: %v", size, err)
 		}
@@ -1095,7 +1095,7 @@ func BenchmarkArithmeticAVX512Experiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(positive[0], positive[1:]...)
+			result, err = arithScalarSumReference(positive)
 		}
 		if err != nil {
 			b.Fatal(err)
@@ -1150,7 +1150,7 @@ func BenchmarkArithmeticAVX512Experiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(positive64[0], positive64[1:]...)
+			result, err = arithScalarSumReference(positive64)
 		}
 		if err != nil {
 			b.Fatal(err)
@@ -1183,7 +1183,7 @@ func BenchmarkArithmeticAVX512Experiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(mixedSigns[0], mixedSigns[1:]...)
+			result, err = arithScalarSumReference(mixedSigns)
 		}
 		if err != nil {
 			b.Fatal(err)

@@ -404,7 +404,7 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 			ds64[i] = newDecimal(u128{lo: rng.Uint64()}, false, 4)
 		}
 
-		want, err := Sum(ds[0], ds[1:]...)
+		want, err := arithScalarSumReference(ds)
 		if err != nil {
 			t.Fatalf("size %d: unexpected scalar error: %v", size, err)
 		}
@@ -413,7 +413,7 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 			t.Fatalf("size %d: got (%#v,%t), want %#v", size, got, ok, want)
 		}
 
-		want64, err := Sum(ds64[0], ds64[1:]...)
+		want64, err := arithScalarSumReference(ds64)
 		if err != nil {
 			t.Fatalf("64-bit size %d: unexpected scalar error: %v", size, err)
 		}
@@ -429,7 +429,7 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 		for i := range ds64 {
 			ds64[i].neg = !ds64[i].coef.isZero() && i%3 == 0
 		}
-		wantMixed64, err := Sum(ds64[0], ds64[1:]...)
+		wantMixed64, err := arithScalarSumReference(ds64)
 		if err != nil {
 			t.Fatalf("mixed 64-bit size %d: unexpected scalar error: %v", size, err)
 		}
@@ -478,7 +478,7 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(positive[0], positive[1:]...)
+			result, err = arithScalarSumReference(positive)
 		}
 		if err != nil {
 			b.Fatal(err)
@@ -500,7 +500,7 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(positive64[0], positive64[1:]...)
+			result, err = arithScalarSumReference(positive64)
 		}
 		if err != nil {
 			b.Fatal(err)
@@ -533,7 +533,7 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 		var result Decimal
 		var err error
 		for b.Loop() {
-			result, err = Sum(mixed64[0], mixed64[1:]...)
+			result, err = arithScalarSumReference(mixed64)
 		}
 		if err != nil {
 			b.Fatal(err)
