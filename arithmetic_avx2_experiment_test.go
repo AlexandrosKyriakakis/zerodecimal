@@ -46,12 +46,14 @@ func arithAVX2LoadDecimal4(base unsafe.Pointer) (archsimd.Uint64x4, archsimd.Uin
 }
 
 func arithAVX2AddVectorsOne(
-	ahi, alo, bhi, blo, one, signBit archsimd.Uint64x4,
+	ahi, alo, bhi, blo, signBit archsimd.Uint64x4,
 ) (archsimd.Uint64x4, archsimd.Uint64x4, archsimd.Mask64x4) {
 	lo := alo.Add(blo)
 	carry := arithAVX2LessUnsigned(lo, alo, signBit)
 	hi0 := ahi.Add(bhi)
-	hi := hi0.Add(one.Masked(carry))
+	// A true AVX2 mask lane is MaxUint64. Subtracting it increments hi with
+	// one instruction and avoids materializing/masking a broadcast-one vector.
+	hi := hi0.Sub(carry.ToInt64x4().AsUint64x4())
 	overflow := arithAVX2LessUnsigned(hi0, ahi, signBit).Or(arithAVX2LessUnsigned(hi, hi0, signBit))
 	return hi, lo, overflow
 }
@@ -82,7 +84,6 @@ func arithAVX2SumDecimalsPositive(ds []Decimal) (Decimal, bool) {
 	}
 
 	zero := archsimd.Uint64x4{}
-	one := archsimd.BroadcastUint64x4(1)
 	signBit := archsimd.BroadcastUint64x4(1 << 63)
 	metadataMask := archsimd.BroadcastUint64x4(0xffff)
 	wantMetadata := archsimd.BroadcastUint64x4(uint64(prec) << 8)
@@ -99,7 +100,7 @@ func arithAVX2SumDecimalsPositive(ds []Decimal) (Decimal, bool) {
 		}
 
 		var ov archsimd.Mask64x4
-		sumHi, sumLo, ov = arithAVX2AddVectorsOne(sumHi, sumLo, xhi, xlo, one, signBit)
+		sumHi, sumLo, ov = arithAVX2AddVectorsOne(sumHi, sumLo, xhi, xlo, signBit)
 		overflow = overflow.Or(ov)
 	}
 	if overflow.ToBits() != 0 {
@@ -153,7 +154,6 @@ func arithAVX2SumDecimalsPositive64(ds []Decimal) (Decimal, bool) {
 	}
 
 	zero := archsimd.Uint64x4{}
-	one := archsimd.BroadcastUint64x4(1)
 	signBit := archsimd.BroadcastUint64x4(1 << 63)
 	metadataMask := archsimd.BroadcastUint64x4(0xffff)
 	wantMetadata := archsimd.BroadcastUint64x4(uint64(prec) << 8)
@@ -172,9 +172,90 @@ func arithAVX2SumDecimalsPositive64(ds []Decimal) (Decimal, bool) {
 		lo := sumLo.Add(xlo)
 		carry := arithAVX2LessUnsigned(lo, sumLo, signBit)
 		sumLo = lo
-		sumHi = sumHi.Add(one.Masked(carry))
+		sumHi = sumHi.Sub(carry.ToInt64x4().AsUint64x4())
 	}
 
+	var his, los [4]uint64
+	sumHi.StoreArray(&his)
+	sumLo.StoreArray(&los)
+	var sum u128
+	for lane := range his {
+		var carry uint64
+		sum, carry = add128(sum, u128{hi: his[lane], lo: los[lane]})
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	for ; i < len(ds); i++ {
+		d := ds[i]
+		if d.coef.isZero() {
+			continue
+		}
+		if d.neg || d.prec != prec || d.coef.hi != 0 {
+			return Decimal{}, false
+		}
+		var carry uint64
+		sum, carry = add128(sum, d.coef)
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	return newDecimal(sum, false, prec), true
+}
+
+// arithAVX2SumDecimalsPositive64x2 keeps two independent vector carry chains
+// over eight Decimals per iteration. Validate and consume each group before
+// loading the next one so the compiler can keep both accumulators in YMM
+// registers instead of spilling under deinterleave's temporary pressure.
+func arithAVX2SumDecimalsPositive64x2(ds []Decimal) (Decimal, bool) {
+	first := 0
+	for first < len(ds) && ds[first].coef.isZero() {
+		first++
+	}
+	if first == len(ds) {
+		return Decimal{}, true
+	}
+	prec := ds[first].prec
+	if ds[first].neg {
+		return Decimal{}, false
+	}
+
+	zero := archsimd.Uint64x4{}
+	signBit := archsimd.BroadcastUint64x4(1 << 63)
+	metadataMask := archsimd.BroadcastUint64x4(0xffff)
+	wantMetadata := archsimd.BroadcastUint64x4(uint64(prec) << 8)
+
+	var sumAHi, sumALo, sumBHi, sumBLo archsimd.Uint64x4
+	i := first
+	for ; len(ds)-i >= 8; i += 8 {
+		aHi, aLo, aMeta := arithAVX2LoadDecimal4(unsafe.Pointer(&ds[i]))
+		aMeta = aMeta.And(metadataMask)
+		aValidMetadata := aMeta.Equal(wantMetadata).Or(aMeta.Equal(zero))
+		aValid := aValidMetadata.And(aHi.Equal(zero))
+		if aValid.ToBits() != 0x0f {
+			return Decimal{}, false
+		}
+		aSumLo := sumALo.Add(aLo)
+		aCarry := arithAVX2LessUnsigned(aSumLo, sumALo, signBit)
+		sumALo = aSumLo
+		sumAHi = sumAHi.Sub(aCarry.ToInt64x4().AsUint64x4())
+
+		bHi, bLo, bMeta := arithAVX2LoadDecimal4(unsafe.Pointer(&ds[i+4]))
+		bMeta = bMeta.And(metadataMask)
+		bValidMetadata := bMeta.Equal(wantMetadata).Or(bMeta.Equal(zero))
+		bValid := bValidMetadata.And(bHi.Equal(zero))
+		if bValid.ToBits() != 0x0f {
+			return Decimal{}, false
+		}
+		bSumLo := sumBLo.Add(bLo)
+		bCarry := arithAVX2LessUnsigned(bSumLo, sumBLo, signBit)
+		sumBLo = bSumLo
+		sumBHi = sumBHi.Sub(bCarry.ToInt64x4().AsUint64x4())
+	}
+
+	sumLo := sumALo.Add(sumBLo)
+	mergeCarry := arithAVX2LessUnsigned(sumLo, sumALo, signBit)
+	sumHi := sumAHi.Add(sumBHi).Sub(mergeCarry.ToInt64x4().AsUint64x4())
 	var his, los [4]uint64
 	sumHi.StoreArray(&his)
 	sumLo.StoreArray(&los)
@@ -238,6 +319,10 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 		if !ok64 || got64 != want64 {
 			t.Fatalf("64-bit size %d: got (%#v,%t), want %#v", size, got64, ok64, want64)
 		}
+		got64x2, ok64x2 := arithAVX2SumDecimalsPositive64x2(ds64)
+		if !ok64x2 || got64x2 != want64 {
+			t.Fatalf("64-bit x2 size %d: got (%#v,%t), want %#v", size, got64x2, ok64x2, want64)
+		}
 	}
 
 	if _, ok := arithAVX2SumDecimalsPositive([]Decimal{NewFromInt(1), NewFromInt(-1)}); ok {
@@ -248,6 +333,12 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 	}
 	if _, ok := arithAVX2SumDecimalsPositive64([]Decimal{newDecimal(u128{hi: 1}, false, 0), NewFromInt(1), NewFromInt(2), NewFromInt(3)}); ok {
 		t.Fatal("wide coefficient unexpectedly stayed on AVX2 64-bit path")
+	}
+	if _, ok := arithAVX2SumDecimalsPositive64x2([]Decimal{
+		newDecimal(u128{hi: 1}, false, 0), NewFromInt(1), NewFromInt(2), NewFromInt(3),
+		NewFromInt(4), NewFromInt(5), NewFromInt(6), NewFromInt(7),
+	}); ok {
+		t.Fatal("wide coefficient unexpectedly stayed on AVX2 64-bit x2 path")
 	}
 }
 
@@ -305,6 +396,17 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 		}
 		if !ok {
 			b.Fatal("unexpected AVX2 64-bit fallback")
+		}
+		arithAVX2DecimalSink = result
+	})
+	b.Run("DecimalSum4096Positive64/avx2-2x", func(b *testing.B) {
+		var result Decimal
+		var ok bool
+		for b.Loop() {
+			result, ok = arithAVX2SumDecimalsPositive64x2(positive64)
+		}
+		if !ok {
+			b.Fatal("unexpected AVX2 64-bit x2 fallback")
 		}
 		arithAVX2DecimalSink = result
 	})
