@@ -94,7 +94,7 @@ jobs:
         run: go test -run '^Test.*Alloc' -count=1 .
       - name: AVX-512 Sum follow-up experiment
         if: runner.arch == 'X64'
-        run: go test -run '^$' -bench '^BenchmarkArithmeticAVX512Experiment/DecimalSum4096' -benchmem -count=10 -benchtime=300ms .
+        run: go test -v -run '^$' -bench '^BenchmarkArithmeticAVX512Experiment/DecimalSum4096' -benchmem -count=10 -benchtime=300ms .
 
   test-build-tags:
     name: tags (${{ matrix.name }})

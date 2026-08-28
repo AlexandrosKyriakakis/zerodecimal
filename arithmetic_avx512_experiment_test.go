@@ -562,6 +562,115 @@ func arithAVX512SumDecimalsPositive(ds []Decimal) (Decimal, bool) {
 	return newDecimal(sum, false, prec), true
 }
 
+// arithAVX512SumDecimalsPositive2x unrolls the positive specialization over
+// sixteen Decimals and keeps two independent carry chains. This trades code
+// size for instruction-level parallelism while retaining the same guarded
+// fallback contract as arithAVX512SumDecimalsPositive.
+func arithAVX512SumDecimalsPositive2x(ds []Decimal) (Decimal, bool) {
+	first := 0
+	for first < len(ds) && ds[first].coef.isZero() {
+		first++
+	}
+	if first == len(ds) {
+		return Decimal{}, true
+	}
+	prec := ds[first].prec
+	if ds[first].neg {
+		return Decimal{}, false
+	}
+
+	hi01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalHi01)
+	hi2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalHi2)
+	lo01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalLo01)
+	lo2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalLo2)
+	meta01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalMeta01)
+	meta2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalMeta2)
+	zero := archsimd.Uint64x8{}
+	one := archsimd.BroadcastUint64x8(1)
+	metadataMask := archsimd.BroadcastUint64x8(0xffff)
+	wantMetadata := archsimd.BroadcastUint64x8(uint64(prec) << 8)
+
+	var sumAHi, sumALo, sumBHi, sumBLo archsimd.Uint64x8
+	var overflow archsimd.Mask64x8
+	i := first
+	for ; len(ds)-i >= 16; i += 16 {
+		baseA := unsafe.Pointer(&ds[i])
+		a0 := archsimd.LoadUint64x8Array((*[8]uint64)(baseA))
+		a1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(baseA, 64)))
+		a2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(baseA, 128)))
+		aHi01 := a0.ConcatPermute(a1, hi01Indices)
+		aHi2 := a2.Permute(hi2Indices)
+		aHi := aHi2.IfElse(archsimd.Mask64x8FromBits(0xc0), aHi01)
+		aLo01 := a0.ConcatPermute(a1, lo01Indices)
+		aLo2 := a2.Permute(lo2Indices)
+		aLo := aLo2.IfElse(archsimd.Mask64x8FromBits(0xe0), aLo01)
+		aMeta01 := a0.ConcatPermute(a1, meta01Indices)
+		aMeta2 := a2.Permute(meta2Indices)
+		aMeta := aMeta2.IfElse(archsimd.Mask64x8FromBits(0xe0), aMeta01).And(metadataMask)
+		aValid := aMeta.Equal(wantMetadata).Or(aMeta.Equal(zero))
+		if aValid.ToBits() != 0xff {
+			return Decimal{}, false
+		}
+		var ov archsimd.Mask64x8
+		sumAHi, sumALo, ov = arithAVX512AddVectorsOne(sumAHi, sumALo, aHi, aLo, one)
+		overflow = overflow.Or(ov)
+
+		baseB := unsafe.Pointer(&ds[i+8])
+		b0 := archsimd.LoadUint64x8Array((*[8]uint64)(baseB))
+		b1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(baseB, 64)))
+		b2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(baseB, 128)))
+		bHi01 := b0.ConcatPermute(b1, hi01Indices)
+		bHi2 := b2.Permute(hi2Indices)
+		bHi := bHi2.IfElse(archsimd.Mask64x8FromBits(0xc0), bHi01)
+		bLo01 := b0.ConcatPermute(b1, lo01Indices)
+		bLo2 := b2.Permute(lo2Indices)
+		bLo := bLo2.IfElse(archsimd.Mask64x8FromBits(0xe0), bLo01)
+		bMeta01 := b0.ConcatPermute(b1, meta01Indices)
+		bMeta2 := b2.Permute(meta2Indices)
+		bMeta := bMeta2.IfElse(archsimd.Mask64x8FromBits(0xe0), bMeta01).And(metadataMask)
+		bValid := bMeta.Equal(wantMetadata).Or(bMeta.Equal(zero))
+		if bValid.ToBits() != 0xff {
+			return Decimal{}, false
+		}
+		sumBHi, sumBLo, ov = arithAVX512AddVectorsOne(sumBHi, sumBLo, bHi, bLo, one)
+		overflow = overflow.Or(ov)
+	}
+	if overflow.ToBits() != 0 {
+		return Decimal{}, false
+	}
+
+	sumHi, sumLo, mergeOverflow := arithAVX512AddVectorsOne(sumAHi, sumALo, sumBHi, sumBLo, one)
+	if mergeOverflow.ToBits() != 0 {
+		return Decimal{}, false
+	}
+	var his, los [8]uint64
+	sumHi.StoreArray(&his)
+	sumLo.StoreArray(&los)
+	var sum u128
+	for lane := range his {
+		var carry uint64
+		sum, carry = add128(sum, u128{hi: his[lane], lo: los[lane]})
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	for ; i < len(ds); i++ {
+		d := ds[i]
+		if d.coef.isZero() {
+			continue
+		}
+		if d.neg || d.prec != prec {
+			return Decimal{}, false
+		}
+		var carry uint64
+		sum, carry = add128(sum, d.coef)
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	return newDecimal(sum, false, prec), true
+}
+
 func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 	if !archsimd.X86.AVX512() {
 		t.Skip("CPU does not expose AVX-512F+CD+BW+DQ+VL")
@@ -638,6 +747,10 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 		if !okPositive || gotPositive != wantPositive {
 			t.Fatalf("positive decimal sum size %d: got (%#v,%t), want %#v", size, gotPositive, okPositive, wantPositive)
 		}
+		gotPositive2x, okPositive2x := arithAVX512SumDecimalsPositive2x(positiveDS)
+		if !okPositive2x || gotPositive2x != wantPositive {
+			t.Fatalf("positive 2x decimal sum size %d: got (%#v,%t), want %#v", size, gotPositive2x, okPositive2x, wantPositive)
+		}
 	}
 
 	mixedPrecision := []Decimal{NewFromInt(1), MustNew(1, -1)}
@@ -649,6 +762,9 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 	}
 	if _, ok := arithAVX512SumDecimalsPositive([]Decimal{NewFromInt(1), NewFromInt(-1)}); ok {
 		t.Fatal("positive decimal sum: negative input unexpectedly stayed on AVX-512 path")
+	}
+	if _, ok := arithAVX512SumDecimalsPositive2x([]Decimal{NewFromInt(1), NewFromInt(-1)}); ok {
+		t.Fatal("positive 2x decimal sum: negative input unexpectedly stayed on AVX-512 path")
 	}
 }
 
@@ -782,6 +898,17 @@ func BenchmarkArithmeticAVX512Experiment(b *testing.B) {
 		var ok bool
 		for b.Loop() {
 			result, ok = arithAVX512SumDecimalsPositive(positive)
+		}
+		if !ok {
+			b.Fatal("unexpected AVX-512 fallback")
+		}
+		arithAVX512DecimalSink = result
+	})
+	b.Run("DecimalSum4096Positive/avx512-positive-2x", func(b *testing.B) {
+		var result Decimal
+		var ok bool
+		for b.Loop() {
+			result, ok = arithAVX512SumDecimalsPositive2x(positive)
 		}
 		if !ok {
 			b.Fatal("unexpected AVX-512 fallback")
