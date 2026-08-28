@@ -82,7 +82,9 @@ func sumAVX2Positive64Prefix(first Decimal, rest []Decimal) (Decimal, int, bool)
 	for ; len(rest)-i >= 8; i += 8 {
 		aHi, aLo, aMeta := sumAVX2LoadDecimal4(unsafe.Pointer(&rest[i]))
 		aMeta = aMeta.And(metadataMask)
-		aValidMetadata := aMeta.Equal(wantMetadata).Or(aMeta.Equal(zero))
+		aValidMetadata := aMeta.Equal(wantMetadata).Or(
+			aMeta.Equal(zero).And(aLo.Equal(zero)),
+		)
 		if aValidMetadata.And(aHi.Equal(zero)).ToBits() != 0x0f {
 			return sumAVX2Positive64Finish(first, rest, i, sumAHi, sumALo, sumBHi, sumBLo)
 		}
@@ -93,7 +95,9 @@ func sumAVX2Positive64Prefix(first Decimal, rest []Decimal) (Decimal, int, bool)
 
 		bHi, bLo, bMeta := sumAVX2LoadDecimal4(unsafe.Pointer(&rest[i+4]))
 		bMeta = bMeta.And(metadataMask)
-		bValidMetadata := bMeta.Equal(wantMetadata).Or(bMeta.Equal(zero))
+		bValidMetadata := bMeta.Equal(wantMetadata).Or(
+			bMeta.Equal(zero).And(bLo.Equal(zero)),
+		)
 		if bValidMetadata.And(bHi.Equal(zero)).ToBits() != 0x0f {
 			// Group A is already represented by sumA. Finish it, then leave
 			// group B and the remaining suffix for scalar continuation.
@@ -180,7 +184,8 @@ func sumAVX512PositivePrefix(first Decimal, rest []Decimal) (Decimal, int, bool)
 			hi01Indices, hi2Indices, lo01Indices, lo2Indices, meta01Indices, meta2Indices,
 		)
 		aMeta = aMeta.And(metadataMask)
-		if aMeta.Equal(wantMetadata).Or(aMeta.Equal(zero)).ToBits() != 0xff {
+		aZero := aHi.Equal(zero).And(aLo.Equal(zero))
+		if aMeta.Equal(wantMetadata).Or(aMeta.Equal(zero).And(aZero)).ToBits() != 0xff {
 			return sumAVX512PositiveFinish(first, rest, i, sumAHi, sumALo, sumBHi, sumBLo, overflow)
 		}
 		var ov archsimd.Mask64x8
@@ -192,7 +197,8 @@ func sumAVX512PositivePrefix(first Decimal, rest []Decimal) (Decimal, int, bool)
 			hi01Indices, hi2Indices, lo01Indices, lo2Indices, meta01Indices, meta2Indices,
 		)
 		bMeta = bMeta.And(metadataMask)
-		if bMeta.Equal(wantMetadata).Or(bMeta.Equal(zero)).ToBits() != 0xff {
+		bZero := bHi.Equal(zero).And(bLo.Equal(zero))
+		if bMeta.Equal(wantMetadata).Or(bMeta.Equal(zero).And(bZero)).ToBits() != 0xff {
 			return sumAVX512PositiveFinish(first, rest, i+8, sumAHi, sumALo, sumBHi, sumBLo, overflow)
 		}
 		sumBHi, sumBLo, ov = sumAVX512Add(sumBHi, sumBLo, bHi, bLo)

@@ -67,6 +67,13 @@ func TestSIMDSumProductionCorrectness(t *testing.T) {
 		})
 	}
 
+	// Positive precision-zero metadata is also all-zero, just like canonical
+	// Decimal zero metadata. The vector mask must inspect the coefficient and
+	// hand a nonzero precision-zero value to scalar precision alignment.
+	precisionZero := append([]Decimal(nil), base...)
+	precisionZero[5] = newDecimal(u128{lo: 0xa23e108d1}, false, 0)
+	checkSIMDSumAgainstScalar(t, precisionZero)
+
 	// Exercise arbitrary continuation suffixes, including zeros, both signs,
 	// and multiple precisions. Small coefficients keep every reference result
 	// representable so failures isolate semantic mismatches rather than bounds.
