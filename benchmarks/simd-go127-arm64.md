@@ -78,11 +78,13 @@ and extract the result. Likewise, `bits.Mul64` compiles to `MUL` plus `UMULH`;
 NEON has no integer 64x64-to-128 lane multiply, so the tested SIMD form needs
 two 32-bit `UMULL` operations plus cross-product reassembly.
 
-The same dependency makes the existing `Sum` and `Avg` accumulator a poor
-SIMD target: every 128-bit coefficient needs a carry into its adjacent limb.
-Independent batch operations could occupy independent lanes, but that would
-require a new batch API or a structure-of-arrays representation; the current
-24-byte `Decimal` layout does not provide contiguous coefficient lanes.
+On arm64, the same dependency makes the existing `Sum` and `Avg` accumulator
+a poor SIMD target: every 128-bit coefficient needs a carry into its adjacent
+limb. Independent batch operations could occupy independent lanes, but that
+would require a new batch API or a structure-of-arrays representation. The
+separate amd64 report documents why AVX2/AVX-512 deinterleaving and unsigned
+lane operations make `Sum` worthwhile there without changing the API or
+layout.
 
 ### Go 1.27 arithmetic toolchain comparison
 

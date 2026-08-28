@@ -59,20 +59,24 @@ Runnable examples for parsing, arithmetic, rounding, JSON, and SQL live in
 
 ## Experimental Go 1.27 SIMD
 
-Go 1.27 users on amd64 and arm64 can opt into a SIMD-accelerated scan for
-long decimal inputs:
+Go 1.27 users can opt into SIMD acceleration for long decimal parsing on
+amd64 and arm64, and for large `Sum` calls on amd64:
 
 ```sh
 GOEXPERIMENT=simd go test ./...
 GOEXPERIMENT=simd go build ./...
 ```
 
-The SIMD path activates only when at least 28 input bytes remain; shorter
-inputs keep the faster scalar/SWAR path. Builds without the experiment, other
-architectures, and Go 1.26 retain the same portable implementation and API.
-Because `simd/archsimd` is experimental, this optimization is deliberately
-limited to Go 1.27; later Go releases fall back to scalar until their revised
-API and generated code have been audited and benchmarked.
+The parsing path activates only when at least 28 input bytes remain. The
+amd64 `Sum` path activates at 32 operands, dispatches to AVX-512 or AVX2 at
+runtime, and vectorizes positive same-precision prefixes; unsupported suffixes
+continue through the exact scalar implementation without rescanning. Shorter
+inputs and sums keep the faster scalar/SWAR paths. Builds without the
+experiment, unsupported architectures, and Go 1.26 retain the same portable
+implementation and API. Because `simd/archsimd` is experimental, these
+optimizations are deliberately limited to Go 1.27; later Go releases fall
+back to scalar until their revised API and generated code have been audited
+and benchmarked.
 
 ## Design
 

@@ -2,10 +2,11 @@
 
 Date: 2026-08-28
 
-Status: **a guarded `Sum` production candidate is implemented, but not yet
-accepted**. Direct-layout kernels prove a 2.27x AVX-512 win and a 1.67x AVX2
-win for 4,096 positive, same-precision decimals. The final public-API dispatch
-and continuation policy still needs to run on real amd64 before acceptance.
+Status: **accepted for the opt-in Go 1.27 amd64 build**. The public `Sum` path
+is 1.65x to 1.94x faster for 4,096 positive, same-precision decimals on the
+measured AVX-512 hosts and 1.66x faster on the measured AVX2 host. It remains
+zero-allocation and preserves the scalar contract through exact prefix
+continuation. Sums below 32 operands stay scalar.
 
 All production and experiment code is isolated behind:
 
@@ -36,6 +37,32 @@ The candidate kernel shape is:
    contract, instead of rescanning that prefix.
 
 No temporary coefficient arrays and no allocations are used.
+
+## Public `Sum` results
+
+The production wrapper, runtime dispatch, layout conversion, metadata checks,
+exact reduction, and scalar tail are all inside these measurements:
+
+| Host and selected path | Scalar | Public `Sum` | Speedup |
+|---|---:|---:|---:|
+| AMD EPYC 9V74, AVX2, ubuntu-latest | 4.747 us | 2.867 us | **1.66x** |
+| AMD EPYC 9V74, AVX2, ubuntu-22.04 | 4.759 us | 2.866 us | **1.66x** |
+| Intel Xeon Platinum 8573C, AVX-512 | 5.428 us | 3.282 us | **1.65x** |
+| Intel Xeon Platinum 8370C, AVX-512 | 5.714 us | 2.946 us | **1.94x** |
+
+Each number is the median of six 200 ms samples. The AVX2 results are from
+[run 33184734175](https://github.com/AlexandrosKyriakakis/zerodecimal/actions/runs/33184734175);
+the final gated AVX-512 results are from
+[run 33185280431](https://github.com/AlexandrosKyriakakis/zerodecimal/actions/runs/33185280431).
+Both runs executed the race suite, allocation assertions, differential SIMD
+tests, and the end-to-end decision benchmark before reporting success.
+
+The measured public crossover supports a conservative 32-operand gate. On the
+two final AVX-512 hosts, 32 values ranged from neutral to 1.05x, 64 values from
+1.25x to 1.27x, 128 from 1.52x to 1.56x, and 1,024 from 1.64x to 1.87x.
+On AVX2, 32 values were 1.14x faster and the advantage grew to 1.66x at 4,096.
+Below the gate the feature check and SIMD call are compiled out of the public
+path, so small opt-in sums retain the scalar implementation.
 
 ## AVX-512 `Decimal.Sum`
 
@@ -103,10 +130,10 @@ samples per row:
 | 1,024 | 1.290 us | 0.711 us | 1.81x |
 | 4,096 | 5.143 us | 2.809 us | 1.83x |
 
-Eight values are effectively break-even. The production candidate therefore
-keeps small sums scalar and requires at least eight values in the vectorized
-remainder (nine total operands) for AVX2. AVX-512 requires sixteen remainder
-values (seventeen total operands).
+The direct kernel crosses over before the complete public wrapper does. The
+production gate therefore uses the end-to-end evidence above: at least 32
+total operands for both AVX2 and AVX-512. This avoids a regression at 16
+operands on AVX2 and avoids paying runtime feature dispatch for smaller sums.
 
 ## Fallback policy
 
@@ -149,21 +176,40 @@ Completed locally:
 - stripped linux/amd64 size probe: the stable executable is exactly the same
   size as the pre-dispatch baseline; the opt-in SIMD implementation adds
   8 KiB (0.41%) when both are built with Go 1.27 and `GOEXPERIMENT=simd`.
+- final public `Sum` race, allocation, differential, wide-coefficient, and
+  continuation tests on real AVX2 and AVX-512 hardware;
+- final end-to-end benchmarks on two AVX2 jobs and two AVX-512 jobs.
+
+The first real-amd64 production run found a correctness bug in metadata value
+zero: it can represent canonical zero, but also a nonzero precision-zero
+Decimal. The vector validity test now treats metadata zero as a zero value only
+when both coefficient limbs are zero. A deterministic regression case covers
+the distinction, and the corrected implementation passed subsequent AVX2 and
+AVX-512 race runs.
 
 The installed `golangci-lint` is built with Go 1.26 and cannot parse Go 1.27
 SIMD sources; it reports zero issues for the ordinary build, while Go 1.27
 `go vet` covers the SIMD build.
 
-Still required before accepting the production path:
+## Library integration plan
 
-- execute the final public `Sum` implementation and its differential tests on
-  real AVX2 hardware;
-- execute the final AVX-512 wide-coefficient and continuation tests on real
-  AVX-512 hardware;
-- measure the continuation policy for late negative, precision, and wide
-  mismatches;
-- remove temporary runner/benchmark steps from CI after recording those
-  results.
+| Decision | Introduce? | Boundary |
+|---|:---:|---|
+| Long-input SIMD scanner | Yes | Existing 28-byte gate; Go 1.27 experiment only |
+| amd64 SIMD `Sum` | Yes | 32+ operands; positive same-precision prefix |
+| AVX-512 and AVX2 runtime dispatch | Yes | AVX-512 preferred; AVX2 is the portable amd64 fallback |
+| Exact prefix continuation | Yes | Late sign, precision, or width mismatch continues scalar |
+| Permanent SIMD correctness CI | Yes | Go 1.27 experiment on amd64, arm64, and Windows builds |
+| Public API or representation change | No | `Decimal`, `Sum`, and allocation contracts stay unchanged |
+| Minimum Go-version increase | No | Ordinary Go 1.26 builds retain their original generated path |
+| SIMD `Add`, `Sub`, or `Mul` | No | Single operations cannot amortize packing and dispatch |
+| Mixed-sign or mixed-precision vector sum | No | Measured gains are too small; continuation is faster and simpler |
+| arm64 NEON arithmetic | No | Carry-correct candidates were materially slower than scalar |
+| New batch/structure-of-arrays API | No | Not justified by this optimization and would expand the API |
+| Naive SIMD-then-rescan fallback | No | Measured 55% to 57% regression on late mismatches |
+| Go 1.28 SIMD path | Not yet | Re-enable only after the experimental API and codegen are revalidated |
+| Rejected arithmetic kernels | Evidence only | Keep test-only benchmarks; no production references or dispatch |
+| Temporary runner probes and rejected-kernel CI | No | Remove after preserving results in this report |
 
 ## Decision boundary
 
@@ -177,11 +223,13 @@ Still required before accepting the production path:
   the original implementation;
 - a SIMD-then-restart fallback is unacceptable;
 - stable builds can retain their original generated path and allocation count.
+- the final public wrapper is 1.65x to 1.94x faster at 4,096 values on the
+  measured AVX-512 hosts and 1.66x faster on the measured AVX2 host;
+- exact prefix continuation retains a 1.57x to 1.94x gain when the final value
+  changes sign, precision, or coefficient width.
 
-**Not yet proven:**
+**Not proven / deliberately out of scope:**
 
-- the final production wrapper's end-to-end speedup and late-fallback cost on
-  real amd64;
 - portable gains across every AVX2/AVX-512 microarchitecture;
 - a worthwhile SIMD path for mixed signs or mixed precision;
 - a win for individual scalar `Add`, `Sub`, or `Mul` calls.
