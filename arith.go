@@ -678,14 +678,16 @@ func Sum(first Decimal, rest ...Decimal) (Decimal, error) {
 	for first.coef.isZero() && len(rest) > 0 {
 		first, rest = rest[0], rest[1:]
 	}
-	if prefix, next, ok := sumSIMDPrefix(first, rest); ok {
-		if next == len(rest) {
-			return prefix, nil
+	if sumSIMDEnabled && len(rest) >= sumSIMDMinRest {
+		if prefix, next, ok := sumSIMDPrefix(first, rest); ok {
+			if next == len(rest) {
+				return prefix, nil
+			}
+			// The SIMD prefix is an exact Decimal at the common prefix
+			// precision. Continue from the first unsupported input without
+			// rescanning the already-aggregated values.
+			return sumScalar(prefix, rest[next:])
 		}
-		// The SIMD prefix is an exact Decimal at the common prefix
-		// precision. Continue from the first unsupported input without
-		// rescanning the already-aggregated values.
-		return sumScalar(prefix, rest[next:])
 	}
 	pos, neg128, state := accumulateAggregateAdaptive(first, rest)
 	if state < 0 {

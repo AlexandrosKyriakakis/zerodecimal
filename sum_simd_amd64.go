@@ -13,6 +13,15 @@ import (
 
 const sumSIMDDecimalSize = unsafe.Sizeof(Decimal{})
 
+// End-to-end Sum benchmarks are positive from 32 total operands onward.
+// Keeping the gate at the public caller also avoids SIMD feature-dispatch
+// overhead for smaller sums. The scalar stub sets sumSIMDEnabled to false,
+// allowing ordinary builds to erase the entire branch.
+const (
+	sumSIMDEnabled = true
+	sumSIMDMinRest = 31
+)
+
 var (
 	_ [24 - sumSIMDDecimalSize]byte
 	_ [sumSIMDDecimalSize - 24]byte
