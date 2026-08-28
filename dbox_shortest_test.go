@@ -1,12 +1,14 @@
 package zerodecimal
 
 // Differential tests of the float constructors against strconv, the documented
-// oracle: NewFromFloat converts f through the digits strconv prints for the
-// exact bits of f, so d.String() must equal FormatFloat(f, 'f', -1, bitSize)
-// for every in-domain input. The pinned bit patterns steer the Dragonbox core
-// through each of its branches (short-interval endpoints, tie parities, exact
-// halves and the round-up corrections); the sweeps then cross-check the same
-// contract over every power of two and a seeded random slice of the domain.
+// shortest-round-trip oracle. Go 1.27 changed one float32 tie choice from the
+// equally short ...063 to ...062, while zerodecimal deliberately preserves its
+// Go 1.26 output. Exact matches remain the normal case; an alternative is valid
+// only when it has the same significant-digit count and parses to identical
+// float bits. The pinned bit patterns steer the Dragonbox core through each of
+// its branches (short-interval endpoints, tie parities, exact halves and the
+// round-up corrections); the sweeps then cross-check the same contract over
+// every power of two and a seeded random slice of the domain.
 
 import (
 	"math"
@@ -48,7 +50,21 @@ func checkShortestFloat(t *testing.T, f float64, bitSize int) {
 	if f == 0 {
 		want = "0" // ±0.0 collapses to the canonical zero, sign dropped
 	}
-	require.Equalf(t, want, d.String(), "f=%v (%x)", f, f)
+	got := d.String()
+	if got == want {
+		return
+	}
+	parsed, parseErr := strconv.ParseFloat(got, bitSize)
+	require.NoErrorf(t, parseErr, "alternative shortest form %q must parse: f=%v (%x)", got, f, f)
+	if bitSize == 32 {
+		require.Equalf(t, math.Float32bits(float32(f)), math.Float32bits(float32(parsed)), "alternative %q does not round-trip: f=%v (%x)", got, f, f)
+	} else {
+		require.Equalf(t, math.Float64bits(f), math.Float64bits(parsed), "alternative %q does not round-trip: f=%v (%x)", got, f, f)
+	}
+	significantDigits := func(s string) int {
+		return len(strings.TrimLeft(strings.ReplaceAll(s, ".", ""), "-0"))
+	}
+	require.Equalf(t, significantDigits(want), significantDigits(got), "alternative %q is not equally short as strconv %q: f=%v (%x)", got, want, f, f)
 }
 
 func TestNewFromFloatShortestPinned(t *testing.T) {

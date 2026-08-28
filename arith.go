@@ -678,6 +678,35 @@ func Sum(first Decimal, rest ...Decimal) (Decimal, error) {
 	for first.coef.isZero() && len(rest) > 0 {
 		first, rest = rest[0], rest[1:]
 	}
+	if sumSIMDEnabled && len(rest) >= sumSIMDMinRest {
+		if prefix, next, ok := sumSIMDPrefix(first, rest); ok {
+			if next == len(rest) {
+				return prefix, nil
+			}
+			// The SIMD prefix is an exact Decimal at the common prefix
+			// precision. Continue from the first unsupported input without
+			// rescanning the already-aggregated values.
+			return sumScalar(prefix, rest[next:])
+		}
+	}
+	pos, neg128, state := accumulateAggregateAdaptive(first, rest)
+	if state < 0 {
+		return newDecimal(pos, state == -2, first.prec), nil
+	}
+	var wide aggregateAccum
+	aggregateFinishWide(&wide, pos, neg128, first.prec, rest[state:])
+	coef, neg := wide.signedMagnitude()
+	if !coef.isZeroUpper() {
+		return Decimal{}, ErrOverflow
+	}
+	return newDecimal(coef.lo128(), neg, wide.prec), nil
+}
+
+// sumScalar implements Sum's scalar contract from an exact first value and the
+// remaining inputs. It is kept off Sum's ordinary path so stable builds retain
+// the original generated code; the experimental SIMD path uses it only to
+// continue from an exact vectorized prefix.
+func sumScalar(first Decimal, rest []Decimal) (Decimal, error) {
 	pos, neg128, state := accumulateAggregateAdaptive(first, rest)
 	if state < 0 {
 		return newDecimal(pos, state == -2, first.prec), nil

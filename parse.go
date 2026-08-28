@@ -255,16 +255,25 @@ func scaleUpExact(coef u128, up int) (u128, error) {
 // there under trunc mode, and routing ErrOverflow through parseGeneral keeps
 // the proof that every such error is genuine.
 //
-// Digit runs are located by the eight-byte mask scan (digitRunLen) and
-// converted eight digits per step (digitRunVal); the fraction folds into the
-// integer limbs with a single mul128by64 + add128, and only a '0' final byte
-// pays the trailing-zero trim probe.
+// Digit runs are located by the portable eight-byte mask scan, or by the
+// opt-in Go 1.27 SIMD scanner past its measured crossover, and converted eight
+// digits per step (digitRunVal); the fraction folds into the integer limbs
+// with a single mul128by64 + add128, and only a '0' final byte pays the
+// trailing-zero trim probe.
 func parseLongPlain[T string | []byte](s T, start, i int, neg, trunc bool) (Decimal, error) {
 	n := len(s)
 
 	// Integer run first; the only byte allowed to stop it short of the end
 	// is a single dot with a non-empty in-range all-digit fraction after it.
-	intLen := digitRunLen(s, i)
+	var intLen int
+	// On 128-bit SIMD, 28 bytes is the measured crossover where both pure
+	// integers and decimals beat the scalar/SWAR scanner. The final-byte probe
+	// keeps malformed trailing input on its cheaper rejection path.
+	if digitRunWideEnabled && len(s)-i >= 28 && s[n-1]-'0' <= 9 {
+		intLen = digitRunLenWide(s, i)
+	} else {
+		intLen = digitRunLen(s, i)
+	}
 	frac := 0
 	dot := i + intLen
 	switch {
@@ -451,9 +460,8 @@ func digitRunScan[T string | []byte](s T, j int, acc uint64) (uint64, int) {
 	return acc, j
 }
 
-// digitRunLen returns the length of the ASCII-digit run starting at s[i],
-// scanning eight bytes per step through the nonDigitMask probe and finishing
-// the sub-word tail byte by byte.
+// digitRunLen is the architecture-independent eight-byte scanner and the
+// fallback used below the wider implementation's measured crossover.
 func digitRunLen[T string | []byte](s T, i int) int {
 	j := i
 	for len(s)-j >= 8 {
@@ -974,8 +982,8 @@ func RequireFromString(s string) Decimal {
 	return d
 }
 
-// NewFromFloat converts f through its shortest decimal representation — the
-// digits strconv prints for the exact bits of f — with no silent rounding:
+// NewFromFloat converts f through a shortest decimal representation that
+// round-trips to the exact bits of f, with no silent rounding:
 // NaN and infinities return ErrInvalidFloat, |f| ≥ 2^128 returns ErrOverflow,
 // and a nonzero |f| below 10^-19 or a shortest form needing more than MaxPrec
 // fractional digits returns ErrPrecOutOfRange. For lossy ingestion of

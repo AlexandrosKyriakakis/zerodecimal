@@ -11,8 +11,8 @@ latency-critical Go.
   `testing.AllocsPerRun` gates in the default test suite
   ([alloc_test.go](alloc_test.go)).
 - **Lower pairwise geomean latency in the committed suite.** The reproducibly
-  configured hosted-runner cache-off comparison reports 35.10% lower sec/op
-  than jokruger/dec128, 45.80% lower than quagmt/udecimal, and 92.71% lower than
+  configured hosted-runner cache-off comparison reports 36.99% lower sec/op
+  than jokruger/dec128, 46.44% lower than quagmt/udecimal, and 92.61% lower than
   shopspring/decimal across each pair's common successful native-API rows
   ([benchmarks/bench-vs-\*.txt](benchmarks/)). These are microbenchmark-suite
   results, not production-throughput guarantees.
@@ -56,6 +56,27 @@ fmt.Println(total.StringFixed(4)) // 299.9700
 Runnable examples for parsing, arithmetic, rounding, JSON, and SQL live in
 [example_test.go](example_test.go). Existing users should read
 [MIGRATION.md](MIGRATION.md) before upgrading.
+
+## Experimental Go 1.27 SIMD
+
+Go 1.27 users can opt into SIMD acceleration for long decimal parsing on
+amd64 and arm64, and for large `Sum` calls on amd64:
+
+```sh
+GOEXPERIMENT=simd go test ./...
+GOEXPERIMENT=simd go build ./...
+```
+
+The parsing path activates only when at least 28 input bytes remain. The
+amd64 `Sum` path activates at 32 operands, dispatches to AVX-512 or AVX2 at
+runtime, and vectorizes positive same-precision prefixes; unsupported suffixes
+continue through the exact scalar implementation without rescanning. Shorter
+inputs and sums keep the faster scalar/SWAR paths. Builds without the
+experiment, unsupported architectures, and Go 1.26 retain the same portable
+implementation and API. Because `simd/archsimd` is experimental, these
+optimizations are deliberately limited to Go 1.27; later Go releases fall
+back to scalar until their revised API and generated code have been audited
+and benchmarked.
 
 ## Design
 
