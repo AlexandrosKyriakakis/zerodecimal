@@ -471,6 +471,97 @@ func arithAVX512SumDecimals(ds []Decimal) (Decimal, bool) {
 	return newDecimal(coef, true, prec), true
 }
 
+// arithAVX512SumDecimalsPositive specializes the dominant common-precision,
+// nonnegative aggregation shape. Negative values and precision mismatches
+// return false so Sum can use its full scalar contract. Keeping only one
+// coefficient accumulator materially reduces ZMM register pressure.
+func arithAVX512SumDecimalsPositive(ds []Decimal) (Decimal, bool) {
+	first := 0
+	for first < len(ds) && ds[first].coef.isZero() {
+		first++
+	}
+	if first == len(ds) {
+		return Decimal{}, true
+	}
+	prec := ds[first].prec
+	if ds[first].neg {
+		return Decimal{}, false
+	}
+
+	hi01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalHi01)
+	hi2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalHi2)
+	lo01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalLo01)
+	lo2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalLo2)
+	meta01Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalMeta01)
+	meta2Indices := archsimd.LoadUint64x8Array(&arithAVX512DecimalMeta2)
+	zero := archsimd.Uint64x8{}
+	one := archsimd.BroadcastUint64x8(1)
+	metadataMask := archsimd.BroadcastUint64x8(0xffff)
+	wantMetadata := archsimd.BroadcastUint64x8(uint64(prec) << 8)
+
+	var sumHi, sumLo archsimd.Uint64x8
+	var overflow archsimd.Mask64x8
+	i := first
+	for ; len(ds)-i >= 8; i += 8 {
+		base := unsafe.Pointer(&ds[i])
+		v0 := archsimd.LoadUint64x8Array((*[8]uint64)(base))
+		v1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 64)))
+		v2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 128)))
+
+		hi01 := v0.ConcatPermute(v1, hi01Indices)
+		hi2 := v2.Permute(hi2Indices)
+		xhi := hi2.IfElse(archsimd.Mask64x8FromBits(0xc0), hi01)
+		lo01 := v0.ConcatPermute(v1, lo01Indices)
+		lo2 := v2.Permute(lo2Indices)
+		xlo := lo2.IfElse(archsimd.Mask64x8FromBits(0xe0), lo01)
+		meta01 := v0.ConcatPermute(v1, meta01Indices)
+		meta2 := v2.Permute(meta2Indices)
+		meta := meta2.IfElse(archsimd.Mask64x8FromBits(0xe0), meta01).And(metadataMask)
+
+		// A canonical zero has metadata zero at every surrounding precision.
+		// The expected metadata word has neg=0, so this also rejects every
+		// negative lane without a separate sign extraction.
+		valid := meta.Equal(wantMetadata).Or(meta.Equal(zero))
+		if valid.ToBits() != 0xff {
+			return Decimal{}, false
+		}
+
+		var ov archsimd.Mask64x8
+		sumHi, sumLo, ov = arithAVX512AddVectorsOne(sumHi, sumLo, xhi, xlo, one)
+		overflow = overflow.Or(ov)
+	}
+	if overflow.ToBits() != 0 {
+		return Decimal{}, false
+	}
+
+	var his, los [8]uint64
+	sumHi.StoreArray(&his)
+	sumLo.StoreArray(&los)
+	var sum u128
+	for lane := range his {
+		var carry uint64
+		sum, carry = add128(sum, u128{hi: his[lane], lo: los[lane]})
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	for ; i < len(ds); i++ {
+		d := ds[i]
+		if d.coef.isZero() {
+			continue
+		}
+		if d.neg || d.prec != prec {
+			return Decimal{}, false
+		}
+		var carry uint64
+		sum, carry = add128(sum, d.coef)
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	return newDecimal(sum, false, prec), true
+}
+
 func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 	if !archsimd.X86.AVX512() {
 		t.Skip("CPU does not expose AVX-512F+CD+BW+DQ+VL")
@@ -517,11 +608,14 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 
 	for _, size := range []int{1, 2, 7, 8, 9, 63, 64, 65, 4096} {
 		ds := make([]Decimal, size)
+		positiveDS := make([]Decimal, size)
 		for i := range ds {
 			if i%17 == 0 {
 				continue
 			}
-			ds[i] = newDecimal(u128{hi: uint64(i & 1), lo: rng.Uint64() & ((1 << 40) - 1)}, i%3 == 0, 4)
+			coef := u128{hi: uint64(i & 1), lo: rng.Uint64() & ((1 << 40) - 1)}
+			ds[i] = newDecimal(coef, i%3 == 0, 4)
+			positiveDS[i] = newDecimal(coef, false, 4)
 		}
 		want, err := Sum(ds[0], ds[1:]...)
 		if err != nil {
@@ -535,6 +629,15 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 		if !okVectorMeta || gotVectorMeta != want {
 			t.Fatalf("decimal sum vector metadata size %d: got (%#v,%t), want %#v", size, gotVectorMeta, okVectorMeta, want)
 		}
+
+		wantPositive, err := Sum(positiveDS[0], positiveDS[1:]...)
+		if err != nil {
+			t.Fatalf("positive decimal sum size %d: unexpected scalar error: %v", size, err)
+		}
+		gotPositive, okPositive := arithAVX512SumDecimalsPositive(positiveDS)
+		if !okPositive || gotPositive != wantPositive {
+			t.Fatalf("positive decimal sum size %d: got (%#v,%t), want %#v", size, gotPositive, okPositive, wantPositive)
+		}
 	}
 
 	mixedPrecision := []Decimal{NewFromInt(1), MustNew(1, -1)}
@@ -543,6 +646,9 @@ func TestArithmeticAVX512ExperimentCorrectness(t *testing.T) {
 	}
 	if _, ok := arithAVX512SumDecimals(mixedPrecision); ok {
 		t.Fatal("decimal sum vector metadata: mixed precision unexpectedly stayed on AVX-512 path")
+	}
+	if _, ok := arithAVX512SumDecimalsPositive([]Decimal{NewFromInt(1), NewFromInt(-1)}); ok {
+		t.Fatal("positive decimal sum: negative input unexpectedly stayed on AVX-512 path")
 	}
 }
 
@@ -665,6 +771,17 @@ func BenchmarkArithmeticAVX512Experiment(b *testing.B) {
 		var ok bool
 		for b.Loop() {
 			result, ok = arithAVX512SumDecimals(positive)
+		}
+		if !ok {
+			b.Fatal("unexpected AVX-512 fallback")
+		}
+		arithAVX512DecimalSink = result
+	})
+	b.Run("DecimalSum4096Positive/avx512-positive", func(b *testing.B) {
+		var result Decimal
+		var ok bool
+		for b.Loop() {
+			result, ok = arithAVX512SumDecimalsPositive(positive)
 		}
 		if !ok {
 			b.Fatal("unexpected AVX-512 fallback")
