@@ -21,6 +21,10 @@ var (
 	arithAVX512OddIndices      = [8]uint64{1, 3, 5, 7, 9, 11, 13, 15}
 	arithAVX512InterleaveLo    = [8]uint64{0, 8, 1, 9, 2, 10, 3, 11}
 	arithAVX512InterleaveHi    = [8]uint64{4, 12, 5, 13, 6, 14, 7, 15}
+	arithAVX512DecimalHi01     = [8]uint64{0, 3, 6, 9, 12, 15, 0, 0}
+	arithAVX512DecimalHi2      = [8]uint64{0, 0, 0, 0, 0, 0, 2, 5}
+	arithAVX512DecimalLo01     = [8]uint64{1, 4, 7, 10, 13, 0, 0, 0}
+	arithAVX512DecimalLo2      = [8]uint64{0, 0, 0, 0, 0, 0, 3, 6}
 	arithAVX512U128BlockSink   [8]u128
 	arithAVX512Uint64BlockSink [8]uint64
 	arithAVX512U128Sink        u128
@@ -48,6 +52,23 @@ func arithAVX512StoreU128x8(hi, lo archsimd.Uint64x8, out *[8]u128) {
 	b := hi.ConcatPermute(lo, indicesHi)
 	a.StoreArray((*[8]uint64)(unsafe.Pointer(&out[0])))
 	b.StoreArray((*[8]uint64)(unsafe.Pointer(&out[4])))
+}
+
+func arithAVX512LoadDecimalCoefx8(ds *[8]Decimal) (archsimd.Uint64x8, archsimd.Uint64x8) {
+	// Decimal is three machine words on amd64: [coef.hi, coef.lo, metadata].
+	// Eight values therefore occupy three contiguous ZMM loads. Each output
+	// limb draws from all three inputs, so assemble the v0/v1 lanes first and
+	// blend in the v2 lanes. Metadata and padding lanes are never selected.
+	base := unsafe.Pointer(&ds[0])
+	v0 := archsimd.LoadUint64x8Array((*[8]uint64)(base))
+	v1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 64)))
+	v2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 128)))
+	hi01 := v0.ConcatPermute(v1, archsimd.LoadUint64x8Array(&arithAVX512DecimalHi01))
+	hi2 := v2.Permute(archsimd.LoadUint64x8Array(&arithAVX512DecimalHi2))
+	lo01 := v0.ConcatPermute(v1, archsimd.LoadUint64x8Array(&arithAVX512DecimalLo01))
+	lo2 := v2.Permute(archsimd.LoadUint64x8Array(&arithAVX512DecimalLo2))
+	return hi2.IfElse(archsimd.Mask64x8FromBits(0xc0), hi01),
+		lo2.IfElse(archsimd.Mask64x8FromBits(0xe0), lo01)
 }
 
 func arithAVX512AddVectors(
@@ -227,9 +248,8 @@ func arithAVX512SumDecimals(ds []Decimal) (Decimal, bool) {
 	var overflow archsimd.Mask64x8
 	i := first
 	for ; len(ds)-i >= 8; i += 8 {
-		var his, los [8]uint64
 		var negBits uint8
-		for lane := range his {
+		for lane := range 8 {
 			d := ds[i+lane]
 			if d.coef.isZero() {
 				continue
@@ -237,21 +257,28 @@ func arithAVX512SumDecimals(ds []Decimal) (Decimal, bool) {
 			if d.prec != prec {
 				return Decimal{}, false
 			}
-			his[lane], los[lane] = d.coef.hi, d.coef.lo
 			if d.neg {
 				negBits |= 1 << lane
 			}
 		}
 
-		xhi := archsimd.LoadUint64x8Array(&his)
-		xlo := archsimd.LoadUint64x8Array(&los)
-		negMask := archsimd.Mask64x8FromBits(negBits)
-		posMask := archsimd.Mask64x8FromBits(^negBits)
+		xhi, xlo := arithAVX512LoadDecimalCoefx8((*[8]Decimal)(unsafe.Pointer(&ds[i])))
 		var ov archsimd.Mask64x8
-		posHi, posLo, ov = arithAVX512AddVectors(posHi, posLo, xhi.Masked(posMask), xlo.Masked(posMask))
-		overflow = overflow.Or(ov)
-		negHi, negLo, ov = arithAVX512AddVectors(negHi, negLo, xhi.Masked(negMask), xlo.Masked(negMask))
-		overflow = overflow.Or(ov)
+		switch negBits {
+		case 0:
+			posHi, posLo, ov = arithAVX512AddVectors(posHi, posLo, xhi, xlo)
+			overflow = overflow.Or(ov)
+		case 0xff:
+			negHi, negLo, ov = arithAVX512AddVectors(negHi, negLo, xhi, xlo)
+			overflow = overflow.Or(ov)
+		default:
+			negMask := archsimd.Mask64x8FromBits(negBits)
+			posMask := archsimd.Mask64x8FromBits(^negBits)
+			posHi, posLo, ov = arithAVX512AddVectors(posHi, posLo, xhi.Masked(posMask), xlo.Masked(posMask))
+			overflow = overflow.Or(ov)
+			negHi, negLo, ov = arithAVX512AddVectors(negHi, negLo, xhi.Masked(negMask), xlo.Masked(negMask))
+			overflow = overflow.Or(ov)
+		}
 	}
 	if overflow.ToBits() != 0 {
 		return Decimal{}, false
