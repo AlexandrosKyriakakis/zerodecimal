@@ -98,6 +98,9 @@ jobs:
       - name: amd64 SIMD Sum follow-up experiment
         if: runner.arch == 'X64'
         run: go test -v -run '^$' -bench '^BenchmarkArithmeticAVX.*Experiment/DecimalSum4096' -benchmem -count=10 -benchtime=300ms .
+      - name: SIMD Sum dispatch decision experiment
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        run: go test -v -run '^$' -bench '^BenchmarkArithmeticSIMDSumDecision' -benchmem -count=6 -benchtime=200ms .
 
   test-build-tags:
     name: tags (${{ matrix.name }})
