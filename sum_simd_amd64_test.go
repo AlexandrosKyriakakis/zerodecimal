@@ -98,3 +98,32 @@ func TestSIMDSumProductionCorrectness(t *testing.T) {
 	}
 	checkSIMDSumAgainstScalar(t, cancel)
 }
+
+func TestAVX512SumProductionWideCoefficients(t *testing.T) {
+	if !archsimd.X86.AVX512() {
+		t.Skip("CPU does not expose AVX-512")
+	}
+
+	rng := rand.New(rand.NewSource(4))
+	for _, size := range []int{17, 31, 32, 33, 255, 256, 257, 4096} {
+		ds := make([]Decimal, size)
+		for i := range ds {
+			// Keep the exact total below 2^128 while exercising arbitrary low
+			// limbs and nonzero high limbs throughout the ZMM path.
+			ds[i] = newDecimal(u128{hi: rng.Uint64() >> 14, lo: rng.Uint64()}, false, 4)
+		}
+		checkSIMDSumAgainstScalar(t, ds)
+
+		prefix, next, ok := sumSIMDPrefix(ds[0], ds[1:])
+		if !ok || next != len(ds)-1 || prefix.neg {
+			t.Fatalf("size %d: incomplete prefix: prefix=%#v next=%d ok=%t", size, prefix, next, ok)
+		}
+	}
+
+	lateNegative := make([]Decimal, 257)
+	for i := range lateNegative {
+		lateNegative[i] = newDecimal(u128{hi: uint64(i) + 1, lo: rng.Uint64()}, false, 4)
+	}
+	lateNegative[len(lateNegative)-1].neg = true
+	checkSIMDSumAgainstScalar(t, lateNegative)
+}
