@@ -11,8 +11,8 @@ latency-critical Go.
   `testing.AllocsPerRun` gates in the default test suite
   ([alloc_test.go](alloc_test.go)).
 - **Lower pairwise geomean latency in the committed suite.** The reproducibly
-  configured hosted-runner cache-off comparison reports 35.10% lower sec/op
-  than jokruger/dec128, 45.80% lower than quagmt/udecimal, and 92.71% lower than
+  configured hosted-runner cache-off comparison reports 36.99% lower sec/op
+  than jokruger/dec128, 46.44% lower than quagmt/udecimal, and 92.61% lower than
   shopspring/decimal across each pair's common successful native-API rows
   ([benchmarks/bench-vs-\*.txt](benchmarks/)). These are microbenchmark-suite
   results, not production-throughput guarantees.
