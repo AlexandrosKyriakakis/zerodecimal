@@ -284,6 +284,108 @@ func arithAVX2SumDecimalsPositive64x2(ds []Decimal) (Decimal, bool) {
 	return newDecimal(sum, false, prec), true
 }
 
+// arithAVX2SumDecimals64 handles both signs when every nonzero input has one
+// common precision and a 64-bit coefficient. Separate positive and negative
+// vector totals preserve Sum's order-independent cancellation semantics. Each
+// subtotal fits 128 bits because len(ds) <= MaxInt on amd64.
+func arithAVX2SumDecimals64(ds []Decimal) (Decimal, bool) {
+	first := 0
+	for first < len(ds) && ds[first].coef.isZero() {
+		first++
+	}
+	if first == len(ds) {
+		return Decimal{}, true
+	}
+	prec := ds[first].prec
+
+	zero := archsimd.Uint64x4{}
+	signBit := archsimd.BroadcastUint64x4(1 << 63)
+	// Mask away the neg bit and padding while retaining precision. A nonzero
+	// lane must then equal wantMetadata; canonical zero remains zero.
+	metadataWithoutSignMask := archsimd.BroadcastUint64x4(0xfffe)
+	wantMetadata := archsimd.BroadcastUint64x4(uint64(prec) << 8)
+
+	var posHi, posLo, negHi, negLo archsimd.Uint64x4
+	i := first
+	for ; len(ds)-i >= 4; i += 4 {
+		xhi, xlo, meta := arithAVX2LoadDecimal4(unsafe.Pointer(&ds[i]))
+		normalizedMeta := meta.And(metadataWithoutSignMask)
+		validMetadata := normalizedMeta.Equal(wantMetadata).Or(normalizedMeta.Equal(zero))
+		valid := validMetadata.And(xhi.Equal(zero))
+		if valid.ToBits() != 0x0f {
+			return Decimal{}, false
+		}
+
+		// Move metadata bit zero into each lane's sign bit. A signed comparison
+		// against zero expands the resulting negative marker into an AVX2 mask;
+		// Int64x4 arithmetic right shift would require AVX-512.
+		negMarker := meta.ShiftAllLeft(63).AsInt64x4()
+		negMask := (archsimd.Int64x4{}).Greater(negMarker)
+		negBits := negMask.ToInt64x4().AsUint64x4()
+		posXLo := xlo.AndNot(negBits)
+		negXLo := xlo.And(negBits)
+
+		newPosLo := posLo.Add(posXLo)
+		posCarry := arithAVX2LessUnsigned(newPosLo, posLo, signBit)
+		posLo = newPosLo
+		posHi = posHi.Sub(posCarry.ToInt64x4().AsUint64x4())
+
+		newNegLo := negLo.Add(negXLo)
+		negCarry := arithAVX2LessUnsigned(newNegLo, negLo, signBit)
+		negLo = newNegLo
+		negHi = negHi.Sub(negCarry.ToInt64x4().AsUint64x4())
+	}
+
+	var posHis, posLos, negHis, negLos [4]uint64
+	posHi.StoreArray(&posHis)
+	posLo.StoreArray(&posLos)
+	negHi.StoreArray(&negHis)
+	negLo.StoreArray(&negLos)
+	var pos, neg u128
+	for lane := range posHis {
+		var carry uint64
+		pos, carry = add128(pos, u128{hi: posHis[lane], lo: posLos[lane]})
+		if carry != 0 {
+			return Decimal{}, false
+		}
+		neg, carry = add128(neg, u128{hi: negHis[lane], lo: negLos[lane]})
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+	for ; i < len(ds); i++ {
+		d := ds[i]
+		if d.coef.isZero() {
+			continue
+		}
+		if d.prec != prec || d.coef.hi != 0 {
+			return Decimal{}, false
+		}
+		var carry uint64
+		if d.neg {
+			neg, carry = add128(neg, d.coef)
+		} else {
+			pos, carry = add128(pos, d.coef)
+		}
+		if carry != 0 {
+			return Decimal{}, false
+		}
+	}
+
+	if neg.isZero() {
+		return newDecimal(pos, false, prec), true
+	}
+	if pos.isZero() {
+		return newDecimal(neg, true, prec), true
+	}
+	if cmp128(pos, neg) >= 0 {
+		coef, _ := sub128(pos, neg)
+		return newDecimal(coef, false, prec), true
+	}
+	coef, _ := sub128(neg, pos)
+	return newDecimal(coef, true, prec), true
+}
+
 func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 	if !archsimd.X86.AVX2() {
 		t.Skip("CPU does not expose AVX2")
@@ -323,6 +425,18 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 		if !ok64x2 || got64x2 != want64 {
 			t.Fatalf("64-bit x2 size %d: got (%#v,%t), want %#v", size, got64x2, ok64x2, want64)
 		}
+
+		for i := range ds64 {
+			ds64[i].neg = !ds64[i].coef.isZero() && i%3 == 0
+		}
+		wantMixed64, err := Sum(ds64[0], ds64[1:]...)
+		if err != nil {
+			t.Fatalf("mixed 64-bit size %d: unexpected scalar error: %v", size, err)
+		}
+		gotMixed64, okMixed64 := arithAVX2SumDecimals64(ds64)
+		if !okMixed64 || gotMixed64 != wantMixed64 {
+			t.Fatalf("mixed 64-bit size %d: got (%#v,%t), want %#v", size, gotMixed64, okMixed64, wantMixed64)
+		}
 	}
 
 	if _, ok := arithAVX2SumDecimalsPositive([]Decimal{NewFromInt(1), NewFromInt(-1)}); ok {
@@ -340,6 +454,9 @@ func TestArithmeticAVX2SumExperimentCorrectness(t *testing.T) {
 	}); ok {
 		t.Fatal("wide coefficient unexpectedly stayed on AVX2 64-bit x2 path")
 	}
+	if _, ok := arithAVX2SumDecimals64([]Decimal{newDecimal(u128{hi: 1}, true, 0), NewFromInt(1), NewFromInt(2), NewFromInt(3)}); ok {
+		t.Fatal("wide coefficient unexpectedly stayed on mixed-sign AVX2 64-bit path")
+	}
 }
 
 func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
@@ -350,10 +467,12 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 
 	positive := make([]Decimal, 4096)
 	positive64 := make([]Decimal, 4096)
+	mixed64 := make([]Decimal, 4096)
 	for i := range positive {
 		coef := u128{hi: uint64(i & 1), lo: uint64(i)*0x9e3779b97f4a7c15 + 1}
 		positive[i] = newDecimal(coef, false, 4)
 		positive64[i] = newDecimal(u128{lo: coef.lo}, false, 4)
+		mixed64[i] = newDecimal(u128{lo: coef.lo}, i%3 == 0, 4)
 	}
 	b.Run("DecimalSum4096Positive/scalar", func(b *testing.B) {
 		var result Decimal
@@ -407,6 +526,28 @@ func BenchmarkArithmeticAVX2SumExperiment(b *testing.B) {
 		}
 		if !ok {
 			b.Fatal("unexpected AVX2 64-bit x2 fallback")
+		}
+		arithAVX2DecimalSink = result
+	})
+	b.Run("DecimalSum4096Mixed64/scalar", func(b *testing.B) {
+		var result Decimal
+		var err error
+		for b.Loop() {
+			result, err = Sum(mixed64[0], mixed64[1:]...)
+		}
+		if err != nil {
+			b.Fatal(err)
+		}
+		arithAVX2DecimalSink = result
+	})
+	b.Run("DecimalSum4096Mixed64/avx2", func(b *testing.B) {
+		var result Decimal
+		var ok bool
+		for b.Loop() {
+			result, ok = arithAVX2SumDecimals64(mixed64)
+		}
+		if !ok {
+			b.Fatal("unexpected mixed-sign AVX2 64-bit fallback")
 		}
 		arithAVX2DecimalSink = result
 	})
