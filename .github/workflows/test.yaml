@@ -95,9 +95,9 @@ jobs:
       - name: x64 CPU feature summary
         if: runner.os == 'Linux' && runner.arch == 'X64'
         run: lscpu
-      - name: AVX-512 Sum follow-up experiment
+      - name: amd64 SIMD Sum follow-up experiment
         if: runner.arch == 'X64'
-        run: go test -v -run '^$' -bench '^BenchmarkArithmeticAVX512Experiment/DecimalSum4096' -benchmem -count=10 -benchtime=300ms .
+        run: go test -v -run '^$' -bench '^BenchmarkArithmeticAVX.*Experiment/DecimalSum4096' -benchmem -count=10 -benchtime=300ms .
 
   test-build-tags:
     name: tags (${{ matrix.name }})
