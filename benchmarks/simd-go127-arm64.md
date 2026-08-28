@@ -1,10 +1,10 @@
 # Go 1.27 SIMD experiment
 
-Measured on 2026-08-28 with Go 1.27.0 on darwin/arm64, Apple M1 Pro.
-"Scalar" is the same commit without `GOEXPERIMENT=simd`; "SIMD" sets
-`GOEXPERIMENT=simd`. Runs were interleaved to reduce temperature and frequency
-bias, then compared with `benchstat`. All rows remained at 0 B/op and
-0 allocs/op.
+Measured on 2026-08-28 on darwin/arm64, Apple M1 Pro. The parsing sections
+compare the same Go 1.27.0 commit without and with `GOEXPERIMENT=simd`; those
+runs were interleaved to reduce temperature and frequency bias. The arithmetic
+section states its separate baselines explicitly. All rows remained at 0 B/op
+and 0 allocs/op.
 
 ## Existing parse matrix
 
@@ -52,6 +52,58 @@ Go experiment; those rows execute the scalar scanner. They are included so the
 cutoff decision and tradeoff remain visible rather than being optimized out of
 the report.
 
+## Arithmetic experiments
+
+The repository keeps benchmark-only, carry-correct SIMD candidates for
+128-bit addition, subtraction, 64x64-to-128 multiplication, and a 4,096-term
+128-bit sum. They are excluded from production builds. A deterministic test
+cross-checks each primitive against the existing scalar implementation over
+100,000 pseudorandom operand pairs before the benchmark runs.
+
+Ten samples per side, 300 ms per sample. These are serial dependency chains,
+so the compiler cannot hoist an invariant result out of the timed loop:
+
+| Kernel | Scalar median | SIMD median | SIMD delta |
+| --- | ---: | ---: | ---: |
+| carry-correct 128-bit add | 2.443 ns/op | 8.816 ns/op | +260.8% (3.61x slower) |
+| borrow-correct 128-bit subtract | 2.446 ns/op | 8.083 ns/op | +230.5% (3.31x slower) |
+| 64x64-to-128 multiply | 2.948 ns/op | 7.892 ns/op | +167.7% (2.68x slower) |
+| carry-correct sum of 4,096 u128 values | 2.167 us/op | 28.602 us/op | +1219.9% (13.20x slower) |
+
+No arithmetic candidate was selected. On arm64, `bits.Add64` and `bits.Sub64`
+compile to scalar flag-carry chains (`ADDS`/`ADCS` and `SUBS`/`SBCS`). A
+lane-wise SIMD add or subtract must additionally detect the low-limb carry,
+move it between lanes, apply it to the high limb, detect the final overflow,
+and extract the result. Likewise, `bits.Mul64` compiles to `MUL` plus `UMULH`;
+NEON has no integer 64x64-to-128 lane multiply, so the tested SIMD form needs
+two 32-bit `UMULL` operations plus cross-product reassembly.
+
+The same dependency makes the existing `Sum` and `Avg` accumulator a poor
+SIMD target: every 128-bit coefficient needs a carry into its adjacent limb.
+Independent batch operations could occupy independent lanes, but that would
+require a new batch API or a structure-of-arrays representation; the current
+24-byte `Decimal` layout does not provide contiguous coefficient lanes.
+
+### Go 1.27 arithmetic toolchain comparison
+
+For completeness, the existing 38-row public arithmetic suite was compiled
+unchanged with Go 1.26.5, then with Go 1.27.0 and `GOEXPERIMENT=simd` (eight
+samples per side, 250 ms per sample):
+
+| Existing public path | Go 1.26.5 | Go 1.27 + experiment | Delta |
+| --- | ---: | ---: | ---: |
+| all 38 rows, geomean | 52.28 ns/op | 51.97 ns/op | -0.60% |
+| AvgRound, cancellation-heavy | 39.96 ns/op | 37.43 ns/op | -6.34% |
+| Mul, direct bank rounding | 16.14 ns/op | 16.05 ns/op | no significant change |
+| Div, direct bank rounding | 13.47 ns/op | 13.28 ns/op | -1.48% |
+| Sum, same-precision 4,096 values | 4.016 us/op | 4.091 us/op | +1.87% |
+| AvgRound, mixed 4,096 values | 14.76 us/op | 15.32 us/op | +3.81% |
+
+There is no explicit arithmetic SIMD on those public paths, so their mixed
+changes are Go compiler and code-layout effects, not SIMD acceleration. The
+0.60% geomean is too small and uneven to justify raising the module's minimum
+Go version or publishing an arithmetic speed claim.
+
 ## Implementation and rejected variants
 
 The selected path scans two 16-byte vectors together, uses one validity
@@ -87,3 +139,24 @@ benchstat scalar=scalar.txt simd=simd.txt
 
 For the existing five-shape matrix, run the same pair from `benchmarks/` with
 `-bench='^BenchmarkParse/zd/'`.
+
+Run the rejected, correctness-checked arithmetic candidates with:
+
+```sh
+GOEXPERIMENT=simd GOTOOLCHAIN=go1.27.0 go test \
+  -run '^TestArithmeticSIMDExperimentCorrectness$' \
+  -bench '^BenchmarkArithmeticSIMDExperiment$' \
+  -benchmem -count=10 -benchtime=300ms .
+```
+
+Compare the unchanged public arithmetic paths across toolchains with:
+
+```sh
+GOTOOLCHAIN=go1.26.5 go test -run '^$' \
+  -bench '^(BenchmarkExactArithmetic|BenchmarkAggregates|BenchmarkAggregateCommonPrecision|BenchmarkQuoRemAlignmentPaths|BenchmarkModAlignmentPaths)$' \
+  -benchmem -count=8 -benchtime=250ms > go126.txt
+GOEXPERIMENT=simd GOTOOLCHAIN=go1.27.0 go test -run '^$' \
+  -bench '^(BenchmarkExactArithmetic|BenchmarkAggregates|BenchmarkAggregateCommonPrecision|BenchmarkQuoRemAlignmentPaths|BenchmarkModAlignmentPaths)$' \
+  -benchmem -count=8 -benchtime=250ms > go127-simd.txt
+benchstat go126.txt go127-simd.txt
+```
