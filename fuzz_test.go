@@ -860,9 +860,10 @@ func FuzzFloat32(f *testing.F) {
 	for _, b := range []uint32{
 		0x20000000, 0x20800000, 0x4c000000, 0x4c800000, 0x6b000000,
 		0x5f3f164f, 0x392907a0, 0x3f71f8cb, 0x4c330f1d, 0x4d49461f,
-		0x49c6e2d1,
+		0x49c6e2d1, 0x397fffff, 0x39800000, 0x39800001,
 	} {
 		f.Add(math.Float32frombits(b))
+		f.Add(-math.Float32frombits(b))
 	}
 	for n := -63; n <= 127; n++ {
 		f.Add(float32(math.Ldexp(1, n)))
@@ -879,7 +880,7 @@ func FuzzFloat32(f *testing.F) {
 				"only the domain guards may reject a finite float: %g -> %v", v, err)
 			return
 		}
-		ssV, ssErr := decimal.NewFromString(strconv.FormatFloat(v64, 'f', -1, 32))
+		ssV, ssErr := decimal.NewFromString(shortestFloatText(v64, 32))
 		require.NoErrorf(t, ssErr, "shopspring must parse the shortest form of %g", v)
 		require.Truef(t, ssV.Equal(ssOf(d)), "float32 value vs shopspring: %g -> %s vs %s", v, d, ssV)
 	})
