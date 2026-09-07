@@ -1,15 +1,15 @@
 package zerodecimal
 
-// Differential tests of the float constructors against strconv, the documented
-// oracle: NewFromFloat converts f through the digits strconv prints for the
-// exact bits of f, so d.String() must equal FormatFloat(f, 'f', -1, bitSize)
-// for every in-domain input. The pinned bit patterns steer the Dragonbox core
-// through each of its branches (short-interval endpoints, tie parities, exact
-// halves and the round-up corrections); the sweeps then cross-check the same
-// contract over every power of two and a seeded random slice of the domain.
+// Differential tests of the float constructors against strconv's shortest
+// decimal conversion. The oracle corrects the known float32 tie defect in
+// older strconv versions using independently checked literals. The pinned bit
+// patterns steer the Dragonbox core through its short-interval endpoints,
+// tie parities, exact halves and round-up corrections; the sweeps cross-check
+// the contract over every power of two and a seeded random slice of the domain.
 
 import (
 	"math"
+	"math/big"
 	"math/rand/v2"
 	"strconv"
 	"strings"
@@ -18,14 +18,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// checkShortestFloat asserts the strconv contract for one input. When the
+// shortestFloatText keeps the differential oracle independent of the copied
+// Go 1.26 Dragonbox defect: at float32 +/-2^-12, two equally close shortest
+// decimals round-trip, and the even final digit must win. Pin these two values
+// on every toolchain; TestNewFromFloat32ShortestTieToEven checks the midpoint
+// and round trips without relying on strconv's formatter.
+func shortestFloatText(f float64, bitSize int) string {
+	if bitSize == 32 {
+		switch f {
+		case 0x1p-12:
+			return "0.00024414062"
+		case -0x1p-12:
+			return "-0.00024414062"
+		}
+	}
+	return strconv.FormatFloat(f, 'f', -1, bitSize)
+}
+
+// checkShortestFloat asserts the shortest-decimal contract for one input. When the
 // constructor reports ErrPrecOutOfRange the oracle independently confirms the
 // shortest form needs more than MaxPrec fractional digits, so the error path
 // is verified rather than skipped — 2^-63 and 2^-62 pass the 10^-19 magnitude
 // guard yet legitimately error this way after fully exercising the core.
 func checkShortestFloat(t *testing.T, f float64, bitSize int) {
 	t.Helper()
-	want := strconv.FormatFloat(f, 'f', -1, bitSize)
+	want := shortestFloatText(f, bitSize)
 	var (
 		d   Decimal
 		err error
@@ -49,6 +66,47 @@ func checkShortestFloat(t *testing.T, f float64, bitSize int) {
 		want = "0" // ±0.0 collapses to the canonical zero, sign dropped
 	}
 	require.Equalf(t, want, d.String(), "f=%v (%x)", f, f)
+}
+
+func TestNewFromFloat32ShortestTieToEven(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input float32
+		even  string
+		odd   string
+		exact string
+	}{
+		{"positive", 0x1p-12, "0.00024414062", "0.00024414063", "0.000244140625"},
+		{"negative", -0x1p-12, "-0.00024414062", "-0.00024414063", "-0.000244140625"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Both shortest candidates round-trip and their exact midpoint is
+			// the input, so nearest-even must choose the literal ending in 2.
+			even, ok := new(big.Rat).SetString(tc.even)
+			require.True(t, ok)
+			odd, ok := new(big.Rat).SetString(tc.odd)
+			require.True(t, ok)
+			midpoint := new(big.Rat).Add(even, odd)
+			midpoint.Quo(midpoint, big.NewRat(2, 1))
+			exact := new(big.Rat).SetFloat64(float64(tc.input))
+			require.Zero(t, midpoint.Cmp(exact))
+			for _, candidate := range []string{tc.even, tc.odd} {
+				parsed, err := strconv.ParseFloat(candidate, 32)
+				require.NoError(t, err)
+				require.Equal(t, tc.input, float32(parsed))
+			}
+
+			d, err := NewFromFloat32(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.even, d.String())
+
+			// The same binary value at float64 precision has a different
+			// shortest form; the correction must remain float32-specific.
+			d64, err := NewFromFloat(float64(tc.input))
+			require.NoError(t, err)
+			require.Equal(t, tc.exact, d64.String())
+		})
+	}
 }
 
 func TestNewFromFloatShortestPinned(t *testing.T) {
@@ -83,6 +141,9 @@ func TestNewFromFloat32ShortestPinned(t *testing.T) {
 		name string
 		bits uint32
 	}{
+		{"before_two_pow_minus_12", 0x397fffff},
+		{"two_pow_minus_12_tie_to_even", 0x39800000},
+		{"after_two_pow_minus_12", 0x39800001},
 		{"two_pow_minus_63_round_up_kept", 0x20000000},
 		{"two_pow_minus_62_narrow_trims", 0x20800000},
 		{"two_pow_25_exp_two_keeps_left_endpoint", 0x4c000000},

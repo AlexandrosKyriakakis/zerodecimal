@@ -4,12 +4,12 @@ import "math/bits"
 
 // Add returns d + e computed exactly at precision max(d.prec, e.prec).
 // ErrOverflow is returned iff the exact coefficient at that precision does
-// not fit 128 bits — alignment itself can never fail, and opposite-sign
-// operands can never overflow. Both same-precision cases run inline: same
-// signs add as a single 128-bit magnitude add, opposite signs subtract as a
-// single 128-bit magnitude subtract with a conditional two's-complement fix
-// keyed on the borrow. Only differing precisions outline, straight into
-// addUnaligned.
+// not fit 128 bits — alignment itself can never fail. Opposite-sign operands
+// cannot overflow at equal precision, but can at differing precisions. Both
+// same-precision cases run inline: same signs add as a single 128-bit magnitude
+// add, opposite signs subtract as a single 128-bit magnitude subtract with a
+// conditional two's-complement fix keyed on the borrow. Differing precisions
+// outline straight into addUnaligned.
 func (d Decimal) Add(e Decimal) (Decimal, error) {
 	if d.prec == e.prec {
 		if d.neg == e.neg {

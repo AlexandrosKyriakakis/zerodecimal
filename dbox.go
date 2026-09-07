@@ -314,7 +314,8 @@ func dboxShortest32(mant uint32, exp int) (uint64, int) {
 			return qt, -k0 + 1 + zeros
 		}
 		yru := dboxRoundUp32(phi, beta)
-		if exp == -77 && yru%2 != 0 {
+		// The float32 shorter-interval tie is 2^-12, with exp = -12 - 23.
+		if exp == -35 && yru%2 != 0 {
 			yru--
 		} else if yru < xi {
 			yru++
