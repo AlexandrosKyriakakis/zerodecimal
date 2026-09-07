@@ -89,11 +89,102 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.27.0'
+          go-version: '1.27.1'
       - name: Unit tests (race)
         run: go test -race -failfast .
       - name: Allocation assertions (no race)
         run: go test -run '^Test.*Alloc' -count=1 .
+
+      - name: Pointer instrumentation
+        run: go test -gcflags=all=-d=checkptr=2 -skip Alloc -count=1 .
+      - name: SIMD precision and cache modes
+        shell: bash
+        run: |
+          for tags in zerodecimal_prec9 zerodecimal_prec12 zerodecimal_strcache; do
+            go test -tags="$tags" -count=1 ./...
+          done
+      - name: SIMD fuzz seeds
+        run: go test -tags=fuzz -run '^Fuzz' -count=1 .
+      - name: SIMD parser and prefix fuzzing
+        shell: bash
+        run: |
+          go test -tags=fuzz -run '^$' -fuzz '^FuzzDigitRun$' -fuzztime=30s -parallel=2 .
+          go test -tags=fuzz -run '^$' -fuzz '^FuzzSumPositivePrefix$' -fuzztime=30s -parallel=2 .
+      - name: AVX2 dispatch without AVX-512
+        if: runner.arch == 'X64'
+        env:
+          GODEBUG: cpu.avx512f=off
+        run: go test -race -run 'SIMD|AVX|DigitRun|Parse|Aggregate' -count=1 .
+      - name: Portable fallback without AVX
+        if: runner.arch == 'X64'
+        env:
+          GODEBUG: cpu.avx=off,cpu.avx2=off,cpu.avx512f=off
+        run: go test -race -run 'SIMD|AVX|DigitRun|Parse|Aggregate' -count=1 .
+      - name: Scan SIMD library and test dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -test -tags=fuzz ./...
+
+  optimization-measurements:
+    name: optimization measurements (${{ matrix.os }})
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Build identical benchmark fixtures at base and head
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/perf-evidence"
+          git worktree add --detach "$RUNNER_TEMP/perf-baseline" "$BASE_REF"
+          cp mulround_pow10_bench_test.go digitrun_bench_test.go "$RUNNER_TEMP/perf-baseline/"
+          go version > "$RUNNER_TEMP/perf-evidence/environment.txt"
+          go env GOOS GOARCH GOAMD64 GOEXPERIMENT >> "$RUNNER_TEMP/perf-evidence/environment.txt"
+          git rev-parse HEAD >> "$RUNNER_TEMP/perf-evidence/environment.txt"
+          git -C "$RUNNER_TEMP/perf-baseline" rev-parse HEAD >> "$RUNNER_TEMP/perf-evidence/environment.txt"
+          go test -c -o "$RUNNER_TEMP/head.test.exe" .
+          GOEXPERIMENT=simd go test -c -o "$RUNNER_TEMP/simd.test.exe" .
+          (cd "$RUNNER_TEMP/perf-baseline" && go test -c -o "$RUNNER_TEMP/base.test.exe" .)
+          (cd benchmarks && go test -c -o "$RUNNER_TEMP/pipeline-head.test.exe" .)
+          (cd "$RUNNER_TEMP/perf-baseline/benchmarks" && go test -c -o "$RUNNER_TEMP/pipeline-base.test.exe" .)
+      - name: Alternating base and head samples
+        run: |
+          for sample in 1 2 3 4 5 6 7 8 9 10; do
+            order='base head'
+            if (( sample % 2 == 0 )); then order='head base'; fi
+            for version in $order; do
+              "$RUNNER_TEMP/$version.test.exe" -test.run='^$' -test.bench='^BenchmarkMulRoundPow10$' -test.benchmem -test.benchtime=200ms -test.cpu=1 >> "$RUNNER_TEMP/perf-evidence/mulround-$version.txt"
+              "$RUNNER_TEMP/pipeline-$version.test.exe" -test.run='^$' -test.bench='^BenchmarkProductionPipeline' -test.benchmem -test.benchtime=200ms -test.cpu=1 >> "$RUNNER_TEMP/perf-evidence/pipeline-$version.txt"
+            done
+          done
+      - name: Same-source scalar and SIMD parsing and sums
+        run: |
+          for sample in 1 2 3 4 5 6; do
+            order='head simd'
+            if (( sample % 2 == 0 )); then order='simd head'; fi
+            for version in $order; do
+              "$RUNNER_TEMP/$version.test.exe" -test.run='^$' -test.bench='^BenchmarkParseLong$' -test.benchmem -test.benchtime=100ms -test.cpu=1 >> "$RUNNER_TEMP/perf-evidence/parse-$version.txt"
+            done
+          done
+          "$RUNNER_TEMP/simd.test.exe" -test.run='^$' -test.bench='^BenchmarkArithmeticSIMDSumDecision$' -test.benchmem -test.benchtime=200ms -test.count=6 -test.cpu=1 > "$RUNNER_TEMP/perf-evidence/sums.txt"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: optimization-${{ matrix.os }}
+          path: ${{ runner.temp }}/perf-evidence
+          if-no-files-found: error
+          retention-days: 30
 
   test-build-tags:
     name: tags (${{ matrix.name }})

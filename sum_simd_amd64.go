@@ -13,6 +13,16 @@ import (
 
 const sumSIMDDecimalSize = unsafe.Sizeof(Decimal{})
 
+// The deinterleaving kernels below load the object representation. Assert
+// every field offset they rely on, in addition to the total stride. Padding
+// bytes are deliberately masked away and are never interpreted as metadata.
+const (
+	sumSIMDHiOffset   = unsafe.Offsetof(Decimal{}.coef) + unsafe.Offsetof(u128{}.hi)
+	sumSIMDLoOffset   = unsafe.Offsetof(Decimal{}.coef) + unsafe.Offsetof(u128{}.lo)
+	sumSIMDNegOffset  = unsafe.Offsetof(Decimal{}.neg)
+	sumSIMDPrecOffset = unsafe.Offsetof(Decimal{}.prec)
+)
+
 // End-to-end Sum benchmarks are positive from 32 total operands onward.
 // Keeping the gate at the public caller also avoids SIMD feature-dispatch
 // overhead for smaller sums. The scalar stub sets sumSIMDEnabled to false,
@@ -25,6 +35,14 @@ const (
 var (
 	_ [24 - sumSIMDDecimalSize]byte
 	_ [sumSIMDDecimalSize - 24]byte
+	_ [0 - sumSIMDHiOffset]byte
+	_ [sumSIMDHiOffset - 0]byte
+	_ [8 - sumSIMDLoOffset]byte
+	_ [sumSIMDLoOffset - 8]byte
+	_ [16 - sumSIMDNegOffset]byte
+	_ [sumSIMDNegOffset - 16]byte
+	_ [17 - sumSIMDPrecOffset]byte
+	_ [sumSIMDPrecOffset - 17]byte
 
 	sumAVX512DecimalHi01   = [8]uint64{0, 3, 6, 9, 12, 15, 0, 0}
 	sumAVX512DecimalHi2    = [8]uint64{0, 0, 0, 0, 0, 0, 2, 5}
@@ -52,6 +70,7 @@ func sumSIMDPrefix(first Decimal, rest []Decimal) (Decimal, int, bool) {
 }
 
 func sumAVX2LoadDecimal4(base unsafe.Pointer) (archsimd.Uint64x4, archsimd.Uint64x4, archsimd.Uint64x4) {
+	// Caller proves four complete Decimals (96 bytes) remain in the slice.
 	v0 := archsimd.LoadUint64x4Array((*[4]uint64)(base))
 	v1 := archsimd.LoadUint64x4Array((*[4]uint64)(unsafe.Add(base, 32)))
 	v2 := archsimd.LoadUint64x4Array((*[4]uint64)(unsafe.Add(base, 64)))
@@ -87,6 +106,9 @@ func sumAVX2Positive64Prefix(first Decimal, rest []Decimal) (Decimal, int, bool)
 	wantMetadata := archsimd.BroadcastUint64x4(uint64(prec) << 8)
 
 	var sumAHi, sumALo, sumBHi, sumBLo archsimd.Uint64x4
+	// Each lane's high word only counts carries from 64-bit addends. Even
+	// the largest addressable Decimal slice has fewer than 2^59 elements,
+	// so neither these counts nor their pairwise merge can overflow uint64.
 	i := 0
 	for ; len(rest)-i >= 8; i += 8 {
 		aHi, aLo, aMeta := sumAVX2LoadDecimal4(unsafe.Pointer(&rest[i]))
@@ -220,6 +242,7 @@ func sumAVX512LoadDecimal8(
 	base unsafe.Pointer,
 	hi01Indices, hi2Indices, lo01Indices, lo2Indices, meta01Indices, meta2Indices archsimd.Uint64x8,
 ) (archsimd.Uint64x8, archsimd.Uint64x8, archsimd.Uint64x8) {
+	// Caller proves eight complete Decimals (192 bytes) remain in the slice.
 	v0 := archsimd.LoadUint64x8Array((*[8]uint64)(base))
 	v1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 64)))
 	v2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Add(base, 128)))

@@ -7,6 +7,7 @@ import (
 	"simd/archsimd"
 	"strconv"
 	"testing"
+	"unsafe"
 )
 
 func checkSIMDSumAgainstScalar(t *testing.T, ds []Decimal) {
@@ -16,6 +17,58 @@ func checkSIMDSumAgainstScalar(t *testing.T, ds []Decimal) {
 	if got != want || gotErr != wantErr {
 		t.Fatalf("got (%#v,%v), want (%#v,%v)", got, gotErr, want, wantErr)
 	}
+	// Also use an independent exact-integer oracle; shared scalar arithmetic
+	// must not hide an error in both paths.
+	requireAggregateSumOracle(t, ds)
+	first, rest := ds[0], ds[1:]
+	for first.coef.isZero() && len(rest) > 0 {
+		first, rest = rest[0], rest[1:]
+	}
+	if first.coef.isZero() || first.neg {
+		return
+	}
+	checkPrefix := func(name string, prefix Decimal, next int, ok bool) {
+		t.Helper()
+		if !ok {
+			return // Overflow is permitted to request the full scalar path.
+		}
+		if next < 0 || next > len(rest) {
+			t.Fatalf("%s: invalid continuation index %d", name, next)
+		}
+		prefixWant, prefixErr := sumScalar(first, rest[:next])
+		if prefixErr != nil || prefix != prefixWant {
+			t.Fatalf("%s: inexact prefix %#v, want (%#v,%v)", name, prefix, prefixWant, prefixErr)
+		}
+		result, err := sumScalar(prefix, rest[next:])
+		if result != want || err != wantErr {
+			t.Fatalf("%s: continuation got (%#v,%v), want (%#v,%v)", name, result, err, want, wantErr)
+		}
+	}
+	// Exercise AVX2 even on machines whose public dispatch chooses AVX-512.
+	if archsimd.X86.AVX2() && first.coef.hi == 0 {
+		prefix, next, ok := sumAVX2Positive64Prefix(first, rest)
+		checkPrefix("AVX2", prefix, next, ok)
+	}
+	if archsimd.X86.AVX512() {
+		prefix, next, ok := sumAVX512PositivePrefix(first, rest)
+		checkPrefix("AVX512", prefix, next, ok)
+	}
+}
+
+func TestSIMDSumIgnoresPadding(t *testing.T) {
+	ds := make([]Decimal, 65)
+	for i := range ds {
+		if i%7 != 0 {
+			ds[i] = newDecimal(u128{lo: ^uint64(0) - uint64(i)}, false, 4)
+		}
+		// Deliberately dirty only padding in the original backing array.
+		// Struct copies may discard padding, so do not copy this slice.
+		raw := (*[24]byte)(unsafe.Pointer(&ds[i]))
+		for j := 18; j < len(raw); j++ {
+			raw[j] = byte(i + j)
+		}
+	}
+	checkSIMDSumAgainstScalar(t, ds)
 }
 
 func TestSIMDSumProductionCorrectness(t *testing.T) {

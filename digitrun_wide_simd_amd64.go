@@ -19,6 +19,11 @@ const digitRunWideEnabled = true
 // parseLongPlain calls this only when at least 28 bytes remain and the final
 // byte is a digit, keeping setup off shorter and malformed trailing inputs.
 func digitRunLenWide[T string | []byte](s T, i int) int {
+	// Go's 128-bit x86 SIMD intrinsics emit AVX instructions, which are not
+	// part of the baseline amd64 CPU contract. Check before any vector load.
+	if !archsimd.X86.AVX() {
+		return digitRunLen(s, i)
+	}
 	var b []byte
 	switch s := any(s).(type) {
 	case string:
