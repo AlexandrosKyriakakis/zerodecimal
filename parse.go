@@ -982,8 +982,8 @@ func RequireFromString(s string) Decimal {
 	return d
 }
 
-// NewFromFloat converts f through a shortest decimal representation that
-// round-trips to the exact bits of f, with no silent rounding:
+// NewFromFloat converts f through its shortest round-tripping decimal form,
+// choosing the nearest decimal and breaking ties to even, without truncation:
 // NaN and infinities return ErrInvalidFloat, |f| ≥ 2^128 returns ErrOverflow,
 // and a nonzero |f| below 10^-19 or a shortest form needing more than MaxPrec
 // fractional digits returns ErrPrecOutOfRange. For lossy ingestion of

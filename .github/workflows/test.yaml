@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.8'
       # Pinned to the version developers run locally: linter releases move
       # which findings exist, and nolintlint turns a newly-unused directive
       # into an error. Bump local and CI together.
@@ -40,12 +40,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.8'
       - name: Scan library module
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Scan library tests and fuzz oracles
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -test -tags=fuzz ./...
       - name: Scan benchmark module
         working-directory: benchmarks
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -test ./...
 
   test:
     strategy:
@@ -53,7 +55,7 @@ jobs:
       matrix:
         # Keep the secure production patch explicit while also exercising the
         # current stable release; the module language directive stays at 1.26.
-        go: ['1.26.5', stable]
+        go: ['1.26.8', stable]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -128,7 +130,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.8'
       - name: Full suite
         run: go test -tags="${{ matrix.tags }}" -count=1 ./...
 
@@ -139,7 +141,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.8'
       - name: Full cache-enabled suite (race)
         run: go test -race -tags=zerodecimal_strcache -count=1 ./...
 
@@ -153,7 +155,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.8'
       - name: Full 32-bit suite
         run: go test -count=1 ./...
       - name: Vet 32-bit build
