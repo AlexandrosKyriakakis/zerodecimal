@@ -1,20 +1,20 @@
-goos: darwin
-goarch: arm64
+goos: linux
+goarch: amd64
 pkg: github.com/AlexandrosKyriakakis/zerodecimal
-cpu: Apple M1 Pro
+cpu: AMD EPYC 7763 64-Core Processor                
                              │ mulround-base.txt │          mulround-head.txt          │
                              │      sec/op       │   sec/op     vs base                │
-MulRoundPow10/price_fee             15.970n ± 2%   8.057n ± 1%  -49.55% (p=0.000 n=10)
-MulRoundPow10/product_128            16.01n ± 1%   10.84n ± 1%  -32.29% (p=0.000 n=10)
-MulRoundPow10/product_192            17.46n ± 1%   11.90n ± 1%  -31.84% (p=0.000 n=10)
-MulRoundPow10/drop_20                23.55n ± 1%   23.64n ± 1%        ~ (p=0.306 n=10)
-MulRoundPow10/drop_36                24.77n ± 1%   24.93n ± 1%        ~ (p=0.870 n=10)
-MulRoundPow10/drop_38                16.79n ± 1%   16.98n ± 1%        ~ (p=0.305 n=10)
-MulRoundPow10/padding                4.350n ± 2%   4.324n ± 1%        ~ (p=0.343 n=10)
-MulRoundPow10/same_precision         4.333n ± 1%   4.341n ± 1%        ~ (p=0.897 n=10)
-MulRoundPow10/sticky_half           17.000n ± 1%   7.597n ± 1%  -55.31% (p=0.000 n=10)
-MulRoundPow10/overflow               6.819n ± 1%   5.502n ± 1%  -19.32% (p=0.000 n=10)
-geomean                              12.53n        9.799n       -21.82%
+MulRoundPow10/price_fee              21.52n ± 0%   13.15n ± 0%  -38.87% (p=0.000 n=10)
+MulRoundPow10/product_128            21.48n ± 0%   16.58n ± 2%  -22.83% (p=0.000 n=10)
+MulRoundPow10/product_192            22.89n ± 1%   18.79n ± 0%  -17.89% (p=0.000 n=10)
+MulRoundPow10/drop_20                25.93n ± 2%   25.65n ± 1%        ~ (p=0.256 n=10)
+MulRoundPow10/drop_36                25.38n ± 1%   25.44n ± 0%        ~ (p=0.183 n=10)
+MulRoundPow10/drop_38                23.38n ± 0%   23.44n ± 3%        ~ (p=0.085 n=10)
+MulRoundPow10/padding                7.168n ± 0%   7.170n ± 0%        ~ (p=0.617 n=10)
+MulRoundPow10/same_precision         7.170n ± 0%   7.181n ± 1%        ~ (p=0.050 n=10)
+MulRoundPow10/sticky_half            22.45n ± 1%   12.80n ± 0%  -42.98% (p=0.000 n=10)
+MulRoundPow10/overflow              11.865n ± 0%   9.671n ± 8%  -18.49% (p=0.000 n=10)
+geomean                              17.17n        14.46n       -15.80%
 
                              │ mulround-base.txt │          mulround-head.txt          │
                              │       B/op        │    B/op     vs base                 │

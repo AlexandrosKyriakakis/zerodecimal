@@ -49,10 +49,40 @@ include the complete population, including overflow and control rows.
 
 The separate Go 1.27.1 arm64 parser comparison used six alternating 100 ms
 samples. SIMD improved 32/39-digit integers by 5.6–8.5%, the maximum-coefficient
-input by 6.2%, and the 80-digit input by 10.3%. Across all 19 shapes the geomean
+input by 6.2%, and the 80-digit overflow input by 10.3%. Across all 19 shapes the geomean
 improved only 0.8%; several 21–26-byte inputs regressed roughly 4–6% from
 dispatch/code-generation overhead despite remaining on the scalar scanner.
 This remains an opt-in optimization for workloads with sufficiently long input.
+
+## Final amd64 measurements
+
+The final runtime source, `9035fa2f427b885ea567891b3967cb4765cab194`, was measured
+against main with Go 1.27.1 on separate Linux and Windows AMD EPYC 7763 runners.
+[Run 34172185961](https://github.com/AlexandrosKyriakakis/zerodecimal/actions/runs/34172185961)
+contains the original artifacts; the
+[measurement workflow at that revision](https://github.com/AlexandrosKyriakakis/zerodecimal/blob/9035fa2f427b885ea567891b3967cb4765cab194/.github/workflows/test.yaml)
+records exact build and alternating-sampling commands. Temporary measurement
+jobs were removed after collection; the correctness checks remain permanent.
+
+| Operation | Linux main → optimized | Windows main → optimized |
+| --- | ---: | ---: |
+| Price × fee, nearest-even currency rounding | 21.52 → 13.15 ns (-38.87%) | 22.10 → 13.47 ns (-39.05%) |
+| Rounded 128-bit product | 21.48 → 16.58 ns (-22.83%) | 22.15 → 16.98 ns (-23.36%) |
+| Rounded 192-bit product | 22.89 → 18.79 ns (-17.89%) | 23.23 → 19.18 ns (-17.40%) |
+| Synthetic trade capture | 186.2 → 172.2 ns (-7.52%) | 186.2 → 185.6 ns (not significant) |
+| Synthetic portfolio mark | 362.4 → 286.2 ns (-21.03%) | 376.3 → 302.4 ns (-19.65%) |
+
+Wide divisors, padding, and same-precision controls show no significant
+regression. Numerical allocations remain zero; pipeline allocations remain
+unchanged. Windows intervals are wider, and its trade-capture result supports
+no speedup claim. Full [Linux](optimization-20260907/final-linux-amd64/) and
+[Windows](optimization-20260907/final-windows-amd64/) samples and benchstat
+reports retain every measured row.
+
+With the final 64-operand gate, public SIMD sums are 1.37x/1.48x as fast at 64
+operands and 1.66x/1.57x at 4,096 on Linux/Windows, respectively. Late-mismatch
+continuation remains 1.44–1.66x as fast. All sum samples allocate zero bytes.
+The x86 parser regression disappears when both builds use the scalar scanner.
 
 ## Measurement-driven exclusions
 
@@ -62,6 +92,9 @@ contains raw `optimization-ubuntu-latest` and `optimization-windows-latest`
 artifacts. Base/head rounded-multiplication and pipeline samples alternated
 order ten times at 200 ms per sample with one CPU. Scalar/SIMD parser samples
 alternated six times at 100 ms; public sum measurements used six 200 ms samples.
+The decision inputs are also retained under
+[initial Linux](optimization-20260907/initial-linux-amd64/) and
+[initial Windows](optimization-20260907/initial-windows-amd64/).
 
 The x86 SIMD parser regressed the 19-shape geomean by 4.50% on Linux and 4.35%
 on Windows. The 28/32-byte decimal cases regressed about 10–12%; the 80-digit
@@ -98,3 +131,26 @@ Ordinary CI retains Go 1.26.8 and stable coverage, all 12 precision/cache
 combinations, linux/386 execution, lint, benchmark fixture tests, and the full
 fuzz sweep. Benchmarks are bounded synthetic measurements, not application
 latency guarantees.
+
+Local validation passed all 51 fuzz targets, the cache-enabled variant, and
+additional focused rounding/SIMD runs: 25,917,222 executions across 54 successful
+runs. One aggregate fuzz attempt ended with a coordinator deadline, without
+an assertion or saved failing input; its fixed-count rerun passed 250,000
+inputs. The final rounded-arithmetic helper passed a separate 1,000,000-input
+run. Local logs and the separate deadline attempt are retained in
+`reviews/2026-09-07/pr8-validation/` outside the PR's tracked publication files.
+
+The pinned golangci-lint checks ordinary Go 1.26 builds. Its dependency reader
+cannot decode Go 1.27's export format even after rebuilding the binary; native
+Go 1.27 vet passed for both amd64 and arm64 SIMD builds. Experimental paths
+also retain their compiler, numerical, race, pointer, fuzz, and vulnerability
+checks in CI.
+
+The comparative publication was refreshed by
+[run 34172185974](https://github.com/AlexandrosKyriakakis/zerodecimal/actions/runs/34172185974)
+on Go 1.26.8, Apple M1 (Virtual), cache off. Its source identity is
+`b7bbbf004e1f0dcf06f5de42fa0476eb95081624f569f98ce63022a466bdfc15`.
+All artifact and profile-input hashes were verified before import, and the
+charts regenerate byte-for-byte. Its first check intentionally failed only
+at the requirement to commit that fresh evidence; collection and chart
+verification both passed.

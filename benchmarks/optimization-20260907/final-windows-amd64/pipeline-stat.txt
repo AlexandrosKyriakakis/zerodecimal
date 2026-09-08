@@ -1,12 +1,12 @@
-goos: darwin
-goarch: arm64
+goos: windows
+goarch: amd64
 pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
-cpu: Apple M1 Pro
+cpu: AMD EPYC 7763 64-Core Processor                
                                 │ pipeline-base.txt │          pipeline-head.txt          │
                                 │      sec/op       │   sec/op     vs base                │
-ProductionPipelineTradeCapture          124.9n ± 1%   102.1n ± 3%  -18.25% (p=0.000 n=10)
-ProductionPipelinePortfolioMark         281.6n ± 1%   217.2n ± 1%  -22.89% (p=0.000 n=10)
-geomean                                 187.5n        148.9n       -20.60%
+ProductionPipelineTradeCapture          186.2n ± 2%   185.6n ± 2%        ~ (p=0.393 n=10)
+ProductionPipelinePortfolioMark         376.3n ± 7%   302.4n ± 6%  -19.65% (p=0.000 n=10)
+geomean                                 264.7n        236.9n       -10.53%
 
                                 │ pipeline-base.txt │          pipeline-head.txt          │
                                 │       B/op        │    B/op     vs base                 │

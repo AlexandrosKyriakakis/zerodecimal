@@ -1,0 +1,76 @@
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+                          │ parse-head.txt │           parse-simd.txt            │
+                          │     sec/op     │    sec/op     vs base               │
+ParseLong/21_digits           29.17n ±  2%   29.88n ±  1%   +2.43% (p=0.002 n=6)
+ParseLong/22_digits           30.53n ±  1%   31.31n ±  0%   +2.59% (p=0.002 n=6)
+ParseLong/24_digits           26.87n ± 11%   27.42n ±  0%        ~ (p=0.063 n=6)
+ParseLong/26_digits           29.54n ±  0%   30.11n ± 10%   +1.91% (p=0.002 n=6)
+ParseLong/28_digits           30.10n ±  0%   31.81n ±  0%   +5.72% (p=0.002 n=6)
+ParseLong/30_digits           33.00n ±  0%   34.64n ±  3%   +4.97% (p=0.002 n=6)
+ParseLong/32_digits           29.92n ±  3%   31.23n ±  2%   +4.36% (p=0.002 n=6)
+ParseLong/39_digits           41.55n ±  1%   42.73n ±  2%   +2.85% (p=0.002 n=6)
+ParseLong/max_uint128         41.51n ±  1%   42.75n ±  0%   +3.00% (p=0.002 n=6)
+ParseLong/21_byte_decimal     29.94n ±  1%   30.75n ±  1%   +2.69% (p=0.002 n=6)
+ParseLong/22_byte_decimal     30.65n ±  2%   31.34n ±  0%   +2.25% (p=0.002 n=6)
+ParseLong/24_byte_decimal     30.83n ±  0%   30.58n ±  0%   -0.84% (p=0.002 n=6)
+ParseLong/26_byte_decimal     31.79n ±  0%   32.28n ±  3%   +1.54% (p=0.002 n=6)
+ParseLong/28_byte_decimal     32.77n ±  1%   36.21n ±  1%  +10.51% (p=0.002 n=6)
+ParseLong/32_byte_decimal     33.97n ±  0%   37.80n ±  1%  +11.29% (p=0.002 n=6)
+ParseLong/39_byte_decimal     37.68n ±  0%   39.98n ±  3%   +6.12% (p=0.002 n=6)
+ParseLong/40_byte_decimal     42.70n ±  2%   44.93n ±  1%   +5.23% (p=0.002 n=6)
+ParseLong/invalid_at_40       23.70n ±  0%   23.70n ±  0%        ~ (p=0.974 n=6)
+ParseLong/80_digits           69.47n ±  0%   82.30n ±  0%  +18.46% (p=0.002 n=6)
+geomean                       33.53n         35.03n         +4.50%
+
+                          │ parse-head.txt │           parse-simd.txt           │
+                          │      B/op      │    B/op     vs base                │
+ParseLong/21_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/22_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/24_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/26_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/28_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/30_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/32_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/39_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/max_uint128         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/21_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/22_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/24_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/26_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/28_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/32_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/39_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/40_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/invalid_at_40       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/80_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                  ²               +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                          │ parse-head.txt │           parse-simd.txt           │
+                          │   allocs/op    │ allocs/op   vs base                │
+ParseLong/21_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/22_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/24_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/26_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/28_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/30_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/32_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/39_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/max_uint128         0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/21_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/22_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/24_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/26_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/28_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/32_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/39_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/40_byte_decimal     0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/invalid_at_40       0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+ParseLong/80_digits           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                  ²               +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
