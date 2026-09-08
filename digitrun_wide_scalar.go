@@ -1,4 +1,4 @@
-//go:build !go1.27 || go1.28 || !goexperiment.simd || (!amd64 && !arm64)
+//go:build !go1.27 || go1.28 || !goexperiment.simd || !arm64
 
 package zerodecimal
 

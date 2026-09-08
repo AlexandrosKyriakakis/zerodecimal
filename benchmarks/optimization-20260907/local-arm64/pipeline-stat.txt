@@ -1,0 +1,23 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+                                │ pipeline-base.txt │ pipeline-head.txt │
+                                │                                     sec/op                                     │                         sec/op                          vs base                │
+ProductionPipelineTradeCapture                                                                       124.9n ± 1%                                              102.1n ± 3%  -18.25% (p=0.000 n=10)
+ProductionPipelinePortfolioMark                                                                      281.6n ± 1%                                              217.2n ± 1%  -22.89% (p=0.000 n=10)
+geomean                                                                                              187.5n                                                   148.9n       -20.60%
+
+                                │ pipeline-base.txt │ pipeline-head.txt │
+                                │                                      B/op                                      │                         B/op                           vs base                 │
+ProductionPipelineTradeCapture                                                                        16.00 ± 0%                                              16.00 ± 0%       ~ (p=1.000 n=10) ¹
+ProductionPipelinePortfolioMark                                                                       24.00 ± 0%                                              24.00 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                                                                               19.60                                                   19.60       +0.00%
+¹ all samples are equal
+
+                                │ pipeline-base.txt │ pipeline-head.txt │
+                                │                                   allocs/op                                    │                       allocs/op                        vs base                 │
+ProductionPipelineTradeCapture                                                                        1.000 ± 0%                                              1.000 ± 0%       ~ (p=1.000 n=10) ¹
+ProductionPipelinePortfolioMark                                                                       1.000 ± 0%                                              1.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                                                                               1.000                                                   1.000       +0.00%
+¹ all samples are equal

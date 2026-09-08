@@ -6,19 +6,20 @@ import (
 	"testing"
 )
 
-func TestDivmodU256Pow10AgainstBigInt(t *testing.T) {
+func TestDivRoundPow10AgainstBigInt(t *testing.T) {
 	rng := rand.New(rand.NewPCG(0x526f756e64, 0x506f773130))
 	for k := uint8(1); k <= MaxPrec; k++ {
 		den := pow10Big(int(k))
 		check := func(u u256) {
 			t.Helper()
 			wantQ, wantR := new(big.Int).QuoRem(u256ToBig(u), den, new(big.Int))
-			q, r, fits := divmodU256Pow10(u, k)
+			q, rem, halfCmp, fits := divRoundPow10(u, k)
 			if fits != (wantQ.BitLen() <= 128) {
 				t.Fatalf("k=%d u=%+v: fits=%t, quotient=%s", k, u, fits, wantQ)
 			}
-			if fits && (u128ToBig(q).Cmp(wantQ) != 0 || r != wantR.Uint64()) {
-				t.Fatalf("k=%d u=%+v: got (%+v,%d), want (%s,%s)", k, u, q, r, wantQ, wantR)
+			wantHalf := new(big.Int).Lsh(new(big.Int).Set(wantR), 1).Cmp(den)
+			if fits && (u128ToBig(q).Cmp(wantQ) != 0 || rem != (wantR.Sign() != 0) || halfCmp != wantHalf) {
+				t.Fatalf("k=%d u=%+v: got (%+v,%t,%d), want quotient=%s remainder=%s half=%d", k, u, q, rem, halfCmp, wantQ, wantR, wantHalf)
 			}
 		}
 		// The exact overflow threshold and both adjacent dividends, plus

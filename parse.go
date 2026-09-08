@@ -266,7 +266,7 @@ func parseLongPlain[T string | []byte](s T, start, i int, neg, trunc bool) (Deci
 	// Integer run first; the only byte allowed to stop it short of the end
 	// is a single dot with a non-empty in-range all-digit fraction after it.
 	var intLen int
-	// On 128-bit SIMD, 28 bytes is the measured crossover where both pure
+	// On arm64 SIMD, 28 bytes is the measured crossover where both pure
 	// integers and decimals beat the scalar/SWAR scanner. The final-byte probe
 	// keeps malformed trailing input on its cheaper rejection path.
 	if digitRunWideEnabled && len(s)-i >= 28 && s[n-1]-'0' <= 9 {

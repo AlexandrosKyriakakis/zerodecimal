@@ -60,15 +60,15 @@ Runnable examples for parsing, arithmetic, rounding, JSON, and SQL live in
 ## Experimental Go 1.27 SIMD
 
 Go 1.27 users can opt into SIMD acceleration for long decimal parsing on
-amd64 and arm64, and for large `Sum` calls on amd64:
+arm64 and for large `Sum` calls on amd64:
 
 ```sh
 GOEXPERIMENT=simd go test ./...
 GOEXPERIMENT=simd go build ./...
 ```
 
-The parsing path activates only when at least 28 input bytes remain. The
-amd64 `Sum` path activates at 32 operands, dispatches to AVX-512 or AVX2 at
+The arm64 parsing path activates only when at least 28 input bytes remain. The
+amd64 `Sum` path activates at 64 operands, dispatches to AVX-512 or AVX2 at
 runtime, and vectorizes positive same-precision prefixes; unsupported suffixes
 continue through the exact scalar implementation without rescanning. Shorter
 inputs and sums keep the faster scalar/SWAR paths. Builds without the
@@ -77,6 +77,13 @@ implementation and API. Because `simd/archsimd` is experimental, these
 optimizations are deliberately limited to Go 1.27; later Go releases fall
 back to scalar until their revised API and generated code have been audited
 and benchmarked.
+
+The amd64 parser keeps the scalar/SWAR implementation: fresh Linux and Windows
+measurements found the SIMD candidate slower. Rounded multiplication also
+uses generated power-of-ten reciprocals on all architectures, preserving its
+exact remainder, rounding modes, and overflow checks. See the
+[optimization validation](benchmarks/optimization-20260907.md) for measurements
+and the accepted performance boundaries.
 
 ## Design
 

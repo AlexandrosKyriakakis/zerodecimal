@@ -23,13 +23,15 @@ const (
 	sumSIMDPrecOffset = unsafe.Offsetof(Decimal{}.prec)
 )
 
-// End-to-end Sum benchmarks are positive from 32 total operands onward.
+// End-to-end Sum benchmarks are consistently positive from 64 total operands
+// onward across the measured Linux and Windows runners. At 32, the crossover
+// varies by host, so keep that size on the scalar path.
 // Keeping the gate at the public caller also avoids SIMD feature-dispatch
 // overhead for smaller sums. The scalar stub sets sumSIMDEnabled to false,
 // allowing ordinary builds to erase the entire branch.
 const (
 	sumSIMDEnabled = true
-	sumSIMDMinRest = 31
+	sumSIMDMinRest = 63
 )
 
 var (

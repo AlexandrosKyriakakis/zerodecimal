@@ -1,5 +1,9 @@
 # Go 1.27 SIMD experiment
 
+See the [2026-09-07 revalidation](optimization-20260907.md) for the current
+Go 1.27.1 results and final integration boundaries. The numbers below retain
+their original toolchain and measurement date.
+
 Measured on 2026-08-28 on darwin/arm64, Apple M1 Pro. The parsing sections
 compare the same Go 1.27.0 commit without and with `GOEXPERIMENT=simd`; those
 runs were interleaved to reduce temperature and frequency bias. The arithmetic

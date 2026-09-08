@@ -2,6 +2,10 @@
 
 Date: 2026-08-28
 
+The measurements below record the original investigation. The
+[2026-09-07 revalidation](optimization-20260907.md) supersedes the 32-operand
+threshold with 64 operands and keeps amd64 parsing on the scalar path.
+
 Status: **accepted for the opt-in Go 1.27 amd64 build**. The public `Sum` path
 is 1.65x to 1.94x faster for 4,096 positive, same-precision decimals on the
 measured AVX-512 hosts and 1.66x faster on the measured AVX2 host. It remains
