@@ -1,0 +1,49 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+                             │ mulround-base.txt │          mulround-head.txt          │
+                             │      sec/op       │   sec/op     vs base                │
+MulRoundPow10/price_fee             15.970n ± 2%   8.057n ± 1%  -49.55% (p=0.000 n=10)
+MulRoundPow10/product_128            16.01n ± 1%   10.84n ± 1%  -32.29% (p=0.000 n=10)
+MulRoundPow10/product_192            17.46n ± 1%   11.90n ± 1%  -31.84% (p=0.000 n=10)
+MulRoundPow10/drop_20                23.55n ± 1%   23.64n ± 1%        ~ (p=0.306 n=10)
+MulRoundPow10/drop_36                24.77n ± 1%   24.93n ± 1%        ~ (p=0.870 n=10)
+MulRoundPow10/drop_38                16.79n ± 1%   16.98n ± 1%        ~ (p=0.305 n=10)
+MulRoundPow10/padding                4.350n ± 2%   4.324n ± 1%        ~ (p=0.343 n=10)
+MulRoundPow10/same_precision         4.333n ± 1%   4.341n ± 1%        ~ (p=0.897 n=10)
+MulRoundPow10/sticky_half           17.000n ± 1%   7.597n ± 1%  -55.31% (p=0.000 n=10)
+MulRoundPow10/overflow               6.819n ± 1%   5.502n ± 1%  -19.32% (p=0.000 n=10)
+geomean                              12.53n        9.799n       -21.82%
+
+                             │ mulround-base.txt │          mulround-head.txt          │
+                             │       B/op        │    B/op     vs base                 │
+MulRoundPow10/price_fee             0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/product_128           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/product_192           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_20               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_36               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_38               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/padding               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/same_precision        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/sticky_half           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/overflow              0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                        ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                             │ mulround-base.txt │          mulround-head.txt          │
+                             │     allocs/op     │ allocs/op   vs base                 │
+MulRoundPow10/price_fee             0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/product_128           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/product_192           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_20               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_36               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/drop_38               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/padding               0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/same_precision        0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/sticky_half           0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+MulRoundPow10/overflow              0.000 ± 0%     0.000 ± 0%       ~ (p=1.000 n=10) ¹
+geomean                                        ²               +0.00%                ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

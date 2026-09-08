@@ -436,6 +436,7 @@ func TestNewFromFloat32(t *testing.T) {
 		{"nan", float32(math.NaN()), "", ErrInvalidFloat},
 		{"positive_infinity", float32(math.Inf(1)), "", ErrInvalidFloat},
 		{"point_one_shortest_form", 0.1, "0.1", nil},
+		{"shortest_tie_to_even", 0x1p-12, "0.00024414062", nil},
 		{"one_third", 1.0 / 3.0, "0.33333334", nil},
 		{"negative_zero", float32(math.Copysign(0, -1)), "0", nil},
 		{"max_float32_fits", math.MaxFloat32, "340282350000000000000000000000000000000", nil},

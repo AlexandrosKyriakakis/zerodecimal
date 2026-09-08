@@ -203,9 +203,7 @@ func (d Decimal) MulRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 	var halfCmp int
 	var fits bool
 	if k <= MaxPrec {
-		// The values match pow10u128, but the one-limb table avoids loading an
-		// unnecessary high word on the common <=19-digit path (benchmarked).
-		q, rem, halfCmp, fits = divRoundWide(prod, u128{lo: pow10u64[k&31]})
+		q, rem, halfCmp, fits = divRoundPow10(prod, k)
 	} else {
 		q, rem, halfCmp, fits = divRoundWide(prod, pow10u128[k&63])
 	}

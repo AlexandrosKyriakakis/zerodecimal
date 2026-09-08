@@ -1,0 +1,70 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2344916	       103.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       216.0 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2404304	       102.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       216.9 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2424217	       101.8 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       217.4 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2388258	       102.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       215.2 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2398393	       101.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       218.8 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2442697	       101.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       216.9 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2407476	       105.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       219.6 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2407196	       103.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       220.7 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2458735	       100.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       215.2 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: Apple M1 Pro
+BenchmarkProductionPipelineTradeCapture  	 2253198	       105.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	 1000000	       218.0 ns/op	      24 B/op	       1 allocs/op
+PASS

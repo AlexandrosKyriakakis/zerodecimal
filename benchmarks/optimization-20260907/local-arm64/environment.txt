@@ -1,0 +1,9 @@
+host: Apple M1 Pro, darwin/arm64
+rounding and pipeline toolchain: go1.26.8
+parser toolchain: go1.27.1
+rounding and pipeline baseline runtime sources: main d5025f05c91accba1db5f4ca2c3e2284f534827f
+rounding and pipeline candidate: divRoundPow10 integration in this PR
+parser comparison: identical candidate sources, without and with GOEXPERIMENT=simd
+process: one CPU, alternating execution order; no concurrent validation jobs
+rounding/pipeline samples: 10 per side, 200ms each
+parser samples: 6 per side, 100ms each

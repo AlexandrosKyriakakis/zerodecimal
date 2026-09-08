@@ -1,0 +1,150 @@
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	10966899	        21.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11084610	        21.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10224397	        23.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9058135	        26.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9449276	        25.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10217506	        23.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33426741	         7.188 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33335754	         7.197 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10679084	        22.59 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20190780	        11.87 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	10922286	        21.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11180580	        21.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10417986	        23.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9074743	        26.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9482101	        25.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10209237	        23.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33527325	         7.189 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33227926	         7.200 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10596684	        23.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20257078	        11.88 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	11077864	        21.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11211516	        21.47 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10472722	        22.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9389240	        25.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9475752	        25.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10265922	        23.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33519552	         7.178 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33223051	         7.168 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10682578	        22.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20271260	        11.85 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	11149389	        21.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11177330	        21.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10515158	        22.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9367117	        25.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9480012	        25.70 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10279614	        23.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33538312	         7.160 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33513912	         7.174 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10680889	        22.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20090046	        11.86 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	11174389	        21.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11135592	        21.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10413580	        22.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9338542	        25.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9455424	        25.45 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	 9826797	        23.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33512175	         7.177 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33545827	         7.171 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10745270	        22.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20130852	        11.86 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	10868808	        21.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11156349	        21.45 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10495912	        22.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9394878	        25.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9475182	        25.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10272123	        23.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33518157	         7.164 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	32584562	         7.168 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10725855	        22.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20209380	        11.86 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	11110180	        21.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11155326	        21.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10527882	        22.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9255291	        25.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9470976	        25.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10277493	        23.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33496820	         7.158 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33514436	         7.181 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10660581	        22.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	19827900	        11.87 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	11140748	        21.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11189749	        21.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10434328	        22.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9125127	        26.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9478594	        25.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10272751	        23.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33550436	         7.161 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33502249	         7.169 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10619068	        22.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20089880	        12.52 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	10959716	        21.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11135137	        21.47 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10423786	        23.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9149146	        26.24 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9411940	        25.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10276387	        23.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33529353	         7.169 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33561339	         7.164 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10593972	        22.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20288598	        11.87 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkMulRoundPow10/price_fee         	10645639	        21.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	11122732	        21.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	10438710	        22.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9151256	        26.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9493645	        25.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	10257258	        23.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	33518241	         7.168 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	33496965	         7.164 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	10628168	        22.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	20203148	        11.83 ns/op	       0 B/op	       0 allocs/op
+PASS
