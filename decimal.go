@@ -269,7 +269,19 @@ func cmpSlow(d, e Decimal) int {
 // within the inlining budget.
 //
 // PRECONDITIONS (not checked): d.prec != e.prec, both ≤ MaxPrec (diff ≤ 19).
+//
+// A zero operand decides the comparison before any widening: canonical zero
+// is Decimal{} at precision 0, so comparing a fractional value against
+// Decimal{} (the x.Cmp(Decimal{}) idiom) always lands here. The precisions
+// differ, so at most one operand is zero (decimal.go INVARIANT) and the other
+// has the larger magnitude.
 func cmpUnaligned(d, e Decimal) int {
+	if d.coef.isZero() {
+		return -1
+	}
+	if e.coef.isZero() {
+		return 1
+	}
 	sign := 1
 	if d.prec > e.prec {
 		d, e = e, d
