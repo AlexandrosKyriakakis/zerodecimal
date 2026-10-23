@@ -108,6 +108,32 @@ func ExampleDecimal_Div() {
 	// true
 }
 
+func ExampleDecimal_MulDivRound() {
+	// Split a $10.01 fee over a fill of 3 units: the share of one unit.
+	fee := zerodecimal.RequireFromString("10.01")
+	one, fill := zerodecimal.NewFromInt(1), zerodecimal.NewFromInt(3)
+	share, err := fee.MulDivRound(one, fill, 2, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(share)
+
+	// A 19-place rate times cents has no exact Decimal product, so MulExact
+	// then DivRound fails where MulDivRound rounds the exact value once.
+	rate := zerodecimal.RequireFromString("1.0837000000000000001")
+	_, err = fee.MulExact(rate)
+	fmt.Println(errors.Is(err, zerodecimal.ErrInexact))
+	converted, err := fee.MulDivRound(rate, one, 2, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(converted)
+	// Output:
+	// 3.34
+	// true
+	// 10.85
+}
+
 func ExampleDecimal_QuoRem() {
 	q, r := zerodecimal.RequireFromString("7.5").MustQuoRem(zerodecimal.NewFromInt(2))
 	fmt.Println(q, r)
