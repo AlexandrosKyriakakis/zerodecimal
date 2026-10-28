@@ -188,6 +188,13 @@ func (d Decimal) Abs() Decimal {
 	return newDecimal(d.coef, false, d.prec)
 }
 
+// CopySign returns a value with the magnitude of d and the sign of sign,
+// preserving the precision of d. A zero sign counts as non-negative, and
+// copying any sign onto zero yields canonical zero.
+func (d Decimal) CopySign(sign Decimal) Decimal {
+	return newDecimal(d.coef, sign.neg, d.prec)
+}
+
 // IntPart returns the integer part of d truncated toward zero, or
 // ErrIntPartOverflow when it does not fit int64. MinInt64 round-trips:
 // NewFromInt(math.MinInt64).IntPart() returns math.MinInt64.

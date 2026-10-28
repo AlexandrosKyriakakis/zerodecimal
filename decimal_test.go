@@ -257,6 +257,7 @@ func TestNegativeZero(t *testing.T) {
 		{"neg_of_zero", Zero.Neg()},
 		{"abs_of_zero", Zero.Abs()},
 		{"double_neg_of_zero", Zero.Neg().Neg()},
+		{"copy_sign_negative_onto_zero", Zero.CopySign(NewFromInt(-1))},
 		{"new_from_hi_lo_neg_zero_prec_5", fromHiLo},
 		{"new_zero_negative_exp", fromNew},
 		{"new_from_int_zero", NewFromInt(0)},
@@ -325,6 +326,50 @@ func TestNegAbs(t *testing.T) {
 		_, _, lo, prec := d.Neg().ToHiLo()
 		assert.Equal(t, uint64(150), lo)
 		assert.Equal(t, uint8(2), prec)
+	})
+}
+
+func TestCopySign(t *testing.T) {
+	tests := []struct {
+		name string
+		d    Decimal
+		sign Decimal
+		want string
+	}{
+		{"zero_positive_sign", Zero, NewFromInt(1), "0"},
+		{"zero_negative_sign", Zero, NewFromInt(-1), "0"},
+		{"zero_zero_sign", Zero, Zero, "0"},
+		{"positive_positive_sign", MustNew(15, -1), NewFromInt(2), "1.5"},
+		{"positive_negative_sign", MustNew(15, -1), NewFromInt(-3), "-1.5"},
+		{"negative_positive_sign", MustNew(-15, -1), NewFromInt(2), "1.5"},
+		{"negative_negative_sign", MustNew(-15, -1), NewFromInt(-3), "-1.5"},
+		{"negative_zero_sign", MustNew(-15, -1), Zero, "1.5"},
+		{"sign_magnitude_ignored", NewFromInt(10), MustNew(-5, -19), "-10"},
+		{"min_int64", NewFromInt(math.MinInt64), NewFromInt(1), "9223372036854775808"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.d.CopySign(tc.sign)
+			assert.Equal(t, tc.want, got.String())
+			assert.Equal(t, tc.d.Abs(), got.Abs(), "magnitude must come from d")
+			if !tc.d.IsZero() {
+				assert.Equal(t, tc.sign.IsNegative(), got.IsNegative(), "sign must come from sign")
+			}
+		})
+	}
+
+	t.Run("precision_preserved", func(t *testing.T) {
+		d := mustHiLo(t, false, 0, 150, 2) // 1.50 with the trailing zero kept
+		neg, _, lo, prec := d.CopySign(NewFromInt(-1)).ToHiLo()
+		assert.True(t, neg)
+		assert.Equal(t, uint64(150), lo)
+		assert.Equal(t, uint8(2), prec)
+	})
+
+	t.Run("max_coefficient", func(t *testing.T) {
+		d := mustHiLo(t, false, math.MaxUint64, math.MaxUint64, 0)
+		assert.Equal(t, d.Neg(), d.CopySign(NewFromInt(-1)))
+		assert.Equal(t, d, d.Neg().CopySign(NewFromInt(1)))
 	})
 }
 
