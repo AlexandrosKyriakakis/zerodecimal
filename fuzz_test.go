@@ -790,7 +790,8 @@ func FuzzFloat64(f *testing.F) {
 
 // FuzzInvariants checks the structural contract on every Decimal any
 // operation produces: a zero value is exactly the canonical Decimal{},
-// precision never exceeds MaxPrec, and the canonical string reparses to the
+// precision never exceeds MaxPrec, FracDigits is the precision of Trim and
+// IsRounded agrees with Truncate, and the canonical string reparses to the
 // same value and the same string. Operation errors are ignored here — their
 // exactness is each dedicated target's job; only produced values matter.
 func FuzzInvariants(f *testing.F) {
@@ -831,6 +832,8 @@ func FuzzInvariants(f *testing.F) {
 				require.Equalf(t, Decimal{}, d, "zero must be canonical: d=%+v a=%+v b=%+v", d, a, b)
 			}
 			require.LessOrEqualf(t, d.Prec(), MaxPrec, "precision bound: d=%+v a=%+v b=%+v", d, a, b)
+			require.Equalf(t, d.Trim().Prec(), d.FracDigits(), "FracDigits is the trimmed precision: d=%+v", d)
+			require.Equalf(t, d.Equal(d.Truncate(places)), d.IsRounded(places), "IsRounded matches Truncate: d=%+v places=%d", d, places)
 			s := d.String()
 			reparsed, err := NewFromString(s)
 			require.NoErrorf(t, err, "canonical string must reparse: %q from d=%+v", s, d)

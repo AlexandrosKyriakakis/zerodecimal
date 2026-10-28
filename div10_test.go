@@ -250,6 +250,9 @@ func TestDiv10InlineBudgets(t *testing.T) {
 //   - Trim and Rescale follow the same wrapper/core split: the wrappers
 //     inline (Trim 67, Rescale 78 — Rescale has only ~2 points of headroom,
 //     hence no maxCost pin), trimCore/rescaleCore stay outlined.
+//   - IsRounded (68) and FracDigits (67) are the same shape, with isRoundedCore
+//     and fracDigitsCore outlined. FracDigits' ladder leans on fracDigitsStep
+//     inlining (cost 16): outlined, each of its five steps would pay a call.
 func TestArithRoundingInlineBudgets(t *testing.T) {
 	if strconv.IntSize != 64 {
 		t.Skip("inline budgets are calibrated for 64-bit compiler targets")
@@ -285,6 +288,11 @@ func TestArithRoundingInlineBudgets(t *testing.T) {
 		{"truncate_fits_inline_budget", "Decimal.Truncate", true, 75},
 		{"trim_fits_inline_budget", "Decimal.Trim", true, 75},
 		{"trim_core_stays_outlined", "Decimal.trimCore", false, 0},
+		{"is_rounded_fits_inline_budget", "Decimal.IsRounded", true, 75},
+		{"is_rounded_core_stays_outlined", "Decimal.isRoundedCore", false, 0},
+		{"frac_digits_fits_inline_budget", "Decimal.FracDigits", true, 75},
+		{"frac_digits_core_stays_outlined", "Decimal.fracDigitsCore", false, 0},
+		{"frac_digits_step_fits_inline_budget", "fracDigitsStep", true, 0},
 		{"rescale_fits_inline_budget", "Decimal.Rescale", true, 0},
 		{"rescale_core_stays_outlined", "Decimal.rescaleCore", false, 0},
 		{"floor_fits_inline_budget", "Decimal.Floor", true, 75},

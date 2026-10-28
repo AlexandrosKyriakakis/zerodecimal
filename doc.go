@@ -19,6 +19,8 @@
 // numeric equality differ when trailing fractional zeros differ: use Equal or
 // Cmp for numeric comparison, Trim for canonical representation equality, and
 // Rescale for a requested fixed representation scale.
+// FracDigits reports the precision Trim would give, and IsRounded whether a
+// value already fits a number of places, both without building a copy.
 //
 // # Arithmetic loss policy
 //

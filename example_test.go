@@ -278,6 +278,34 @@ func ExampleDecimal_Trim() {
 	// 1.5
 }
 
+func ExampleDecimal_IsRounded() {
+	// Does an amount already fit cents? No rounded copy is built to find out.
+	fmt.Println(zerodecimal.RequireFromString("12.34").IsRounded(2))
+	fmt.Println(zerodecimal.RequireFromString("12.345").IsRounded(2))
+
+	// Stored trailing zeros do not count: 1.2500 is a whole number of cents.
+	d := zerodecimal.RequireFromString("1.25").MustRescale(4)
+	fmt.Println(d.IsRounded(2), d.Prec())
+	// Output:
+	// true
+	// false
+	// true 4
+}
+
+func ExampleDecimal_FracDigits() {
+	// Arithmetic keeps trailing zeros, so Prec is the stored precision and
+	// FracDigits the precision Trim would give.
+	sum := zerodecimal.RequireFromString("0.75").MustAdd(zerodecimal.RequireFromString("0.75")) // 1.50
+	fmt.Println(sum.Prec(), sum.FracDigits())
+
+	fmt.Println(zerodecimal.NewFromInt(42).FracDigits())
+	fmt.Println(zerodecimal.RequireFromString("0.000001").FracDigits() > 5) // needs more than 5 places
+	// Output:
+	// 2 1
+	// 0
+	// true
+}
+
 func ExampleDecimal_Rescale() {
 	d := zerodecimal.RequireFromString("1.5")
 

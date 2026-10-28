@@ -103,6 +103,10 @@ the hot path); formatting trims at output. `Trim` canonicalizes a value on
 demand — equal numbers become identical under `==` and as map keys — and
 `Rescale` sets an exact representation precision (e.g. `1.50` for a
 two-decimal wire format), rounding ties to even when lowering.
+`Prec` is the stored precision; `FracDigits` is how many fractional digits
+the value needs (`1.50` has `Prec` 2 and `FracDigits` 1) and `IsRounded(places)`
+reports whether it fits `places` of them, both without building a trimmed or
+rounded copy.
 
 The exported `Zero` and `One` variables remain deprecated compatibility
 shims. They are mutable Go variables and must not be assigned to; use
@@ -184,7 +188,8 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 Everything else is infallible: `NewFromInt`/`NewFromInt32`/`NewFromUint64`,
 `Neg`, `Abs`, `CopySign`, `Sign`, the `Is*` predicates, `Cmp` and the
 comparison family, `Min`/`Max`, the original rounding family, `Trim`, `Prec`,
-`ToHiLo`, `String`, `StringFixed`, `AppendFixed`, and `InexactFloat64`.
+`FracDigits`, `IsRounded`, `ToHiLo`, `String`, `StringFixed`, `AppendFixed`, and
+`InexactFloat64`.
 `AppendText`, `AppendBinary`, the `Marshal*` methods, and `Value` return an
 error only to satisfy their interfaces — it is currently always nil.
 
@@ -195,7 +200,7 @@ on success and error paths:
 
 | Allocations | Operations |
 | --- | --- |
-| **exactly 0** | Parsing; legacy, exact, direct-round, and aggregate arithmetic; comparison and rounding; `Trim`; decode and Scan paths; `Append*` with sufficient caller capacity |
+| **exactly 0** | Parsing; legacy, exact, direct-round, and aggregate arithmetic; comparison and rounding; `Trim`, `IsRounded`, `FracDigits`; decode and Scan paths; `Append*` with sufficient caller capacity |
 | **exactly 1** | `StringFixed` for every `uint8` places value; `MarshalText`, `MarshalJSON`, and `MarshalBinary` for their returned slice |
 | **normally 1** | Uncached multi-byte `String` results; Go may serve a one-byte string from its static table |
 | **exactly 2 in the gated uncached multi-byte case** | `Value`: canonical string plus boxing into `driver.Value` |
@@ -254,6 +259,10 @@ and rounding a negative value to zero yields the canonical unsigned zero.
 | `RoundDown(0)` / `Truncate(0)` | toward zero | `2` | `3` | `-2` |
 | `RoundCeil(0)` | toward +∞ | `3` | `4` | `-2` |
 | `RoundFloor(0)` | toward −∞ | `2` | `3` | `-3` |
+
+`IsRounded(places)` reports whether `d` has no digit past `places`, so that no
+mode changes it: `d.Equal(d.Truncate(places))`, and equally
+`d.Equal(d.RoundBank(places))`, without building the rounded value.
 
 `Floor()` and `Ceil()` are `RoundFloor(0)` and `RoundCeil(0)`. Every mode is
 pinned tie-by-tie against its shopspring equivalent in
