@@ -160,6 +160,27 @@ func ExampleDecimal_Div() {
 	// true
 }
 
+func ExampleDecimal_DivInt() {
+	// Split a $12.60 fee evenly over the fills of an order, without building
+	// a Decimal for the count.
+	fee := zerodecimal.RequireFromString("12.60")
+	fills := []string{"fill-1", "fill-2", "fill-3"}
+	share, err := fee.DivInt(int64(len(fills)))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(share)
+	fmt.Println(share.MustMulInt(int64(len(fills))).Equal(fee))
+
+	// A zero divisor is DivInt's only error.
+	_, err = fee.DivInt(0)
+	fmt.Println(errors.Is(err, zerodecimal.ErrDivideByZero))
+	// Output:
+	// 4.2
+	// true
+	// true
+}
+
 func ExampleDecimal_MulDivRound() {
 	// Split a $10.01 fee over a fill of 3 units: the share of one unit.
 	fee := zerodecimal.RequireFromString("10.01")

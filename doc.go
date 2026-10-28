@@ -28,6 +28,10 @@
 // DefaultPrec. Rounding one of these results later cannot recover discarded
 // tie or sticky information.
 //
+// MulInt and DivInt multiply and divide by an int64 without building a
+// Decimal operand. They are bit-identical to Mul and Div with NewFromInt(n),
+// errors included.
+//
 // MulDivRound computes the pro-rata share d*e/f from the exact product and
 // quotient and rounds once, replacing Mul(e).Div(f) followed by a rounding
 // method; see its documentation for where the two can differ.
