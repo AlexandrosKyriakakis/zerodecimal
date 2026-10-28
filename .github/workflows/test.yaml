@@ -63,10 +63,14 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ matrix.go }}
+      # ./... includes the zdbig subpackage; -coverpkg keeps the internal
+      # generator out of the coverage figure. bash on every OS: PowerShell
+      # mangles the comma in the unquoted -coverpkg list.
       - name: Unit tests (race)
-        run: go test -race -failfast -coverpkg=. -coverprofile=coverage.out -covermode=atomic .
+        shell: bash
+        run: go test -race -failfast -coverpkg=.,./zdbig -coverprofile=coverage.out -covermode=atomic ./...
       - name: Allocation assertions (no race)
-        run: go test -run '^Test.*Alloc' -count=1 .
+        run: go test -run '^Test.*Alloc' -count=1 ./...
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
