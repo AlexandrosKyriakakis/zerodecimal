@@ -130,6 +130,13 @@ through one rounding decision and accept `ToNearestAway`, `ToNearestEven`,
 `AwayFromZero`, `TowardZero`, `TowardPositive`, or `TowardNegative`.
 `errors.Is(ErrUnderflow, ErrInexact)` is true.
 
+`Allocate` (by weight) and `Split` (evenly) divide a total into shares at
+`places` that sum exactly to the total, by the largest-remainder method:
+each share is truncated, and the leftover units of `10^-places` go one each
+to the largest discarded remainders, ties to the lower index. Rounding each
+share separately does not add up: `10.00` split three ways rounds to `3.33`
+three times, while `Split` returns `3.34`, `3.33`, and `3.33`.
+
 `MulDivRound` rounds a pro-rata share `d*e/f` once from the exact product
 and quotient, where `Mul` then `Div` truncates both at `DefaultPrec` and
 `MulExact` then `DivRound` fails whenever the product has no `Decimal`
@@ -194,6 +201,8 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `Accumulator.DivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Rescale` | `ErrPrecOutOfRange`, `ErrOverflow` | `MustRescale` |
 | `IntPart` | `ErrIntPartOverflow` | — |
+| `Allocate` | `ErrPrecOutOfRange`, `ErrNegativeWeight`, `ErrDivideByZero`, `ErrInexact`, `ErrOverflow` | — |
+| `Split` | `ErrPrecOutOfRange`, `ErrDivideByZero`, `ErrInexact`, `ErrOverflow` | — |
 | `UnmarshalText`, `UnmarshalJSON` | parse sentinels; JSON `null` into `Decimal` returns `ErrJSONNull` | — |
 | `UnmarshalBinary` | `ErrInvalidBinaryData` | — |
 | `Decimal.Scan`, `NullDecimal.Scan` | parse sentinels, `ErrInvalidFloat`, `ErrScanType`; required `Decimal` also returns `ErrScanNil` | — |
@@ -217,6 +226,7 @@ on success and error paths:
 | --- | --- |
 | **exactly 0** | Parsing; legacy, exact, direct-round, and aggregate arithmetic; comparison and rounding; `Trim`, `IsRounded`, `FracDigits`; decode and Scan paths; `Append*` with sufficient caller capacity |
 | **exactly 1** | `StringFixed` for every `uint8` places value; `MarshalText`, `MarshalJSON`, and `MarshalBinary` for their returned slice |
+| **exactly 0 with enough `dst` capacity; 1 scratch buffer when more than 64 weights are ranked** | `Allocate`, which ranks only a nonzero total that passed its other checks (ranking can still end in `ErrOverflow`); `Split`, which never ranks |
 | **exactly 0** | Every `Accumulator` method: `Add`, `Sub`, `AddMul`, `Reset`, and the finishers `Sum`, `Div`, and `DivRound`, on success and error |
 | **normally 1** | Uncached multi-byte `String` results; Go may serve a one-byte string from its static table |
 | **exactly 2 in the gated uncached multi-byte case** | `Value`: canonical string plus boxing into `driver.Value` |
