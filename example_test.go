@@ -323,6 +323,34 @@ func ExampleDecimal_CopySign() {
 	// 0
 }
 
+func ExampleDecimal_RoundToMultiple() {
+	// A limit price on a 0.25 tick grid: 101.37 is 405.48 ticks.
+	tick := zerodecimal.RequireFromString("0.25")
+	price := zerodecimal.RequireFromString("101.37")
+	nearest, err := price.RoundToMultiple(tick, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	ceiling, err := price.RoundToMultiple(tick, zerodecimal.TowardPositive)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(nearest.StringFixed(2), ceiling.StringFixed(2))
+
+	// A share-increment rule that credits fractional shares in whole
+	// 0.001-share units, rounding down.
+	rule := zerodecimal.RequireFromString("0.001")
+	entitled := zerodecimal.RequireFromString("33.3333333")
+	credited, err := entitled.RoundToMultiple(rule, zerodecimal.TowardZero)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(credited)
+	// Output:
+	// 101.25 101.50
+	// 33.333
+}
+
 func ExampleDecimal_Round() {
 	fmt.Println(zerodecimal.RequireFromString("2.5").Round(0)) // ties away from zero
 	fmt.Println(zerodecimal.RequireFromString("-2.5").Round(0))
