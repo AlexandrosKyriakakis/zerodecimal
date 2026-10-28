@@ -29,6 +29,12 @@ intermediate. `Sum` still checks and preserves that precision for nonzero
 results (zero remains canonical) and can return `ErrOverflow` even when
 lowering precision would express the same integer.
 
+udecimal's `Add` never fails (it falls back to `big.Int`); use `Accumulator` for
+running sums that may pass 128 bits. At the default `DefaultPrec` of 19, its
+`AddMul` adds the value udecimal's truncating `Mul` computes, and
+`DivRound(den, 16, ToNearestAway)` returns what udecimal's `Div` followed by
+`RoundHAZ(16)` returns whenever that result fits 128 bits.
+
 `QuoRem` and `Mod` now recognize an aligned divisor wider than 128 bits. When
 that divisor exceeds the numerator they return the exact `q = 0, r = d`
 result instead of `ErrOverflow`.
