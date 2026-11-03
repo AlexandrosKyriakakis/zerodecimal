@@ -1,6 +1,6 @@
 module github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
 
-go 1.26.8
+go 1.26.10
 
 replace github.com/AlexandrosKyriakakis/zerodecimal => ../
 
