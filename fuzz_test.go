@@ -799,7 +799,7 @@ func FuzzInvariants(f *testing.F) {
 		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
 		places := b.Prec()
 		results := []Decimal{
-			a, b, a.Neg(), b.Neg(), a.Abs(), b.Abs(),
+			a, b, a.Neg(), b.Neg(), a.Abs(), b.Abs(), a.CopySign(b), b.CopySign(a),
 			a.Floor(), a.Ceil(), b.Floor(), b.Ceil(),
 			a.Round(places), a.RoundBank(places), a.RoundUp(places),
 			a.RoundDown(places), a.RoundCeil(places), a.RoundFloor(places),

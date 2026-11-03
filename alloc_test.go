@@ -216,6 +216,12 @@ var allocOps = []struct {
 			sinkDecimal2 = s.b.Abs()
 		}
 	}},
+	{name: "copy_sign", bind: func(s allocShape) func() {
+		return func() {
+			sinkDecimal = s.a.CopySign(s.b)
+			sinkDecimal2 = s.b.CopySign(s.a)
+		}
+	}},
 	{name: "sign", bind: func(s allocShape) func() {
 		return func() {
 			sinkInt = s.a.Sign()

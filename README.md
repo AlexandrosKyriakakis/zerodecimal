@@ -161,11 +161,11 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | Nil decoder/scanner receiver | `ErrNilReceiver` | — |
 
 Everything else is infallible: `NewFromInt`/`NewFromInt32`/`NewFromUint64`,
-`Neg`, `Abs`, `Sign`, the `Is*` predicates, `Cmp` and the comparison family,
-`Min`/`Max`, the original rounding family, `Trim`, `Prec`, `ToHiLo`, `String`,
-`StringFixed`, `AppendFixed`, and `InexactFloat64`. `AppendText`,
-`AppendBinary`, the `Marshal*` methods, and `Value` return an error only to
-satisfy their interfaces — it is currently always nil.
+`Neg`, `Abs`, `CopySign`, `Sign`, the `Is*` predicates, `Cmp` and the
+comparison family, `Min`/`Max`, the original rounding family, `Trim`, `Prec`,
+`ToHiLo`, `String`, `StringFixed`, `AppendFixed`, and `InexactFloat64`.
+`AppendText`, `AppendBinary`, the `Marshal*` methods, and `Value` return an
+error only to satisfy their interfaces — it is currently always nil.
 
 ## Allocation guarantees
 

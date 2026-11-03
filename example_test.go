@@ -114,6 +114,19 @@ func ExampleDecimal_QuoRem() {
 	// Output: 3 1.5
 }
 
+func ExampleDecimal_CopySign() {
+	amount := zerodecimal.RequireFromString("12.50")
+	direction := zerodecimal.NewFromInt(-1)
+
+	fmt.Println(amount.CopySign(direction)) // magnitude of amount, sign of direction
+	fmt.Println(amount.Neg().CopySign(amount))
+	fmt.Println(zerodecimal.Decimal{}.CopySign(direction)) // zero never carries a sign
+	// Output:
+	// -12.5
+	// 12.5
+	// 0
+}
+
 func ExampleDecimal_Round() {
 	fmt.Println(zerodecimal.RequireFromString("2.5").Round(0)) // ties away from zero
 	fmt.Println(zerodecimal.RequireFromString("-2.5").Round(0))
