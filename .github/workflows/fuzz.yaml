@@ -1,5 +1,21 @@
 name: fuzz
 
+# Fuzzing runs in three tiers so pull requests get fast feedback while main
+# still receives deep coverage:
+#
+#   pr      every pull request commit       3s per target (~3.5 min)
+#   daily   main, Monday through Saturday  15s per target (~10 min)
+#   weekly  main, Sunday                   30s per target (~20 min)
+#
+# Durations cover the fuzz step alone: 50 runs (49 targets plus the cache-on
+# rerun) at roughly 1.2s of startup each on ubuntu-latest. The weekly budget
+# is sized to stay well under the hosted-runner 6h job ceiling.
+#
+# Sunday's weekly run replaces that day's daily run. Budgets are wall-clock
+# per target rather than -fuzztime=Nx iteration counts: execution rates differ
+# by orders of magnitude between targets, so a fixed count would either starve
+# the fast targets or make job duration unpredictable. Any tier can also be
+# started by hand from the Actions tab.
 on:
   pull_request:
     paths:
@@ -8,11 +24,24 @@ on:
       - 'go.sum'
       - 'scripts/**'
       - '.github/workflows/fuzz.yaml'
+  schedule:
+    # The tier step matches these exact strings; keep them in sync.
+    - cron: '17 3 * * 1-6' # daily
+    - cron: '17 3 * * 0' # weekly
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Fuzz budget tier
+        type: choice
+        options: [pr, daily, weekly]
+        default: daily
 
 concurrency:
-  # One active run per workflow + branch/PR.
+  # One active run per workflow + branch/PR. Only superseded PR heads are
+  # cancelled: a manual dispatch on main must not kill a multi-hour scheduled
+  # run, so it queues behind it instead.
   group: ${{ github.workflow }}-${{ github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -23,7 +52,42 @@ env:
 jobs:
   fuzz:
     runs-on: ubuntu-latest
+    # Backstop just under the hosted-runner 6h ceiling; the fuzz step below
+    # enforces the per-tier budget.
+    timeout-minutes: 350
     steps:
+      - name: Select fuzz tier
+        id: tier
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          DISPATCH_TIER: ${{ inputs.tier }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request) tier='pr' ;;
+            workflow_dispatch) tier=$DISPATCH_TIER ;;
+            schedule)
+              case "$SCHEDULE" in
+                '17 3 * * 1-6') tier='daily' ;;
+                '17 3 * * 0') tier='weekly' ;;
+                *) echo "unrecognized schedule: $SCHEDULE" >&2; exit 1 ;;
+              esac
+              ;;
+            *) echo "unsupported event: $EVENT_NAME" >&2; exit 1 ;;
+          esac
+          # timeout = 50 runs x seconds, plus startup and generous slack.
+          case "$tier" in
+            pr) seconds=3 timeout=15 ;;
+            daily) seconds=15 timeout=45 ;;
+            weekly) seconds=30 timeout=90 ;;
+            *) echo "unknown tier: $tier" >&2; exit 1 ;;
+          esac
+          {
+            echo "tier=$tier"
+            echo "seconds=$seconds"
+            echo "timeout=$timeout"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Fuzz tier: $tier (${seconds}s per target)" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -32,5 +96,18 @@ jobs:
         run: go test -tags=fuzz -run '^Test' -count=1 ./...
       - name: Fuzz runner regression tests
         run: sh scripts/fuzz-all_test.sh
-      - name: Fuzz targets
-        run: make fuzz-all 20
+      - name: Fuzz targets (${{ steps.tier.outputs.tier }})
+        id: fuzz
+        timeout-minutes: ${{ fromJSON(steps.tier.outputs.timeout) }}
+        run: make fuzz-all ${{ steps.tier.outputs.seconds }}
+      # A crash writes its reproducer under testdata/fuzz/<Target>/; without
+      # this upload a failure found by an unattended scheduled run is lost
+      # with the runner.
+      - name: Upload failing fuzz inputs
+        if: failure() && steps.fuzz.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failures-${{ steps.tier.outputs.tier }}-${{ github.run_id }}
+          path: testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30
