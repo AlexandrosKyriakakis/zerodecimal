@@ -183,7 +183,25 @@ func (d Decimal) MulRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 
 	neg := d.neg != e.neg
 	naturalPrec := d.prec + e.prec
-	prod := mulToU256(d.coef, e.coef)
+	var prod u256
+	if d.coef.hi|e.coef.hi == 0 {
+		// One-limb operands, the dominant money shape: the product is one
+		// hardware multiply, without mulToU256's frame.
+		hi, lo := bits.Mul64(d.coef.lo, e.coef.lo)
+		if hi == 0 && places < naturalPrec && naturalPrec-places <= MaxPrec {
+			// A one-limb product rescaled by at most 10^MaxPrec: one reciprocal
+			// multiply, rounded in place. q ≤ (2^64-1)/10, so q+1 cannot wrap.
+			k := naturalPrec - places
+			q, r := divmod64Pow10(lo, k)
+			if roundsUp(mode, r != 0, cmpUint64(r, pow10u64[k&31]>>1), q&1 != 0, neg) {
+				q++
+			}
+			return newDecimal(u128{lo: q}, neg, places), nil
+		}
+		prod = u256{d0: lo, d1: hi}
+	} else {
+		prod = mulToU256(d.coef, e.coef)
+	}
 	if places >= naturalPrec {
 		if !prod.isZeroUpper() {
 			return Decimal{}, ErrOverflow
@@ -203,10 +221,10 @@ func (d Decimal) MulRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 	var halfCmp int
 	var fits bool
 	if k <= MaxPrec {
-		// The values match pow10u128, but the one-limb table avoids loading an
-		// unnecessary high word on the common <=19-digit path (benchmarked).
-		q, rem, halfCmp, fits = divRoundWide(prod, u128{lo: pow10u64[k&31]})
+		q, rem, halfCmp, fits = divRoundPow10(prod, k)
 	} else {
+		// A two-limb 10^k: divRoundWide directly, saving divRoundPow10's
+		// frame on the way to the same division.
 		q, rem, halfCmp, fits = divRoundWide(prod, pow10u128[k&63])
 	}
 	if !fits {
@@ -242,6 +260,19 @@ func (d Decimal) DivRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 	}
 
 	neg := d.neg != e.neg
+	if f := int(places) + int(e.prec) - int(d.prec); d.coef.hi|e.coef.hi == 0 && f >= 0 && f <= int(MaxPrec) {
+		// One-limb operands whose scaled dividend d·10^f still fits one limb:
+		// a single hardware divide, rounded in place. A nonzero remainder
+		// means a divisor of at least 2, so q+1 cannot wrap.
+		if hi, lo := bits.Mul64(d.coef.lo, pow10u64[f&31]); hi == 0 {
+			v := e.coef.lo
+			q, r := lo/v, lo%v
+			if roundsUp(mode, r != 0, cmpHalf64(r, v), q&1 != 0, neg) {
+				q++
+			}
+			return newDecimal(u128{lo: q}, neg, places), nil
+		}
+	}
 	q, rem, halfCmp, fits := divRoundAt(d, e, int(places))
 	if !fits {
 		return Decimal{}, ErrOverflow
@@ -260,7 +291,15 @@ func (d Decimal) DivRound(e Decimal, places uint8, mode RoundingMode) (Decimal, 
 func divRoundAt(d, e Decimal, places int) (q u128, rem bool, halfCmp int, fits bool) {
 	f := places + int(e.prec) - int(d.prec)
 	if f >= 0 {
-		num := mulToU256(d.coef, pow10u128[f&63])
+		var num u256
+		if d.coef.hi == 0 && f <= int(MaxPrec) {
+			// One-limb dividend scaled by a one-limb power: a single hardware
+			// multiply, without mulToU256's frame.
+			hi, lo := bits.Mul64(d.coef.lo, pow10u64[f&31])
+			num = u256{d0: lo, d1: hi}
+		} else {
+			num = mulToU256(d.coef, pow10u128[f&63])
+		}
 		return divRoundWide(num, e.coef)
 	}
 
@@ -275,16 +314,34 @@ func divRoundAt(d, e Decimal, places int) (q u128, rem bool, halfCmp int, fits b
 
 // divRoundWide divides a 256-bit numerator by a nonzero 128-bit denominator,
 // retaining exactly the two facts rounding needs about the remainder.
+//
+// A one-limb denominator takes the narrowest divide the numerator allows. A
+// one-limb numerator is a single hardware divide; a numerator whose high limb
+// is below the denominator has a one-limb quotient and needs one 128/64
+// divide. Only wider numerators pay for div256by64, which derives a
+// reciprocal with a 128/64 divide of its own before two div2by1 steps — a
+// loss for a divisor used once. The remainder then fits one limb, so the half
+// comparison needs no 128-bit doubling.
 func divRoundWide(num u256, den u128) (q u128, rem bool, halfCmp int, fits bool) {
 	if den.hi == 0 {
+		v := den.lo
 		var r uint64
-		var err error
-		q, r, err = div256by64(num, den.lo)
-		if err != nil {
-			return u128{}, false, 0, false
+		switch {
+		case num.d1|num.d2|num.d3 == 0:
+			q, r = u128{lo: num.d0 / v}, num.d0%v
+		case num.d2|num.d3 == 0 && num.d1 < v:
+			// num.d1 < v is bits.Div64's no-trap precondition.
+			var q0 uint64
+			q0, r = bits.Div64(num.d1, num.d0, v)
+			q = u128{lo: q0}
+		default:
+			var err error
+			q, r, err = div256by64(num, v)
+			if err != nil {
+				return u128{}, false, 0, false
+			}
 		}
-		ru := u128{lo: r}
-		return q, r != 0, cmpDouble128(ru, den), true
+		return q, r != 0, cmpHalf64(r, v), true
 	}
 	if !less128(num.hi128(), den) {
 		return u128{}, false, 0, false
@@ -293,34 +350,112 @@ func divRoundWide(num u256, den u128) (q u128, rem bool, halfCmp int, fits bool)
 	return q, !r.isZero(), cmpDouble128(r, den), true
 }
 
+// divRoundPow10 is divRoundWide for the denominator 10^k, 1 ≤ k ≤ 2·MaxPrec.
+// Up to 10^MaxPrec the quotient comes from the precomputed power-of-ten
+// reciprocals (div10.go) rather than from div256by64, which would derive a
+// reciprocal per call with a 128/64 divide, and the half comparison is the
+// remainder against 10^k/2, exact because 10^k is even. A two-limb 10^k goes
+// to divRoundWide: its 256/128 division skips a zero high quotient digit and
+// measured faster there than two reciprocal passes.
+//
+// PRECONDITION (not checked): 1 ≤ k ≤ 2·MaxPrec.
+func divRoundPow10(num u256, k uint8) (q u128, rem bool, halfCmp int, fits bool) {
+	if k > MaxPrec {
+		return divRoundWide(num, pow10u128[k&63])
+	}
+	q, r, fits := quoRemPow10Fit(num, k)
+	if !fits {
+		return u128{}, false, 0, false
+	}
+	return q, r != 0, cmpUint64(r, pow10u64[k&31]>>1), true
+}
+
+// quoRemPow10Fit returns ⌊u/10^k⌋ and u mod 10^k, and whether the quotient
+// fits 128 bits, on the narrowest reciprocal path the dividend allows.
+//
+// PRECONDITION (not checked): 1 ≤ k ≤ MaxPrec.
+func quoRemPow10Fit(u u256, k uint8) (u128, uint64, bool) {
+	if u.isZeroUpper() {
+		if u.d1 == 0 {
+			q, r := divmod64Pow10(u.d0, k)
+			return u128{lo: q}, r, true
+		}
+		q, r := divmod128Pow10Slow(u.lo128(), k)
+		return q, r, true
+	}
+	// The quotient fits 128 bits iff u < 10^k·2^128, i.e. iff the high 128
+	// bits of u stay below 10^k (the divU256Pow10 test).
+	if u.d3 != 0 || u.d2 >= pow10u64[k&31] {
+		return u128{}, 0, false
+	}
+	// divU256Pow10's two div2by1 steps, keeping the remainder: d2 < 10^k
+	// makes the top normalized limb zero, so the leading step is skipped.
+	e := &pow10Tab[k&31] // &-address: load referenced fields, no 40-byte copy
+	s := uint(e.s)
+	n2 := u.d2<<s | u.d1>>(64-s)
+	n1 := u.d1<<s | u.d0>>(64-s)
+	n0 := u.d0 << s
+	q1, r1 := div2by1(n2, n1, e.dn, e.v)
+	q0, r0 := div2by1(r1, n0, e.dn, e.v)
+	return u128{hi: q1, lo: q0}, r0 >> s, true
+}
+
+// cmpUint64 returns -1, 0 or +1 as a is less than, equal to or greater than b.
+func cmpUint64(a, b uint64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+// cmpHalf64 returns sign(2*r-den) for r < den: cmpDouble128 for a one-limb
+// remainder. r < den means 2*r ≥ den exactly when r ≥ den-r, with no doubling
+// that could carry out of the limb.
+func cmpHalf64(r, den uint64) int {
+	return cmpUint64(r, den-r)
+}
+
 // roundQuotient applies mode to a positive magnitude quotient. halfCmp is the
 // comparison of twice the exact remainder with the positive denominator.
 func roundQuotient(q u128, rem bool, halfCmp int, neg bool, mode RoundingMode) (u128, error) {
-	up := false
-	switch mode {
-	case ToNearestAway:
-		up = rem && halfCmp >= 0
-	case ToNearestEven:
-		up = rem && (halfCmp > 0 || (halfCmp == 0 && q.lo&1 != 0))
-	case AwayFromZero:
-		up = rem
-	case TowardZero:
-	case TowardPositive:
-		up = rem && !neg
-	case TowardNegative:
-		up = rem && neg
-	default:
+	if !mode.valid() {
 		// Public callers validate first, but keep the helper total so a future
 		// internal caller cannot silently turn an invalid mode into TowardZero.
 		return u128{}, ErrInvalidRoundingMode
 	}
-	if !up {
+	if !roundsUp(mode, rem, halfCmp, q.lo&1 != 0, neg) {
 		return q, nil
 	}
 	if q == (u128{hi: ^uint64(0), lo: ^uint64(0)}) {
 		return u128{}, ErrOverflow
 	}
 	return inc128(q), nil
+}
+
+// roundsUp reports whether mode steps a truncated magnitude quotient up by
+// one unit: rem says the discarded remainder is nonzero, halfCmp compares
+// twice it with the denominator, odd is the quotient's lowest bit and neg the
+// result's sign. It inlines, so the narrow paths of MulRound and DivRound
+// round without roundQuotient's frame.
+//
+// PRECONDITION (not checked): mode.valid(); TowardZero is the default arm.
+func roundsUp(mode RoundingMode, rem bool, halfCmp int, odd, neg bool) bool {
+	switch mode {
+	case ToNearestAway:
+		return rem && halfCmp >= 0
+	case ToNearestEven:
+		return rem && (halfCmp > 0 || (halfCmp == 0 && odd))
+	case AwayFromZero:
+		return rem
+	case TowardPositive:
+		return rem && !neg
+	case TowardNegative:
+		return rem && neg
+	}
+	return false
 }
 
 // cmpDouble128 returns sign(2*r-den), where r and den are 128-bit values.
