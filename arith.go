@@ -93,7 +93,21 @@ func (d Decimal) Sub(e Decimal) (Decimal, error) {
 //
 // PRECONDITION (not checked): d.prec != e.prec, both ≤ MaxPrec. Both call
 // sites are guarded by a prec-equality test that satisfies this.
+//
+// A zero operand returns before any widening. Canonical zero is Decimal{} at
+// precision 0, so every sum with a zero term and a fractional other term
+// lands here — notably the first add into an accumulator that starts from
+// Decimal{}. The exact result is then the other operand itself, already at
+// max(d.prec, e.prec). The precisions differ, so the other operand carries a
+// nonzero precision and is therefore nonzero (decimal.go INVARIANT): the
+// returned fields are canonical as they stand.
 func addUnaligned(d, e Decimal, eNeg bool) (Decimal, error) {
+	if d.coef.isZero() {
+		return Decimal{coef: e.coef, neg: eNeg, prec: e.prec}, nil
+	}
+	if e.coef.isZero() {
+		return d, nil
+	}
 	lo, hi := d, e
 	loNeg, hiNeg := d.neg, eNeg
 	if d.prec > e.prec {
