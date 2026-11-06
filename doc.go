@@ -34,9 +34,9 @@
 //
 // MulExact, DivExact, and AvgExact require an exact Decimal representation and
 // report ErrInexact, ErrUnderflow, or ErrOverflow as appropriate. MulRound,
-// DivRound, and AvgRound round directly from the full product or remainder to
-// a caller-selected scale and RoundingMode. Use these APIs for calculations
-// whose loss policy must be explicit.
+// DivRound, MulAddRound, and AvgRound round directly from the full product,
+// sum, or remainder to a caller-selected scale and RoundingMode. Use these
+// APIs for calculations whose loss policy must be explicit.
 //
 // Sum and all average variants use a wide signed accumulator, making
 // cancellation independent of operand order. Sum checks its final coefficient

@@ -14,7 +14,8 @@ For new calculation paths:
 
 - use `MulExact`, `DivExact`, or `AvgExact` when any loss must be an error;
 - use `MulRound`, `DivRound`, or `AvgRound` when the output scale and rounding
-  policy are known;
+  policy are known, and `MulAddRound` for `d*e + f` (quantity × price + fee)
+  in a single rounding;
 - do not round a legacy truncated result and assume it is equivalent to direct
   rounding.
 - replace `Mul(e).Div(f)` followed by a rounding method with

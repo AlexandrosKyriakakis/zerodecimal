@@ -75,6 +75,30 @@ func ExampleDecimal_Add() {
 	// 0.30000000000000004
 }
 
+func ExampleDecimal_MulAddRound() {
+	qty := zerodecimal.RequireFromString("1.5")
+	price := zerodecimal.RequireFromString("19.99")
+	fee := zerodecimal.RequireFromString("0.004")
+
+	// 1.5 * 19.99 + 0.004 = 29.989, rounded once.
+	total, err := qty.MulAddRound(price, fee, 2, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(total)
+
+	// Rounding the product first rounds twice: 29.985 ties down to 29.98,
+	// and 29.98 + 0.004 rounds back to 29.98.
+	product, err := qty.MulRound(price, 2, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(product.MustAdd(fee).RoundBank(2))
+	// Output:
+	// 29.99
+	// 29.98
+}
+
 func ExampleDecimal_Div() {
 	// Div is the compatibility operation: it truncates at adaptive precision
 	// up to DefaultPrec.
