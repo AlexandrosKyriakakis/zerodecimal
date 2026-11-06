@@ -28,6 +28,10 @@
 // DefaultPrec. Rounding one of these results later cannot recover discarded
 // tie or sticky information.
 //
+// MulDivRound computes the pro-rata share d*e/f from the exact product and
+// quotient and rounds once, replacing Mul(e).Div(f) followed by a rounding
+// method; see its documentation for where the two can differ.
+//
 // MulExact, DivExact, and AvgExact require an exact Decimal representation and
 // report ErrInexact, ErrUnderflow, or ErrOverflow as appropriate. MulRound,
 // DivRound, and AvgRound round directly from the full product or remainder to

@@ -126,6 +126,11 @@ through one rounding decision and accept `ToNearestAway`, `ToNearestEven`,
 `AwayFromZero`, `TowardZero`, `TowardPositive`, or `TowardNegative`.
 `errors.Is(ErrUnderflow, ErrInexact)` is true.
 
+`MulDivRound` rounds a pro-rata share `d*e/f` once from the exact product
+and quotient, where `Mul` then `Div` truncates both at `DefaultPrec` and
+`MulExact` then `DivRound` fails whenever the product has no `Decimal`
+representation.
+
 `Sum` and the mean operations use a fixed-width wide signed accumulator, so
 cancellation is independent of operand order. `QuoRem` and `Mod` implement
 truncated division and correctly return quotient zero when a precision-aligned
@@ -151,6 +156,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `MulExact`, `DivExact`, `AvgExact` | `ErrInexact`, `ErrUnderflow`, `ErrOverflow`; division also `ErrDivideByZero` | — |
 | `MulRound`, `DivRound`, `AvgRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrOverflow`; division also `ErrDivideByZero` | — |
 | `QuoRem`, `Mod` | `ErrDivideByZero`, `ErrOverflow` | `MustQuoRem`, `MustMod` |
+| `MulDivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Sum`, `Avg` | `ErrOverflow` | `MustSum`, `MustAvg` |
 | `Rescale` | `ErrPrecOutOfRange`, `ErrOverflow` | `MustRescale` |
 | `IntPart` | `ErrIntPartOverflow` | — |

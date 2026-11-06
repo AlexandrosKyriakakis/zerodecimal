@@ -17,6 +17,9 @@ For new calculation paths:
   policy are known;
 - do not round a legacy truncated result and assume it is equivalent to direct
   rounding.
+- replace `Mul(e).Div(f)` followed by a rounding method with
+  `MulDivRound(e, f, places, mode)`; its documentation states exactly where
+  the two can differ.
 
 `Sum` and averages now use a wide signed accumulator. Their result no longer
 depends on operand order or fails merely because a cancellation whose final

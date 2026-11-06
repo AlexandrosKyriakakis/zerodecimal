@@ -348,3 +348,56 @@ func TestDiv256by128MulRoundTrip(t *testing.T) {
 		require.Equal(t, u128{}, r, "remainder of (%+v * %+v) / %+v", a, b, b)
 	}
 }
+
+// TestU256SignedHelpers checks add256, sub256, neg256 and mul256by64 against
+// math/big, including carries and borrows across every limb and products
+// that fit only through the top carry.
+func TestU256SignedHelpers(t *testing.T) {
+	t.Parallel()
+	two256 := new(big.Int).Lsh(big.NewInt(1), 256)
+	mask := new(big.Int).Sub(two256, big.NewInt(1))
+	rng := rand.New(rand.NewPCG(0x75323536, 0x7369676e))
+	limb := func() uint64 {
+		switch rng.IntN(4) {
+		case 0:
+			return 0
+		case 1:
+			return maxUint64
+		}
+		return rng.Uint64()
+	}
+	for range 50_000 {
+		u := u256{d0: limb(), d1: limb(), d2: limb(), d3: limb()}
+		v := u256{d0: limb(), d1: limb(), d2: limb(), d3: limb()}
+		ub, vb := u256ToBig(u), u256ToBig(v)
+
+		s, carry := add256(u, v)
+		want := new(big.Int).Add(ub, vb)
+		require.Equal(t, want.Cmp(two256) >= 0, carry == 1, "add carry %+v %+v", u, v)
+		require.Zero(t, new(big.Int).And(want, mask).Cmp(u256ToBig(s)), "add %+v %+v", u, v)
+
+		d, borrow := sub256(u, v)
+		require.Equal(t, ub.Cmp(vb) < 0, borrow == 1, "sub borrow %+v %+v", u, v)
+		want = new(big.Int).Sub(ub, vb)
+		require.Zero(t, new(big.Int).And(want, mask).Cmp(u256ToBig(d)), "sub %+v %+v", u, v)
+		if borrow == 1 {
+			require.Zero(t, new(big.Int).Sub(vb, ub).Cmp(u256ToBig(neg256(d))), "neg %+v %+v", u, v)
+		}
+
+		m := limb()
+		p, fits := mul256by64(u, m)
+		want = new(big.Int).Mul(ub, new(big.Int).SetUint64(m))
+		require.Equal(t, want.Cmp(two256) < 0, fits, "mul fits %+v * %d", u, m)
+		if fits {
+			require.Zero(t, want.Cmp(u256ToBig(p)), "mul %+v * %d", u, m)
+		}
+	}
+	// A product past 2^256 only through the carry into the top limb: the high
+	// word of d3·v is 0, but (2^193-1)·(2^63+1) = 2^256 + 2^193 - 2^63 - 1.
+	u := u256{d0: maxUint64, d1: maxUint64, d2: maxUint64, d3: 1}
+	_, fits := mul256by64(u, 1<<63+1)
+	require.False(t, fits, "carry-only overflow")
+	_, fits = mul256by64(u, 1<<63)
+	require.True(t, fits, "(2^193-1)·2^63 = 2^256 - 2^63 fits")
+	require.Zero(t, u256ToBig(neg256(u256{})).Sign(), "neg256(0) = 0")
+}

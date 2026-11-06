@@ -166,3 +166,44 @@ func div3by2(u2, u1, u0 uint64, v u128) (uint64, u128) {
 
 	return tq, rem
 }
+
+// add256 returns u+v mod 2^256 and the carry out of bit 255 (0 or 1).
+func add256(u, v u256) (u256, uint64) {
+	d0, c := bits.Add64(u.d0, v.d0, 0)
+	d1, c := bits.Add64(u.d1, v.d1, c)
+	d2, c := bits.Add64(u.d2, v.d2, c)
+	d3, c := bits.Add64(u.d3, v.d3, c)
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}, c
+}
+
+// sub256 returns u-v mod 2^256 and the borrow out of bit 255 (0 or 1); borrow
+// 1 means u < v and the difference wrapped (neg256 recovers v-u).
+func sub256(u, v u256) (u256, uint64) {
+	d0, b := bits.Sub64(u.d0, v.d0, 0)
+	d1, b := bits.Sub64(u.d1, v.d1, b)
+	d2, b := bits.Sub64(u.d2, v.d2, b)
+	d3, b := bits.Sub64(u.d3, v.d3, b)
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}, b
+}
+
+// neg256 returns the two's complement (2^256 - u) mod 2^256.
+func neg256(u u256) u256 {
+	d0, b := bits.Sub64(0, u.d0, 0)
+	d1, b := bits.Sub64(0, u.d1, b)
+	d2, b := bits.Sub64(0, u.d2, b)
+	d3, _ := bits.Sub64(0, u.d3, b)
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}
+}
+
+// mul256by64 returns u·v and whether it fits 256 bits.
+func mul256by64(u u256, v uint64) (u256, bool) {
+	h0, d0 := bits.Mul64(u.d0, v)
+	h1, l1 := bits.Mul64(u.d1, v)
+	h2, l2 := bits.Mul64(u.d2, v)
+	h3, l3 := bits.Mul64(u.d3, v)
+	d1, c := bits.Add64(l1, h0, 0)
+	d2, c := bits.Add64(l2, h1, c)
+	d3, c := bits.Add64(l3, h2, c)
+	// h3 ≤ v-1 < 2^64-1, so h3+c cannot wrap: the product fits iff it is 0.
+	return u256{d0: d0, d1: d1, d2: d2, d3: d3}, h3+c == 0
+}
