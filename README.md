@@ -117,7 +117,7 @@ explicit, use:
 | Intent | Multiplication/division | Mean |
 | --- | --- | --- |
 | Require an exact `Decimal` representation | `MulExact`, `DivExact` | `AvgExact` |
-| Round once to a requested scale | `MulRound`, `DivRound` | `AvgRound` |
+| Round once to a requested scale | `MulRound`, `DivRound`, `MulAddRound` (`d*e + f`) | `AvgRound` |
 
 Exact operations return `ErrInexact` when nonzero digits would be discarded,
 `ErrUnderflow` for a nonzero result below `10^-MaxPrec`, and `ErrOverflow` for
@@ -154,7 +154,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `Add`, `Sub`, `Mul` | `ErrOverflow` | `MustAdd`, `MustSub`, `MustMul` |
 | `Div` | `ErrDivideByZero`, `ErrOverflow` | `MustDiv` |
 | `MulExact`, `DivExact`, `AvgExact` | `ErrInexact`, `ErrUnderflow`, `ErrOverflow`; division also `ErrDivideByZero` | — |
-| `MulRound`, `DivRound`, `AvgRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrOverflow`; division also `ErrDivideByZero` | — |
+| `MulRound`, `DivRound`, `MulAddRound`, `AvgRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrOverflow`; division also `ErrDivideByZero` | — |
 | `QuoRem`, `Mod` | `ErrDivideByZero`, `ErrOverflow` | `MustQuoRem`, `MustMod` |
 | `MulDivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Sum`, `Avg` | `ErrOverflow` | `MustSum`, `MustAvg` |
