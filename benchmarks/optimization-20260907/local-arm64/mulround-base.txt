@@ -1,0 +1,150 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	15301852	        16.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15113826	        16.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	14026269	        17.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10255058	        23.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9607220	        24.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14390430	        17.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	52967468	         4.320 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	54759614	         4.316 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14416398	        17.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	35296276	         6.736 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	14914320	        15.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15360368	        15.88 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13293882	        17.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10315093	        23.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9647367	        25.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14037823	        16.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	56832752	         4.260 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	57536709	         4.252 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14475890	        16.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	34955908	         6.870 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	14959951	        15.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15112200	        15.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13769362	        17.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10347206	        23.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9789890	        24.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	13895154	        16.89 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	54887464	         4.321 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	52657561	         4.368 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14124223	        16.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	34953153	         6.848 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	14842682	        16.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	14992346	        15.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13861180	        17.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10173927	        23.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9705613	        24.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14054367	        16.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	54544425	         4.356 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	52689351	         4.342 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14018314	        16.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	34430404	         6.888 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	15457152	        15.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15512769	        16.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13183251	        17.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9975252	        23.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9651700	        25.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14532646	        16.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	54727884	         4.345 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	55460335	         4.293 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14214570	        17.06 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	35032021	         6.773 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	15110694	        16.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	14701527	        16.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13509678	        17.69 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	 9800502	        23.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9727280	        24.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14235543	        16.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	56508813	         4.361 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	55944055	         4.356 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14339701	        16.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	35237762	         6.831 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	15108474	        15.89 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15138414	        16.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13304290	        17.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10442272	        23.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9899713	        24.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14321624	        17.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	56023494	         4.402 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	54789829	         4.388 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14345058	        16.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	35399101	         6.779 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	15000078	        15.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	15328401	        15.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	14112388	        17.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10091223	        23.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9501014	        25.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	13947338	        16.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	55670466	         4.389 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	56295079	         4.304 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	14135004	        17.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	33546300	         6.807 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	14949972	        15.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	14692116	        16.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13693321	        17.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10088571	        23.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9769798	        24.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14046861	        16.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	55118562	         4.248 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	54519123	         4.324 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	13742851	        17.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	34520160	         6.947 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkMulRoundPow10/price_fee         	14764610	        16.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_128       	14831408	        15.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/product_192       	13783003	        17.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_20           	10187008	        23.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_36           	 9686206	        24.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/drop_38           	14608758	        16.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/padding           	55975044	         4.357 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/same_precision    	54179128	         4.386 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/sticky_half       	13774498	        17.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMulRoundPow10/overflow          	35052697	         6.741 ns/op	       0 B/op	       0 allocs/op
+PASS

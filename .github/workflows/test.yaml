@@ -76,6 +76,54 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  simd:
+    name: simd (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GOEXPERIMENT: simd
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Unit tests (race)
+        run: go test -race -failfast .
+      - name: Allocation assertions (no race)
+        run: go test -run '^Test.*Alloc' -count=1 .
+
+      - name: Pointer instrumentation
+        run: go test -gcflags=all=-d=checkptr=2 -skip Alloc -count=1 .
+      - name: SIMD precision and cache modes
+        shell: bash
+        run: |
+          for tags in zerodecimal_prec9 zerodecimal_prec12 zerodecimal_strcache; do
+            go test -tags="$tags" -count=1 ./...
+          done
+      - name: SIMD fuzz seeds
+        run: go test -tags=fuzz -run '^Fuzz' -count=1 .
+      - name: SIMD parser and prefix fuzzing
+        shell: bash
+        run: |
+          go test -tags=fuzz -run '^$' -fuzz '^FuzzDigitRun$' -fuzztime=30s -parallel=2 .
+          go test -tags=fuzz -run '^$' -fuzz '^FuzzSumPositivePrefix$' -fuzztime=30s -parallel=2 .
+      - name: AVX2 dispatch without AVX-512
+        if: runner.arch == 'X64'
+        env:
+          GODEBUG: cpu.avx512f=off
+        run: go test -race -run 'SIMD|AVX|DigitRun|Parse|Aggregate' -count=1 .
+      - name: Portable fallback without AVX
+        if: runner.arch == 'X64'
+        env:
+          GODEBUG: cpu.avx=off,cpu.avx2=off,cpu.avx512f=off
+        run: go test -race -run 'SIMD|AVX|DigitRun|Parse|Aggregate' -count=1 .
+      - name: Scan SIMD library and test dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 -test -tags=fuzz ./...
+
   test-build-tags:
     name: tags (${{ matrix.name }})
     strategy:

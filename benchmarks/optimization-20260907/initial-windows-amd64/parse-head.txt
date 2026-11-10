@@ -1,0 +1,144 @@
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4058496	        29.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3838586	        31.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4412997	        27.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 3931911	        30.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3951943	        30.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3577102	        33.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3954926	        30.17 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2812813	        42.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2849956	        42.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3938946	        30.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3887469	        30.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3849891	        31.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3734269	        32.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3631927	        33.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3443307	        34.44 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3155469	        38.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2755333	        43.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 5005610	        24.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1687490	        70.67 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4045060	        29.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3897457	        31.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4357708	        27.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 4010613	        29.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3953701	        30.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3588441	        33.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3737048	        30.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2810619	        42.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2850511	        42.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3960931	        30.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3892059	        31.89 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3828226	        31.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3719672	        32.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3638380	        33.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3481116	        34.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3145864	        38.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2759050	        43.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 5024115	        23.88 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1702916	        70.60 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4070596	        29.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3468898	        32.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4368814	        27.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 4002374	        30.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3941390	        30.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3522976	        33.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3944487	        30.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2819402	        42.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2832105	        42.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3979610	        30.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3480338	        32.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3850213	        31.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3724082	        32.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3624687	        33.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3367286	        35.59 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3154093	        38.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2791658	        43.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 4933053	        24.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1712880	        70.09 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4066886	        29.58 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3863402	        31.06 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4395894	        27.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 3952984	        30.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3955473	        30.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3523120	        33.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3984698	        30.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2826608	        42.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2810850	        42.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3970984	        30.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3840097	        30.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3851955	        31.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3718831	        32.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3629972	        33.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3470845	        34.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3150656	        38.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2771810	        43.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 4909621	        24.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1707574	        70.21 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4074964	        29.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3855334	        31.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4349622	        29.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 3997934	        30.06 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3926264	        30.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3605486	        33.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3958867	        30.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2806662	        42.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2817165	        42.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3965355	        30.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3890318	        30.86 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3850362	        31.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3717103	        32.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3191428	        34.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3498357	        34.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3133232	        38.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2760314	        43.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 5016638	        23.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1705666	        70.28 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: windows
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkParseLong/21_digits         	 4003268	        29.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 3879000	        30.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 4430299	        27.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 3959964	        30.42 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 3913651	        30.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 3599074	        33.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 3969054	        30.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 2829033	        42.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 2837442	        45.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 3896280	        30.45 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 3885028	        31.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 3788607	        31.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 3710838	        32.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 3611378	        33.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 3511893	        34.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 3155601	        38.24 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 2787002	        43.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 5027714	        23.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 1687087	        70.65 ns/op	       0 B/op	       0 allocs/op
+PASS

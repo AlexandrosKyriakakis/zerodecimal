@@ -1,0 +1,144 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 4065051	        24.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 5162372	        23.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5529730	        21.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 4871488	        24.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5568854	        21.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5181346	        23.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5785071	        20.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 4040272	        29.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 4026625	        29.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 4851832	        24.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4901350	        24.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4824976	        24.55 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4741504	        26.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 4791430	        24.53 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4686691	        25.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4438942	        26.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3908979	        31.18 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 6862011	        17.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2646756	        45.15 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 5339086	        22.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 5095666	        23.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5403062	        21.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 5091909	        23.55 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5346232	        22.24 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5202969	        23.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5735406	        20.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 3980296	        29.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 4069112	        29.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 5016468	        23.90 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4942118	        24.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4899883	        24.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4751988	        25.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 4779051	        24.97 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4569628	        25.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4368646	        27.23 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3809820	        31.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 7291249	        16.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2669085	        46.22 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 5024371	        23.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 5269966	        23.06 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5467665	        21.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 5100621	        23.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5447539	        22.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5188094	        22.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5711124	        20.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 4082714	        29.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 3890220	        30.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 4810968	        24.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4947084	        24.51 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4909632	        24.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4674102	        25.77 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 4775437	        24.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4654086	        25.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4409608	        27.21 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3827623	        31.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 7045044	        17.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2705258	        44.99 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 5381718	        22.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 5302636	        22.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5585714	        21.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 5240164	        23.25 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5432629	        22.41 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5050982	        23.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5907740	        20.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 4037559	        29.95 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 4091146	        29.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 4873862	        24.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4666794	        24.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4822746	        24.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4812134	        25.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 4980578	        24.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4767390	        26.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4348928	        27.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3823202	        31.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 7208162	        16.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2628844	        45.34 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 5017141	        23.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 5157573	        23.12 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5505450	        21.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 5160661	        23.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5503934	        22.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5057156	        23.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5742794	        20.80 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 3929122	        29.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 4112581	        29.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 4729653	        24.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4890672	        24.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4759567	        24.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4817317	        25.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 5065561	        23.73 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4744723	        25.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4525327	        26.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3815362	        31.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 6986730	        16.98 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2659807	        45.64 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal
+cpu: Apple M1 Pro
+BenchmarkParseLong/21_digits         	 5329848	        22.63 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_digits         	 4987323	        23.67 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_digits         	 5351995	        22.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_digits         	 5048149	        23.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_digits         	 5425476	        21.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/30_digits         	 5064439	        23.15 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_digits         	 5697092	        21.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_digits         	 3972457	        29.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/max_uint128       	 4086654	        29.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/21_byte_decimal   	 4960940	        24.29 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/22_byte_decimal   	 4897059	        24.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/24_byte_decimal   	 4741294	        24.89 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/26_byte_decimal   	 4636336	        25.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/28_byte_decimal   	 4967289	        24.14 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/32_byte_decimal   	 4729094	        25.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/39_byte_decimal   	 4281406	        28.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/40_byte_decimal   	 3800088	        31.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/invalid_at_40     	 7111830	        16.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkParseLong/80_digits         	 2620384	        45.34 ns/op	       0 B/op	       0 allocs/op
+PASS

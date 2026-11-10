@@ -191,6 +191,42 @@ func divU256Pow10(u u256, k uint8) (u128, error) {
 	return u128{hi: q1, lo: q0}, nil
 }
 
+// divRoundPow10 returns the quotient of u / 10^k and the exact remainder
+// facts needed by roundQuotient: whether it is nonzero and its comparison
+// with half the divisor. fits=false means the quotient exceeds 128 bits.
+// The known divisor uses the generated reciprocal without a hardware divide;
+// narrow products skip the unused high-limb division steps.
+//
+// PRECONDITION (not checked): 1 <= k <= MaxPrec.
+func divRoundPow10(u u256, k uint8) (q u128, rem bool, halfCmp int, fits bool) {
+	var r uint64
+	if u.isZeroUpper() {
+		if u.d1 == 0 {
+			q.lo, r = divmod64Pow10(u.d0, k)
+		} else {
+			q, r = divmod128Pow10Slow(u.lo128(), k)
+		}
+	} else {
+		// u / 10^k < 2^128 exactly when the high 128 bits are below 10^k.
+		if u.d3 != 0 || u.d2 >= pow10u64[k&31] {
+			return u128{}, false, 0, false
+		}
+		e := &pow10Tab[k&31]
+		s := uint(e.s)
+		// As in divU256Pow10, u.d2 < 10^k proves n2 < dn, so both div2by1
+		// quotient digits fit. Retain the final remainder for direct rounding.
+		n2 := u.d2<<s | u.d1>>(64-s)
+		n1 := u.d1<<s | u.d0>>(64-s)
+		n0 := u.d0 << s
+		q.hi, r = div2by1(n2, n1, e.dn, e.v)
+		q.lo, r = div2by1(r, n0, e.dn, e.v)
+		r >>= s
+	}
+	// Every positive power of ten is even. Compare with half the divisor
+	// instead of doubling r, which could overflow at the 10^19 boundary.
+	return q, r != 0, cmp128(u128{lo: r}, u128{lo: pow10u64[k&31] / 2}), true
+}
+
 // divmodU256Pow10Wide returns the full-width quotient and exact remainder of
 // u / 10^k.
 // It serves the k > MaxPrec passes of divU256Pow10, whose intermediate

@@ -1,0 +1,70 @@
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1336508	       184.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  693513	       362.1 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1331263	       186.4 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  695370	       362.7 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1335128	       184.5 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  686072	       361.6 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1331302	       185.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  682426	       362.8 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1339332	       183.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  693662	       360.3 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1328404	       186.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  693061	       362.5 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1327078	       186.4 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  694548	       363.2 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1000000	       222.8 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  687004	       362.3 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1334144	       186.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  692196	       364.0 ns/op	      24 B/op	       1 allocs/op
+PASS
+goos: linux
+goarch: amd64
+pkg: github.com/AlexandrosKyriakakis/zerodecimal/benchmarks
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkProductionPipelineTradeCapture  	 1333045	       186.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkProductionPipelinePortfolioMark 	  693759	       362.1 ns/op	      24 B/op	       1 allocs/op
+PASS
