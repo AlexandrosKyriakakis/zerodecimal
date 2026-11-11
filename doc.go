@@ -32,6 +32,9 @@
 // quotient and rounds once, replacing Mul(e).Div(f) followed by a rounding
 // method; see its documentation for where the two can differ.
 //
+// DivBy and DivRoundBy follow Div's and DivRound's policy exactly: for a
+// divisor precomputed once with NewDivisor they return the same results.
+//
 // MulExact, DivExact, and AvgExact require an exact Decimal representation and
 // report ErrInexact, ErrUnderflow, or ErrOverflow as appropriate. MulRound,
 // DivRound, MulAddRound, and AvgRound round directly from the full product,
