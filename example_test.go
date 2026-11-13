@@ -75,6 +75,34 @@ func ExampleDecimal_Add() {
 	// 0.30000000000000004
 }
 
+func ExampleNewDivisor() {
+	// Split amounts pro rata, amount × part / whole, dividing every product
+	// by one precomputed Divisor.
+	whole := zerodecimal.NewFromInt(3)
+	part := zerodecimal.NewFromInt(2)
+	byWhole, err := zerodecimal.NewDivisor(whole)
+	if err != nil {
+		panic(err)
+	}
+	for _, amount := range []zerodecimal.Decimal{
+		zerodecimal.RequireFromString("100"),
+		zerodecimal.RequireFromString("4.95"),
+		zerodecimal.RequireFromString("0.05"),
+	} {
+		product := amount.MustMul(part)
+		share, err := product.DivRoundBy(&byWhole, 2, zerodecimal.ToNearestEven)
+		if err != nil {
+			panic(err)
+		}
+		// DivBy is Div bit for bit, so swapping one for the other is safe.
+		fmt.Println(share, product.MustDivBy(&byWhole) == product.MustDiv(whole))
+	}
+	// Output:
+	// 66.67 true
+	// 3.3 true
+	// 0.03 true
+}
+
 func ExampleDecimal_MulAddRound() {
 	qty := zerodecimal.RequireFromString("1.5")
 	price := zerodecimal.RequireFromString("19.99")
