@@ -162,11 +162,23 @@ func (d Decimal) Mul(e Decimal) (Decimal, error) {
 // PRECONDITION (not checked): neg == (d.neg != e.neg), pSum == d.prec + e.prec.
 func mulSlow(d, e Decimal, neg bool, pSum uint8) (Decimal, error) {
 	if pSum <= DefaultPrec {
-		prod := mulToU256(d.coef, e.coef)
-		if !prod.isZeroUpper() {
+		// A one-limb factor (±1, ±100, a quantity, …) multiplies inline in
+		// two Mul64s, without mulToU256's frame and four-multiply schoolbook.
+		// Two two-limb factors are each ≥ 2^64, so their product never fits.
+		var prod u128
+		var overflow uint64
+		switch {
+		case e.coef.hi == 0:
+			prod, overflow = mul128by64(d.coef, e.coef.lo)
+		case d.coef.hi == 0:
+			prod, overflow = mul128by64(e.coef, d.coef.lo)
+		default:
 			return Decimal{}, ErrOverflow
 		}
-		return newDecimal(prod.lo128(), neg, pSum), nil
+		if overflow != 0 {
+			return Decimal{}, ErrOverflow
+		}
+		return newDecimal(prod, neg, pSum), nil
 	}
 	k := pSum - DefaultPrec
 	if d.coef.hi|e.coef.hi == 0 && k <= MaxPrec {
@@ -177,7 +189,17 @@ func mulSlow(d, e Decimal, neg bool, pSum uint8) (Decimal, error) {
 		q, _ := divmod128Pow10(u128{hi: hi, lo: lo}, k)
 		return newDecimal(q, neg, DefaultPrec), nil
 	}
-	q, err := divU256Pow10(mulToU256(d.coef, e.coef), k)
+	// A one-limb factor widens the other inline, as above.
+	var prod u256
+	switch {
+	case e.coef.hi == 0:
+		prod.d2, prod.d1, prod.d0 = mul128by64to192(d.coef, e.coef.lo)
+	case d.coef.hi == 0:
+		prod.d2, prod.d1, prod.d0 = mul128by64to192(e.coef, d.coef.lo)
+	default:
+		prod = mulToU256(d.coef, e.coef)
+	}
+	q, err := divU256Pow10(prod, k)
 	if err != nil {
 		return Decimal{}, err
 	}
@@ -229,6 +251,15 @@ func (d Decimal) Div(e Decimal) (Decimal, error) {
 		return Decimal{}, nil
 	}
 	neg := d.neg != e.neg
+
+	// A divisor coefficient of 1 or 100 (1, 0.01, 100, …) only rescales d: a
+	// multiply or a reciprocal divide (pow10_operand.go). On overflow the
+	// general path below repeats the p = DefaultPrec attempt and degrades.
+	if isPow10Divisor(e.coef) {
+		if coef, fits := divPow10Coef(d.coef, d.prec, e.prec, e.coef.lo); fits {
+			return newDecimal(coef, neg, DefaultPrec), nil
+		}
+	}
 
 	// Fast path: p = DefaultPrec is the largest p the contract allows, so a fit
 	// there is immediately the answer — no estimate needed.
@@ -303,7 +334,19 @@ func divCoefAt(d, e Decimal, p int) (u128, bool) {
 		q, _ := div256by128(u256{d0: d.coef.lo, d1: d.coef.hi}, den)
 		return q, true
 	}
-	num := mulToU256(d.coef, pow10u128[f&63])
+	// Scale d inline whenever a factor has one limb, without mulToU256's
+	// frame and four-multiply schoolbook: one hardware multiply when both do.
+	var num u256
+	switch {
+	case d.coef.hi == 0 && f <= int(MaxPrec):
+		num.d1, num.d0 = bits.Mul64(d.coef.lo, pow10u64[f&31])
+	case d.coef.hi == 0:
+		num.d2, num.d1, num.d0 = mul128by64to192(pow10u128[f&63], d.coef.lo)
+	case f <= int(MaxPrec):
+		num.d2, num.d1, num.d0 = mul128by64to192(d.coef, pow10u64[f&31])
+	default:
+		num = mulToU256(d.coef, pow10u128[f&63])
+	}
 	if e.coef.hi == 0 {
 		// 128/64 fast path: when the numerator fits 128 bits the quotient
 		// always fits too (dividend < 2^128 ⇒ quotient < 2^128), so ok is
