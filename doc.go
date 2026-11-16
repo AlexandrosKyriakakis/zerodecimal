@@ -86,6 +86,14 @@
 // types and driver integration tests. Decimal.Scan and NullDecimal.Scan retain
 // v1 compatibility and accept float64.
 //
+// ParsePgNumeric and AppendPgNumeric convert between Decimal and PostgreSQL's
+// binary NUMERIC wire format, used by the binary protocol and binary COPY,
+// without math/big; decoding never allocates, and encoding allocates only
+// when b lacks capacity. Decoding yields the canonical value PostgreSQL's
+// numeric_recv would store for the same bytes, digits past dscale truncated,
+// the same as parsing the column's text form when that fits ParseBytes'
+// 200-byte limit.
+//
 // # Allocations and cache
 //
 // Parsing, arithmetic (including exact, rounded, and aggregate variants),

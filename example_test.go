@@ -308,6 +308,28 @@ func ExampleDecimal_UnmarshalJSON() {
 	// true 1.5
 }
 
+func ExampleParsePgNumeric() {
+	// numeric_send('12345.6789'::numeric): ndigits 3, weight 1, a positive
+	// sign and dscale 4, then the base-10000 digits 1, 2345 and 6789.
+	src := []byte{0x00, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x01, 0x09, 0x29, 0x1a, 0x85}
+	d, err := zerodecimal.ParsePgNumeric(src)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(d)
+
+	// Encoding with dscale = d.Prec() reproduces numeric_send's bytes.
+	fmt.Printf("% x\n", d.AppendPgNumeric(nil))
+
+	// NaN and ±Infinity have no Decimal form.
+	_, err = zerodecimal.ParsePgNumeric([]byte{0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00})
+	fmt.Println(errors.Is(err, zerodecimal.ErrInvalidFloat))
+	// Output:
+	// 12345.6789
+	// 00 03 00 01 00 00 00 04 00 01 09 29 1a 85
+	// true
+}
+
 func ExampleNullDecimal() {
 	var n zerodecimal.NullDecimal
 

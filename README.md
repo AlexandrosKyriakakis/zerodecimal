@@ -172,6 +172,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `IntPart` | `ErrIntPartOverflow` | — |
 | `UnmarshalText`, `UnmarshalJSON` | parse sentinels; JSON `null` into `Decimal` returns `ErrJSONNull` | — |
 | `UnmarshalBinary` | `ErrInvalidBinaryData` | — |
+| `ParsePgNumeric` | `ErrInvalidBinaryData`, `ErrInvalidFloat` (NaN, ±Infinity), `ErrPrecOutOfRange`, `ErrOverflow` | — |
 | `Decimal.Scan`, `NullDecimal.Scan` | parse sentinels, `ErrInvalidFloat`, `ErrScanType`; required `Decimal` also returns `ErrScanNil` | — |
 | `StrictSQLDecimal.Scan`, `StrictNullDecimal.Scan` | parse sentinels, `ErrScanFloat`, `ErrScanType`; required `StrictSQLDecimal` also returns `ErrScanNil` | — |
 | Nil decoder/scanner receiver | `ErrNilReceiver` | — |
@@ -192,6 +193,7 @@ on success and error paths:
 | --- | --- |
 | **exactly 0** | Parsing; legacy, exact, direct-round, and aggregate arithmetic; comparison and rounding; `Trim`; decode and Scan paths; `Append*` with sufficient caller capacity |
 | **exactly 1** | `StringFixed` for every `uint8` places value; `MarshalText`, `MarshalJSON`, and `MarshalBinary` for their returned slice |
+| **exactly 0 in the PostgreSQL binary codec** | `ParsePgNumeric` on every success and error path; `AppendPgNumeric` with `PgNumericMaxLen` spare capacity in `b` |
 | **normally 1** | Uncached multi-byte `String` results; Go may serve a one-byte string from its static table |
 | **exactly 2 in the gated uncached multi-byte case** | `Value`: canonical string plus boxing into `driver.Value` |
 | **exactly 0 when the opt-in cache is enabled and hits** | `String` and valid SQL `Value` paths for cache-window values |
@@ -274,6 +276,47 @@ exact decimal text. Exercise `NUMERIC`/`DECIMAL` schemas, casts, and the actual
 driver protocol in integration tests. Do not bind a nil
 `*StrictSQLDecimal` for a required parameter; `database/sql` converts it to SQL
 NULL without invoking `Value`.
+
+PostgreSQL's binary protocol, which pgx prefers and which its `CopyFrom`
+always uses, sends `NUMERIC` as base-10000 digits (`numeric_send`).
+`ParsePgNumeric` decodes that wire format straight into a `Decimal`, and
+`AppendPgNumeric` encodes one with `dscale` = `Prec()`. Neither uses
+`math/big`: decoding never allocates and encoding only grows a `b` that lacks
+capacity, while pgx's `pgtype.Numeric` costs at least one `*big.Int` per
+value. Decoding returns the canonical value that `ParseBytes`
+returns for the column's text form, so both protocols scan to `==` values
+whenever that rendering fits `ParseBytes`' 200-byte limit; a longer one (a
+`numeric(1000,500)` value, say) fails `ParseBytes` with `ErrMaxStrLen`, while
+`ParsePgNumeric` still decodes it or returns its range sentinel. Decoding
+reads the bytes as PostgreSQL's `numeric_recv` does: an unsigned digit count,
+zero digits accepted at either end, and any digit past `dscale` places (which
+`numeric_send` never sends) truncated toward zero, so `1.2345` sent with
+`dscale` 2 decodes as `1.23`. Binary `NaN` and `±Infinity` return
+`ErrInvalidFloat`; their text forms fail `ParseBytes` with
+`ErrInvalidFormat`. `AppendPgNumeric` cannot fail and writes at most
+`PgNumericMaxLen` (30) bytes. The root module takes no pgx dependency. A pgx v5
+codec wires in the binary format as below; its text plans call `ParseBytes` and
+`AppendText`:
+
+```go
+// Binary scan plan. SQL NULL arrives as src == nil.
+func (scanNumericBinary) Scan(src []byte, dst any) error {
+	if src == nil {
+		return zerodecimal.ErrScanNil // a nullable target sets Valid = false instead
+	}
+	d, err := zerodecimal.ParsePgNumeric(src)
+	if err != nil {
+		return err
+	}
+	*dst.(*zerodecimal.Decimal) = d
+	return nil
+}
+
+// Binary encode plan, appending to pgx's reused buffer.
+func (encodeNumericBinary) Encode(value any, buf []byte) ([]byte, error) {
+	return value.(zerodecimal.Decimal).AppendPgNumeric(buf), nil
+}
+```
 
 ## Benchmarks
 

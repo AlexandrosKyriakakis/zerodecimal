@@ -64,13 +64,15 @@ var (
 	// and conversion errors, and is always returned as a bare sentinel.
 	ErrNilReceiver = errors.New("zerodecimal: nil receiver")
 
-	// ErrInvalidFloat is returned by float constructors for NaN or infinities.
+	// ErrInvalidFloat is returned by float constructors for NaN or infinities,
+	// and by ParsePgNumeric for a PostgreSQL NUMERIC NaN or ±Infinity.
 	ErrInvalidFloat = errors.New("zerodecimal: NaN or Infinity")
 
 	// ErrIntPartOverflow is returned when the integer part does not fit int64.
 	ErrIntPartOverflow = errors.New("zerodecimal: integer part overflows int64")
 
-	// ErrInvalidBinaryData is returned by UnmarshalBinary for malformed input.
+	// ErrInvalidBinaryData is returned by UnmarshalBinary and ParsePgNumeric
+	// for malformed input.
 	ErrInvalidBinaryData = errors.New("zerodecimal: invalid binary data")
 
 	// ErrScanNil is returned when scanning SQL NULL into a Decimal; use
