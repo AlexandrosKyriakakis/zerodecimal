@@ -186,6 +186,32 @@ func ExampleDecimal_MulDivRound() {
 	// 10.85
 }
 
+func ExampleDecimal_MulDivRoundBy() {
+	// Split a $10 fee over three fills in proportion to their quantities,
+	// fee × qty / total, dividing every share by one precomputed Divisor.
+	fee := zerodecimal.NewFromInt(10)
+	total := zerodecimal.NewFromInt(7)
+	byTotal, err := zerodecimal.NewDivisor(total)
+	if err != nil {
+		panic(err)
+	}
+	for _, qty := range []string{"2.5", "1.25", "3.25"} {
+		q := zerodecimal.RequireFromString(qty)
+		share, err := fee.MulDivRoundBy(q, &byTotal, 2, zerodecimal.ToNearestEven)
+		if err != nil {
+			panic(err)
+		}
+		// MulDivRoundBy is MulDivRound bit for bit, so swapping one for the
+		// other is safe.
+		same, err := fee.MulDivRound(q, total, 2, zerodecimal.ToNearestEven)
+		fmt.Println(share, err == nil && share == same)
+	}
+	// Output:
+	// 3.57 true
+	// 1.79 true
+	// 4.64 true
+}
+
 func ExampleDecimal_QuoRem() {
 	q, r := zerodecimal.RequireFromString("7.5").MustQuoRem(zerodecimal.NewFromInt(2))
 	fmt.Println(q, r)
