@@ -135,7 +135,11 @@ To divide many values by one divisor, precompute it with `NewDivisor` and
 divide with `DivBy` or `DivRoundBy`. They return exactly what `Div` and
 `DivRound` return for that divisor (value, precision and error, under every
 build tag), but divide numerators wider than 64 bits by multiplying with a
-precomputed reciprocal instead of running 128-bit divide steps. A `Divisor` is
+precomputed reciprocal instead of running 128-bit divide steps.
+`MulDivRoundBy` does the same for `MulDivRound`'s pro-rata share `d*e/f`, as
+when one quantity splits several amounts. A share to fewer places than
+`d.Prec()+e.Prec()-f.Prec()` rescales the divisor by a power of ten instead,
+which gains only once the rescaled divisor exceeds 128 bits. A `Divisor` is
 immutable and safe for concurrent use.
 
 `Sum` and the mean operations use a fixed-width wide signed accumulator, so
@@ -162,6 +166,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `NewDivisor` | `ErrDivideByZero` | `MustNewDivisor` |
 | `DivBy` | `ErrDivideByZero`, `ErrOverflow` | `MustDivBy` |
 | `DivRoundBy` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
+| `MulDivRoundBy` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Div` | `ErrDivideByZero`, `ErrOverflow` | `MustDiv` |
 | `MulExact`, `DivExact`, `AvgExact` | `ErrInexact`, `ErrUnderflow`, `ErrOverflow`; division also `ErrDivideByZero` | — |
 | `MulRound`, `DivRound`, `MulAddRound`, `AvgRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrOverflow`; division also `ErrDivideByZero` | — |
