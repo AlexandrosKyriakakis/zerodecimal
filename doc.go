@@ -56,6 +56,10 @@
 // wider than 128 bits by returning the exact zero quotient when it exceeds the
 // numerator.
 //
+// Accumulator streams the same wide sum one term at a time: Add, Sub and
+// AddMul never fail, and only the finishers Sum, Div and DivRound report
+// ErrOverflow, so a running total need not fit 128 bits until it is read.
+//
 // # Parsing and codecs
 //
 // Strict parsing accepts ASCII decimal and scientific notation under a

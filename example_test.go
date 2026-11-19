@@ -269,6 +269,47 @@ func ExampleDecimal_QuoRem() {
 	// Output: 3 1.5
 }
 
+func ExampleAccumulator() {
+	// The volume-weighted average price of three fills: Σ qty·price / Σ qty.
+	fills := []struct{ qty, price string }{
+		{"100", "10.25"},
+		{"50", "10.40"},
+		{"25", "10.10"},
+	}
+	var notional, shares zerodecimal.Accumulator // zero values are empty sums
+	for _, f := range fills {
+		qty := zerodecimal.RequireFromString(f.qty)
+		notional.AddMul(qty, zerodecimal.RequireFromString(f.price))
+		shares.Add(qty)
+	}
+	total, err := notional.Sum()
+	if err != nil {
+		panic(err)
+	}
+	volume, err := shares.Sum()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(total, volume)
+
+	// Div truncates at DefaultPrec places like Decimal.Div; DivRound rounds
+	// the exact quotient once, to the requested scale.
+	vwap, err := notional.Div(volume)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(vwap.Prec() == zerodecimal.DefaultPrec)
+	rounded, err := notional.DivRound(volume, 4, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(rounded)
+	// Output:
+	// 1797.5 175
+	// true
+	// 10.2714
+}
+
 func ExampleDecimal_CopySign() {
 	amount := zerodecimal.RequireFromString("12.50")
 	direction := zerodecimal.NewFromInt(-1)

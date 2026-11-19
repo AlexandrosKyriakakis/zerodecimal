@@ -151,6 +151,16 @@ cancellation is independent of operand order. `QuoRem` and `Mod` implement
 truncated division and correctly return quotient zero when a precision-aligned
 divisor is wider than the 128-bit numerator.
 
+`Accumulator` streams the same exact wide sum one term at a time, for running
+totals over rows or struct fields. Its zero value is ready to use, and `Add`,
+`Sub`, and `AddMul` (`d*e` truncated like `Mul`, but kept wide) never fail.
+Each sign keeps its own 256-bit total, so the result does not depend on the
+order of the terms and no partial sum overflows before a finisher reads it:
+`Sum` returns the exact total, `Div` divides it with `Div`'s truncation, and
+`DivRound` rounds Σ/den once, the n-ary form of `(a+b)/c` rounded once. Use it
+in place of udecimal running sums, whose `Add` never fails because it falls
+back to `big.Int`.
+
 ## Error model
 
 All sentinels live in [errors.go](errors.go), are returned bare on hot paths,
@@ -179,6 +189,8 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `QuoRem`, `Mod` | `ErrDivideByZero`, `ErrOverflow` | `MustQuoRem`, `MustMod` |
 | `MulDivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | `MustMulDivRound` |
 | `Sum`, `Avg` | `ErrOverflow` | `MustSum`, `MustAvg` |
+| `Accumulator.Sum`, `Accumulator.Div` | `ErrOverflow`, also once a same-sign total passed 256 bits; `Div` also `ErrDivideByZero` | — |
+| `Accumulator.DivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Rescale` | `ErrPrecOutOfRange`, `ErrOverflow` | `MustRescale` |
 | `IntPart` | `ErrIntPartOverflow` | — |
 | `UnmarshalText`, `UnmarshalJSON` | parse sentinels; JSON `null` into `Decimal` returns `ErrJSONNull` | — |
@@ -204,6 +216,7 @@ on success and error paths:
 | --- | --- |
 | **exactly 0** | Parsing; legacy, exact, direct-round, and aggregate arithmetic; comparison and rounding; `Trim`, `IsRounded`, `FracDigits`; decode and Scan paths; `Append*` with sufficient caller capacity |
 | **exactly 1** | `StringFixed` for every `uint8` places value; `MarshalText`, `MarshalJSON`, and `MarshalBinary` for their returned slice |
+| **exactly 0** | Every `Accumulator` method: `Add`, `Sub`, `AddMul`, `Reset`, and the finishers `Sum`, `Div`, and `DivRound`, on success and error |
 | **normally 1** | Uncached multi-byte `String` results; Go may serve a one-byte string from its static table |
 | **exactly 2 in the gated uncached multi-byte case** | `Value`: canonical string plus boxing into `driver.Value` |
 | **exactly 0 when the opt-in cache is enabled and hits** | `String` and valid SQL `Value` paths for cache-window values |
