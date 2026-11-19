@@ -26,6 +26,36 @@ func Example() {
 	// 299.9700
 }
 
+func ExampleDecimal_MustMulRound() {
+	// The Must twins of the direct-round operations suit call sites whose
+	// operands have proven bounds and whose scale and mode are constants: a
+	// rounding step in a chain, without error plumbing.
+	price := zerodecimal.RequireFromString("19.99")
+	qty := zerodecimal.RequireFromString("1.5")
+	fee := zerodecimal.RequireFromString("0.004")
+	third := zerodecimal.NewFromInt(3)
+	even := zerodecimal.ToNearestEven
+
+	fmt.Println(price.MustMulRound(qty, 2, even))                   // 29.985, a tie
+	fmt.Println(price.MustMulAddRound(qty, fee, 2, even))           // 29.989
+	fmt.Println(price.MustDivRound(third, 2, even))                 // 6.6633...
+	fmt.Println(price.MustMulDivRound(qty, third, 2, even))         // 9.995, a tie
+	fmt.Println(zerodecimal.MustAvgRound(price, 2, even, qty, fee)) // 7.1646...
+
+	// A violated bound panics with the bare sentinel the erroring form returns.
+	defer func() {
+		fmt.Println(errors.Is(recover().(error), zerodecimal.ErrDivideByZero))
+	}()
+	_ = price.MustDivRound(zerodecimal.Decimal{}, 2, even)
+	// Output:
+	// 29.98
+	// 29.99
+	// 6.66
+	// 10
+	// 7.16
+	// true
+}
+
 func ExampleNewFromString() {
 	d, err := zerodecimal.NewFromString("1.5000")
 	if err != nil {
