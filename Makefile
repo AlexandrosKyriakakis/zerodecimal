@@ -3,11 +3,13 @@
 # Default: race-enabled unit tests, then alloc assertions (alloc counts need !race).
 test: test-race test-alloc
 
+# ./... covers the root package and its subpackages (zdbig). -coverpkg names the
+# library packages so the internal generator does not dilute the coverage figure.
 test-race:
-	go test -race -failfast -coverpkg=. -coverprofile=coverage.out -covermode=atomic .
+	go test -race -failfast -coverpkg=.,./zdbig -coverprofile=coverage.out -covermode=atomic ./...
 
 test-alloc:
-	go test -run '^Test.*Alloc' -count=1 .
+	go test -run '^Test.*Alloc' -count=1 ./...
 
 # Run the same precision/cache cross-product as the CI build-tag job. The
 # explicit-off and both-cache-tag rows guard zerodecimal_nostrcache's override
@@ -34,8 +36,10 @@ test-tags:
 # executes the full linux/386 suite so architecture-specific assertions run.
 test-32bit-compile:
 	CGO_ENABLED=0 GOOS=linux GOARCH=386 go test -c -o /dev/null .
+	CGO_ENABLED=0 GOOS=linux GOARCH=386 go test -c -o /dev/null ./zdbig
 	CGO_ENABLED=0 GOOS=linux GOARCH=386 go vet ./...
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm go test -c -o /dev/null .
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm go test -c -o /dev/null ./zdbig
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm go vet ./...
 
 test-matrix: test-tags test-32bit-compile
@@ -49,9 +53,10 @@ lint:
 cover: test-race
 	go tool cover -html=coverage.out
 
-fuzz: # usage: make fuzz FuzzAdd
+fuzz: # usage: make fuzz FuzzAdd   (the target's package is found automatically)
 	$(eval fuzzName := $(filter-out $@,$(MAKECMDGOALS)))
-	go test -tags=fuzz -run='^$$' -fuzz='^$(fuzzName)$$' -fuzztime=30s -timeout=10m .
+	$(eval fuzzPkg := $(or $(patsubst %/,%,$(dir $(firstword $(shell grep -rl --include='*_test.go' -E '^func $(fuzzName)[^A-Za-z0-9_]' . 2>/dev/null)))),.))
+	go test -tags=fuzz -run='^$$' -fuzz='^$(fuzzName)$$' -fuzztime=30s -timeout=10m $(fuzzPkg)
 
 fuzz-all: # usage: make fuzz-all 30   (seconds per target, default 10)
 	$(eval fuzzTime := $(filter-out $@,$(MAKECMDGOALS)))
