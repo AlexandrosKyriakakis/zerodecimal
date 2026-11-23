@@ -310,6 +310,51 @@ func ExampleAccumulator() {
 	// 10.2714
 }
 
+func ExampleWeightedAvg() {
+	// The volume-weighted average price of three fills: Σ price·qty / Σ qty.
+	fills := []struct{ price, qty string }{
+		{"25.10", "100"},
+		{"25.15", "200"},
+		{"25.12", "300"},
+	}
+	var vwap zerodecimal.WeightedAvg // the zero value is empty
+	for _, f := range fills {
+		vwap.Add(zerodecimal.RequireFromString(f.price), zerodecimal.RequireFromString(f.qty))
+	}
+	total, err := vwap.Total()
+	if err != nil {
+		panic(err)
+	}
+	volume, err := vwap.Weight()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(total, volume)
+
+	// Avg truncates the quotient of the two sums at DefaultPrec places like
+	// Decimal.Div; AvgRound rounds it once, to the requested scale.
+	legacy, err := vwap.Avg()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(legacy.Prec() == zerodecimal.DefaultPrec, legacy.Truncate(9))
+	rounded, err := vwap.AvgRound(2, zerodecimal.ToNearestEven)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(rounded)
+
+	// An empty mean has no weight to divide by; the caller decides what it is.
+	var empty zerodecimal.WeightedAvg
+	_, err = empty.Avg()
+	fmt.Println(errors.Is(err, zerodecimal.ErrDivideByZero))
+	// Output:
+	// 15076 600
+	// true 25.126666666
+	// 25.13
+	// true
+}
+
 func ExampleDecimal_CopySign() {
 	amount := zerodecimal.RequireFromString("12.50")
 	direction := zerodecimal.NewFromInt(-1)
