@@ -343,6 +343,48 @@ func ExampleDecimal_RoundBank() {
 	// -2
 }
 
+func ExampleDecimal_RoundTo() {
+	// A rounding rule that arrives as configuration: both the scale and the
+	// mode are run-time values.
+	places, mode := uint8(2), zerodecimal.ToNearestEven
+
+	d := zerodecimal.RequireFromString("-2.345")
+	rounded, err := d.RoundTo(places, mode)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(rounded, rounded == d.RoundBank(places)) // the named method's result, exactly
+
+	// Every mode on one tie: -2.345 lies exactly between -2.34 and -2.35.
+	for _, m := range []struct {
+		name string
+		mode zerodecimal.RoundingMode
+	}{
+		{"ToNearestAway", zerodecimal.ToNearestAway},
+		{"ToNearestEven", zerodecimal.ToNearestEven},
+		{"AwayFromZero", zerodecimal.AwayFromZero},
+		{"TowardZero", zerodecimal.TowardZero},
+		{"TowardPositive", zerodecimal.TowardPositive},
+		{"TowardNegative", zerodecimal.TowardNegative},
+	} {
+		fmt.Println(m.name, d.MustRoundTo(2, m.mode))
+	}
+
+	// An unknown mode is the only error, and it is reported even when places
+	// is at or above the precision and nothing would be rounded.
+	_, err = d.RoundTo(zerodecimal.MaxPrec, zerodecimal.RoundingMode(9))
+	fmt.Println(errors.Is(err, zerodecimal.ErrInvalidRoundingMode))
+	// Output:
+	// -2.34 true
+	// ToNearestAway -2.35
+	// ToNearestEven -2.34
+	// AwayFromZero -2.35
+	// TowardZero -2.34
+	// TowardPositive -2.34
+	// TowardNegative -2.35
+	// true
+}
+
 func ExampleDecimal_Equal() {
 	a := zerodecimal.RequireFromString("1.5")
 	// An arithmetic result keeps its precision: 0.75 + 0.75 is 1.50, not 1.5.

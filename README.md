@@ -193,6 +193,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `Accumulator.Sum`, `Accumulator.Div` | `ErrOverflow`, also once a same-sign total passed 256 bits; `Div` also `ErrDivideByZero` | — |
 | `Accumulator.DivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `Rescale` | `ErrPrecOutOfRange`, `ErrOverflow` | `MustRescale` |
+| `RoundTo` | `ErrInvalidRoundingMode` | `MustRoundTo` |
 | `IntPart` | `ErrIntPartOverflow` | — |
 | `UnmarshalText`, `UnmarshalJSON` | parse sentinels; JSON `null` into `Decimal` returns `ErrJSONNull` | — |
 | `UnmarshalBinary` | `ErrInvalidBinaryData` | — |
@@ -275,6 +276,15 @@ and rounding a negative value to zero yields the canonical unsigned zero.
 | `RoundDown(0)` / `Truncate(0)` | toward zero | `2` | `3` | `-2` |
 | `RoundCeil(0)` | toward +∞ | `3` | `4` | `-2` |
 | `RoundFloor(0)` | toward −∞ | `2` | `3` | `-3` |
+
+`RoundTo(places, mode)` is the same rounding with the mode as a run-time
+`RoundingMode`, the type `MulRound` and `DivRound` take, for a scale and mode
+that arrive as configuration. Each mode returns exactly what its method above
+returns: `ToNearestAway` is `Round`, `ToNearestEven` is `RoundBank`,
+`AwayFromZero` is `RoundUp`, `TowardZero` is `RoundDown` and `Truncate`,
+`TowardPositive` is `RoundCeil`, and `TowardNegative` is `RoundFloor`. Its only
+error is `ErrInvalidRoundingMode`, checked before the `places ≥ d.Prec()`
+shortcut, so a bad mode fails there too; `MustRoundTo` panics instead.
 
 `IsRounded(places)` reports whether `d` has no digit past `places`, so that no
 mode changes it: `d.Equal(d.Truncate(places))`, and equally

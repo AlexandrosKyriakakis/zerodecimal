@@ -806,6 +806,7 @@ func FuzzInvariants(f *testing.F) {
 			a.RoundDown(places), a.RoundCeil(places), a.RoundFloor(places),
 			a.Truncate(places), a.Trim(), b.Trim(),
 		}
+		results = appendRoundToResults(t, results, a, places)
 		if c, err := a.Add(b); err == nil {
 			results = append(results, c)
 		}
@@ -898,6 +899,7 @@ func FuzzMustTwins(f *testing.F) {
 	fuzzPairs(f)
 	f.Fuzz(func(t *testing.T, aneg bool, ahi, alo uint64, aprec uint8, bneg bool, bhi, blo uint64, bprec uint8) {
 		a, b := fuzzOperands(t, aneg, ahi, alo, aprec, bneg, bhi, blo, bprec)
+		requireRoundToTwin(t, a, b.Prec())
 		for _, op := range []struct {
 			name string
 			op   func(Decimal, Decimal) (Decimal, error)

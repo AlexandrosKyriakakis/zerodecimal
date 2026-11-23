@@ -50,6 +50,13 @@
 // sum, or remainder to a caller-selected scale and RoundingMode. Use these
 // APIs for calculations whose loss policy must be explicit.
 //
+// RoundTo applies a RoundingMode chosen at run time to a Decimal that already
+// exists, such as the result of a legacy operation, and returns exactly what
+// the named Round, RoundBank, RoundUp, RoundDown, RoundCeil, or RoundFloor
+// returns for that mode. Like any later rounding, it cannot recover digits an
+// earlier truncation discarded. Its only error is ErrInvalidRoundingMode, and
+// MustRoundTo is its panicking twin.
+//
 // Sum and all average variants use a wide signed accumulator, making
 // cancellation independent of operand order. Sum checks its final coefficient
 // at the greatest input precision and preserves that precision for a nonzero
