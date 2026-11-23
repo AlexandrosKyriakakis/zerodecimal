@@ -15,6 +15,9 @@
 // canonical zero. Decimal has no arbitrary-precision fallback; a magnitude
 // outside the domain returns ErrOverflow.
 //
+// This package does not import math/big. The zdbig subpackage converts between
+// Decimal and (*big.Int, exponent) pairs such as a pgtype.Numeric.
+//
 // Decimal methods do not mutate value operands. Representation equality and
 // numeric equality differ when trailing fractional zeros differ: use Equal or
 // Cmp for numeric comparison, Trim for canonical representation equality, and
