@@ -188,6 +188,7 @@ twins for call sites with proven bounds; rows marked `—` below have none.
 | `MulExact`, `DivExact`, `AvgExact` | `ErrInexact`, `ErrUnderflow`, `ErrOverflow`; division also `ErrDivideByZero` | — |
 | `MulRound`, `DivRound`, `MulAddRound`, `AvgRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrOverflow`; division also `ErrDivideByZero` | `MustMulRound`, `MustDivRound`, `MustMulAddRound`, `MustAvgRound` |
 | `QuoRem`, `Mod` | `ErrDivideByZero`, `ErrOverflow` | `MustQuoRem`, `MustMod` |
+| `RoundToMultiple` | `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | — |
 | `MulDivRound` | `ErrPrecOutOfRange`, `ErrInvalidRoundingMode`, `ErrDivideByZero`, `ErrOverflow` | `MustMulDivRound` |
 | `Sum`, `Avg` | `ErrOverflow` | `MustSum`, `MustAvg` |
 | `Accumulator.Sum`, `Accumulator.Div` | `ErrOverflow`, also once a same-sign total passed 256 bits; `Div` also `ErrDivideByZero` | — |
@@ -284,6 +285,14 @@ mode changes it: `d.Equal(d.Truncate(places))`, and equally
 pinned tie-by-tie against its shopspring equivalent in
 [crosscheck_test.go](crosscheck_test.go) and fuzzed in
 [fuzz_test.go](fuzz_test.go).
+
+`RoundToMultiple(step, mode)` rounds to a multiple of an arbitrary step
+instead of a power of ten — a tick size, a board quantity, or a share-increment rule
+such as 0.001 shares — in any `RoundingMode`, directly from the exact quotient
+`d/|step|`. The result keeps `d`'s sign and carries `step`'s precision; unlike
+the family above it is fallible, returning `ErrInvalidRoundingMode` for a mode
+that is not one of the six, `ErrDivideByZero` for a zero step, and
+`ErrOverflow` when the multiple does not fit at that precision.
 
 ## JSON and SQL boundaries
 
