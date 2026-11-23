@@ -157,6 +157,64 @@ func ExampleDecimal_MulAddRound() {
 	// 29.98
 }
 
+func ExampleAllocate() {
+	// A $1.00 fee over fills of 1, 1, 1 and 3 shares. The leftover cents go
+	// to the largest remainders, and a tie to the lower index.
+	fee := zerodecimal.RequireFromString("1.00")
+	qty := []zerodecimal.Decimal{
+		zerodecimal.NewFromInt(1), zerodecimal.NewFromInt(1),
+		zerodecimal.NewFromInt(1), zerodecimal.NewFromInt(3),
+	}
+	shares, err := zerodecimal.Allocate(nil, fee, qty, 2)
+	if err != nil {
+		panic(err)
+	}
+	for _, s := range shares {
+		fmt.Println(s.StringFixed(2))
+	}
+
+	// Rounding each exact share (1/6, 1/6, 1/6 and 1/2 of the fee) on its
+	// own charges a cent too much.
+	var rounded zerodecimal.Decimal
+	for _, q := range qty {
+		s, err := fee.MulDivRound(q, zerodecimal.NewFromInt(6), 2, zerodecimal.ToNearestEven)
+		if err != nil {
+			panic(err)
+		}
+		rounded = rounded.MustAdd(s)
+	}
+	fmt.Println(rounded.StringFixed(2))
+	// Output:
+	// 0.17
+	// 0.17
+	// 0.16
+	// 0.50
+	// 1.01
+}
+
+func ExampleSplit() {
+	// $10.00 three ways: the leftover cent goes to the first share.
+	shares, err := zerodecimal.Split(nil, zerodecimal.RequireFromString("10.00"), 3, 2)
+	if err != nil {
+		panic(err)
+	}
+	for _, s := range shares {
+		fmt.Println(s.StringFixed(2))
+	}
+
+	// A negative total splits by magnitude; dst is reused when it has room.
+	shares, err = zerodecimal.Split(shares, zerodecimal.RequireFromString("-0.05"), 3, 2)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(shares)
+	// Output:
+	// 3.34
+	// 3.33
+	// 3.33
+	// [-0.02 -0.02 -0.01]
+}
+
 func ExampleDecimal_Div() {
 	// Div is the compatibility operation: it truncates at adaptive precision
 	// up to DefaultPrec.

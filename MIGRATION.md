@@ -21,6 +21,10 @@ For new calculation paths:
 - replace `Mul(e).Div(f)` followed by a rounding method with
   `MulDivRound(e, f, places, mode)`; its documentation states exactly where
   the two can differ.
+- split a total with `Allocate` (by weight) or `Split` (evenly) when the
+  shares must sum exactly to it. This is new behaviour, not a drop-in: a
+  split that truncates each share with `Div` or `Mul` loses the residual,
+  so moving it to `Allocate` or `Split` changes its results.
 
 `Sum` and averages now use a wide signed accumulator. Their result no longer
 depends on operand order or fails merely because a cancellation whose final

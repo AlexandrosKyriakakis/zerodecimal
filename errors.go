@@ -46,6 +46,9 @@ var (
 	// exceeds MaxPrec fractional digits.
 	ErrPrecOutOfRange = errors.New("zerodecimal: precision out of range")
 
+	// ErrNegativeWeight is returned by Allocate when a weight is negative.
+	ErrNegativeWeight = errors.New("zerodecimal: negative allocation weight")
+
 	// ErrInvalidFormat is returned when parsing input that is not a valid decimal.
 	ErrInvalidFormat = errors.New("zerodecimal: invalid format")
 
